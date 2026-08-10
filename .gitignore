@@ -6,9 +6,9 @@ backend/venv/
 .pytest_cache/
 
 # ---- 環境変数 / 機密情報 ----
-
+.env
 .env.*
-backend/.env.example
+!.env.example
 
 # ---- Node.js / Next.js frontend ----
 frontend/node_modules/
