@@ -22,6 +22,10 @@ import type { SensorFeature, SensorFeatureCollection } from "@/types/sensor";
 export interface SensorMapInnerProps {
   /** BE-6 の GET /api/v1/sensors?format=geojson レスポンス。 */
   data: SensorFeatureCollection;
+  /** 選択中のアラート ID（telemetryId）。一覧・ドロワーと連動する（FE-5）。 */
+  selectedAlertId?: string | null;
+  /** マーカークリック時に呼ばれる。引数はセンサー ID（FE-5 の地図連動）。 */
+  onSelectMarker?: (sensorId: string) => void;
 }
 
 /** 地図の初期ビュー。center は Leaflet[緯度, 経度] の順。 */
@@ -114,7 +118,7 @@ export function onEachFeature(feature: SensorFeature, layer: L.Layer): void {
   );
 }
 
-export default function SensorMapInner({ data }: SensorMapInnerProps) {
+export default function SensorMapInner({ data, onSelectMarker }: SensorMapInnerProps) {
   const view = calculateMapView(data); // Leaflet[lat, lng] の中心
   const layerKey = buildLayerKey(data);
   return (
@@ -133,6 +137,18 @@ export default function SensorMapInner({ data }: SensorMapInnerProps) {
         data={data}
         pointToLayer={pointToLayer}
         onEachFeature={onEachFeature}
+        eventHandlers={{
+          click: (event) => {
+            // eventHandlers でクリックを拾い、選択中のセンサーIDを親（DashboardClient）へ通知する。
+            // pointToLayer / onEachFeature は純粋なまま維持し、ここで FE-5 の連動だけを足す。
+            const feature = (event.sourceTarget as unknown as {
+              feature?: SensorFeature;
+            }).feature;
+            if (feature && onSelectMarker) {
+              onSelectMarker(feature.properties.sensorId);
+            }
+          },
+        }}
       />
     </MapContainer>
   );

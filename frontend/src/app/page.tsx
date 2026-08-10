@@ -1,18 +1,19 @@
 /**
- * FE-2/FE-3: ダッシュボードルート（Server Component）。
+ * FE-2/FE-3/FE-5: ダッシュボードルート（Server Component）。
  *
- * ヘッダー・KPIサマリ・GISマップ（FE-3）・アラート一覧（FE-5 で実装予定）を配置する。
+ * ヘッダー・KPIサマリ・センサー地図（FE-3）・アラート一覧/詳細ドロワー（FE-5）を配置する。
  * センサー地図のデータは BE-6 の GET /api/v1/sensors?format=geojson から取得し、
- * Client Component の SensorMap へ渡す。バックエンド未応答時はフォールバック
+ * Client Component の DashboardClient へ渡す。バックエンド未応答時はフォールバック
  * （hydrants.json 由来のモック）で描画する。
  *
  * データはリクエスト時に毎回取得する（静的生成だとビルド時の取得結果が焼き込まれ、
  * センサー状態の変化が反映されないため force-dynamic）。
- * Client Component 化はしない（時刻表示は Header が内部で担う）。
+ * 本ファイルは Server Component のまま維持する（'use client' を付けない）。
+ * アラートのポーリングや選択状態は DashboardClient が内部で担う。
  */
 import Header from "@/components/dashboard/Header";
 import KpiSummary from "@/components/dashboard/KpiSummary";
-import SensorMap from "@/components/map/SensorMap";
+import DashboardClient from "@/components/dashboard/DashboardClient";
 import { fetchSensorsGeoJson } from "@/lib/api";
 import type { KpiData } from "@/components/dashboard/KpiSummary";
 import type { SensorFeatureCollection } from "@/types/sensor";
@@ -161,21 +162,8 @@ export default async function Home() {
       <Header />
       <main className="mx-auto max-w-7xl space-y-4 p-4 lg:p-6">
         <KpiSummary kpiData={MOCK_KPI_DATA} />
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          {/* GIS マップ（FE-3: Leaflet センサー地図） */}
-          <section className="rounded-xl bg-white p-4 lg:col-span-2">
-            <h2 className="mb-2 text-sm font-semibold text-slate-500">
-              センサー地図
-            </h2>
-            <SensorMap data={sensorFeatures} />
-          </section>
-          {/* アラート一覧（FE-5 で実装） */}
-          <section className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-500">
-              アラート一覧（FE-5 で実装予定）
-            </h2>
-          </section>
-        </div>
+        {/* 地図（FE-3）・アラート一覧/詳細ドロワー（FE-5）は Client Component が束ねる */}
+        <DashboardClient sensorFeatures={sensorFeatures} />
       </main>
     </div>
   );

@@ -8,8 +8,12 @@
  * 規約: any 型は使用しない（CLAUDE.md §5.2）。
  */
 
-/** 漏水深刻度。1=微小漏水 / 2=進行性漏水 / 3=管路破裂。 */
-export type SeverityLevel = 1 | 2 | 3;
+/**
+ * 漏水深刻度。0=正常 / 1=微小漏水 / 2=進行性漏水 / 3=管路破裂。
+ * Level 0 は PRD §2 更新（2026-08-10）で追加された。BE-6 の一覧APIは Level 0 も返すため、
+ * 一覧側（FE-5）では既定で非表示にし「正常も表示」トグルで切替える。
+ */
+export type SeverityLevel = 0 | 1 | 2 | 3;
 
 /** 作業指示書の生成元（AI生成 / 規定ルールによる自動算出）。 */
 export type WorkOrderSource = "llm" | "fallback";

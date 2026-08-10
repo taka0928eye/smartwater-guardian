@@ -17,8 +17,8 @@ export interface SensorProperties {
   sensorId: string;
   /** 監視状態（normal / warning / critical / unknown）。 */
   status: string;
-  /** 漏水深刻度（1〜3）。最新レコード未読込の場合は null。 */
-  severityLevel: 1 | 2 | 3 | null;
+  /** 漏水深刻度（0〜3。0=正常）。最新レコード未読込の場合は null。 */
+  severityLevel: 0 | 1 | 2 | 3 | null;
   /** 最終計測時刻（ISO8601）。未計測なら null。 */
   lastReadingAt: string | null;
 }
