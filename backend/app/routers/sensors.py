@@ -26,7 +26,8 @@ from app.store import StoredTelemetry, get_hydrants, get_store
 router = APIRouter(prefix="/api/v1", tags=["sensors"])
 
 # 最新解析の severity → 監視状態の対応（最新レコード未読込は unknown）
-STATUS_BY_SEVERITY: dict[int, str] = {1: "normal", 2: "warning", 3: "critical"}
+# 0=正常 / 1=微小漏水・要注視 / 2=進行性漏水・要点検 / 3=破裂・緊急対応
+STATUS_BY_SEVERITY: dict[int, str] = {0: "normal", 1: "watch", 2: "warning", 3: "critical"}
 
 
 def _derive_status(record: StoredTelemetry | None) -> str:

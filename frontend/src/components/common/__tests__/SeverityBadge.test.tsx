@@ -11,11 +11,11 @@ import { render, screen } from "@testing-library/react";
 import SeverityBadge from "../SeverityBadge";
 
 describe("SeverityBadge", () => {
-  it("Level 1 は「Level 1 微小漏水」を緑系クラスで描画する", () => {
+  it("Level 1 は「Level 1 微小漏水（AI検知）」を黄緑系クラスで描画する", () => {
     render(<SeverityBadge level={1} />);
-    const badge = screen.getByText("Level 1 微小漏水");
+    const badge = screen.getByText("Level 1 微小漏水（AI検知）");
     expect(badge).toBeInTheDocument();
-    expect(badge.className).toContain("green");
+    expect(badge.className).toContain("lime");
   });
 
   it("Level 2 は「Level 2 進行性漏水」を黄系クラスで描画する", () => {
