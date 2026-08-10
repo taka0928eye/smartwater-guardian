@@ -39,8 +39,17 @@ class HydrantNotFoundError(SimulationError):
     """指定された消火栓IDがマスタに存在しない。"""
 
 
+class SignalGenerationError(SimulationError):
+    """指定パラメータでは疑似音響信号を生成できない。"""
+
+
 class TelemetrySendError(SimulationError):
     """Telemetry APIへの送信失敗。"""
+
+
+REQUIRED_HYDRANT_KEYS = ("hydrant_id", "sensor_id", "latitude", "longitude")
+# irfft後の信号がほぼ無音（帯域内にエネルギーが存在しない）とみなす閾値。
+_MIN_FILTERED_STD = 1e-9
 
 
 def _time_axis(sample_rate_hz: int, duration_sec: float) -> np.ndarray:
@@ -65,7 +74,14 @@ def _band_limited_noise(
     freqs = np.fft.rfftfreq(sample_count, d=1.0 / sample_rate_hz)
     spectrum[(freqs < low_hz) | (freqs > high_hz)] = 0.0
     filtered = np.fft.irfft(spectrum, n=sample_count)
-    return filtered * (amplitude / np.std(filtered))
+    std = np.std(filtered)
+    if std < _MIN_FILTERED_STD:
+        raise SignalGenerationError(
+            f"帯域 {low_hz}-{high_hz}Hz にエネルギーが存在しません "
+            f"(sample_rate_hz={sample_rate_hz}, duration_sec={sample_count / sample_rate_hz})。"
+            "sample_rate_hz または duration_sec を見直してください。"
+        )
+    return filtered * (amplitude / std)
 
 
 def _validate_signal_options(level: int, sample_rate_hz: int, duration_sec: float) -> None:
@@ -130,6 +146,17 @@ def load_hydrants(path: Path = DEFAULT_HYDRANTS_PATH) -> list[Hydrant]:
 
     if not isinstance(data, list):
         raise HydrantDataError("hydrants.json は配列である必要があります")
+
+    for index, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            raise HydrantDataError(
+                f"hydrants.json の要素[{index}]はオブジェクトである必要があります"
+            )
+        missing_keys = [key for key in REQUIRED_HYDRANT_KEYS if key not in entry]
+        if missing_keys:
+            raise HydrantDataError(
+                f"hydrants.json の要素[{index}]に必須キーがありません: {missing_keys}"
+            )
     return data
 
 

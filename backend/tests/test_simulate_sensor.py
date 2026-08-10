@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from datetime import datetime, timezone
 
 import numpy as np
@@ -15,6 +16,7 @@ from scripts.simulate_sensor import (
     DEFAULT_SAMPLE_RATE_HZ,
     HydrantDataError,
     HydrantNotFoundError,
+    SignalGenerationError,
     TelemetrySendError,
     build_payload,
     encode_audio,
@@ -107,6 +109,13 @@ def test_level_3_has_higher_rms_and_broadband_content():
     assert rms(medium) > rms(mild)
     assert rms(severe) > rms(medium)
     assert spectral_flatness(severe) > 0.25
+
+
+def test_generate_signal_level_3_raises_when_leak_band_has_no_energy():
+    # sample_rate_hz=100 => Nyquist=50Hz。漏水帯域(500-1500Hz)が完全にナイキスト周波数を
+    # 超えるため、帯域フィルタ後の信号にエネルギーが残らずゼロ除算が発生し得る条件。
+    with pytest.raises(SignalGenerationError):
+        generate_signal(level=3, sample_rate_hz=100, duration_sec=1.0, seed=1)
 
 
 def test_encode_audio_uses_pcm16_little_endian_raw_bytes():
@@ -244,6 +253,34 @@ def test_load_hydrants_reports_missing_file(tmp_path):
 def test_load_hydrants_reports_broken_json(tmp_path):
     broken = tmp_path / "hydrants.json"
     broken.write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(HydrantDataError):
+        load_hydrants(broken)
+
+
+def test_load_hydrants_reports_missing_required_key(tmp_path):
+    broken = tmp_path / "hydrants.json"
+    broken.write_text(
+        json.dumps(
+            [
+                {
+                    "hydrant_id": "HYD-001",
+                    # sensor_id が欠落
+                    "latitude": 35.6812,
+                    "longitude": 139.7671,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(HydrantDataError):
+        load_hydrants(broken)
+
+
+def test_load_hydrants_reports_non_object_entry(tmp_path):
+    broken = tmp_path / "hydrants.json"
+    broken.write_text(json.dumps(["HYD-001"]), encoding="utf-8")
 
     with pytest.raises(HydrantDataError):
         load_hydrants(broken)
