@@ -1,0 +1,82 @@
+[
+  {
+    "hydrant_id": "HYD-001",
+    "sensor_id": "SNS-001",
+    "name": "千代田区飯田橋3丁目 消火栓",
+    "latitude": 35.7019,
+    "longitude": 139.7444,
+    "pipe_id": "P-001"
+  },
+  {
+    "hydrant_id": "HYD-002",
+    "sensor_id": "SNS-002",
+    "name": "千代田区神田須田町 消火栓",
+    "latitude": 35.6917,
+    "longitude": 139.7703,
+    "pipe_id": "P-002"
+  },
+  {
+    "hydrant_id": "HYD-003",
+    "sensor_id": "SNS-003",
+    "name": "中央区日本橋室町 消火栓",
+    "latitude": 35.6812,
+    "longitude": 139.7744,
+    "pipe_id": "P-003"
+  },
+  {
+    "hydrant_id": "HYD-004",
+    "sensor_id": "SNS-004",
+    "name": "港区新橋2丁目 消火栓",
+    "latitude": 35.6667,
+    "longitude": 139.7583,
+    "pipe_id": "P-004"
+  },
+  {
+    "hydrant_id": "HYD-005",
+    "sensor_id": "SNS-005",
+    "name": "新宿区新宿3丁目 消火栓",
+    "latitude": 35.6896,
+    "longitude": 139.7006,
+    "pipe_id": "P-005"
+  },
+  {
+    "hydrant_id": "HYD-006",
+    "sensor_id": "SNS-006",
+    "name": "渋谷区渋谷2丁目 消火栓",
+    "latitude": 35.6595,
+    "longitude": 139.7005,
+    "pipe_id": "P-006"
+  },
+  {
+    "hydrant_id": "HYD-007",
+    "sensor_id": "SNS-007",
+    "name": "台東区上野6丁目 消火栓",
+    "latitude": 35.7121,
+    "longitude": 139.777,
+    "pipe_id": "P-007"
+  },
+  {
+    "hydrant_id": "HYD-008",
+    "sensor_id": "SNS-008",
+    "name": "文京区本郷3丁目 消火栓",
+    "latitude": 35.7083,
+    "longitude": 139.7603,
+    "pipe_id": "P-008"
+  },
+  {
+    "hydrant_id": "HYD-009",
+    "sensor_id": "SNS-009",
+    "name": "品川区五反田2丁目 消火栓",
+    "latitude": 35.6261,
+    "longitude": 139.7232,
+    "pipe_id": "P-009"
+  },
+  {
+    "hydrant_id": "HYD-010",
+    "sensor_id": "SNS-010",
+    "name": "目黒区目黒3丁目 消火栓",
+    "latitude": 35.6355,
+    "longitude": 139.7048,
+    "pipe_id": "P-010"
+  }
+]

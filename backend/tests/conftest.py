@@ -8,6 +8,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.store import get_store, reset_store
 from main import app
 
 
@@ -16,3 +17,21 @@ def client():
     """FastAPI アプリのテストクライアント（サーバー起動不要）。"""
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def store():
+    """BE-6: 現在のインメモリストア（シングルトン）。"""
+    return get_store()
+
+
+@pytest.fixture(autouse=True)
+def _reset_store():
+    """BE-6: 各テスト実行前にインメモリストアをリセットし、テスト間を隔離する。
+
+    ルーターはハンドラ実行時に ``get_store()`` を呼ぶため、``reset_store()`` で
+    シングルトンを破棄すれば次リクエストは新規ストアを生成して完全に隔離される。
+    """
+    reset_store()
+    yield
+    reset_store()

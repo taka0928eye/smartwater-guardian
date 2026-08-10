@@ -3,7 +3,8 @@
 消火栓貼付型IoT音響センサーとハイブリッドAI解析により、水道管の微小漏水を早期検知する
 「SmartWater Guardian」のバックエンド API サーバー（FastAPI / Python）。
 
-- **現状のスコープ**: BE-1（センサテレメトリ受取 API）のダミー実装まで
+- **現状のスコープ**: BE-6（解析済みテレメトリの保持 + アラート・センサー参照 API）まで。
+  BE-2（疑似センサー・消火栓マスタ）/ BE-3（FFT 解析）は未実装のため、仮データとモック解析で先行。
 - **環境**: Windows PowerShell / Python 3.11+（venv 使用）
 
 ---
@@ -26,21 +27,31 @@
 backend/
 ├── app/
 │   ├── __init__.py
-│   ├── schemas/            # Pydantic v2 モデル（API契約）
+│   ├── store.py              # インメモリストア（deque+dict+Lock / シングルトン）
+│   ├── data/
 │   │   ├── __init__.py
-│   │   └── telemetry.py    # TelemetryRequest / Response 等
-│   └── routers/            # APIRouter（エンドポイント）
+│   │   └── hydrants.json     # 消火栓マスタ仮データ（BE-2 の将来形式と互換）
+│   ├── schemas/              # Pydantic v2 モデル（API契約）
+│   │   ├── __init__.py
+│   │   ├── telemetry.py      # TelemetryRequest / Response / AnalysisResult 等
+│   │   └── alert.py          # AlertSummary / Detail / SensorInfo / GeoJSON 等
+│   └── routers/              # APIRouter（エンドポイント）
 │       ├── __init__.py
-│       └── telemetry.py    # POST /api/v1/telemetry
-├── scripts/                # 手動検証スクリプト
-│   └── check_telemetry.py  # E2E検証（サーバー起動前提・requests使用）
-├── tests/                  # pytest テスト
-│   ├── conftest.py         # TestClient フィクスチャ
-│   └── test_telemetry.py   # BE-1 の正常系・異常系テスト
-├── main.py                 # FastAPI アプリ本体（router 登録・CORS）
-├── requirements.txt        # 依存パッケージ（pip freeze で固定）
-├── .env                    # 環境変数（git 管理外）
-└── .env.example            # 環境変数のサンプル
+│       ├── telemetry.py      # POST /api/v1/telemetry（モック解析つき）
+│       ├── alerts.py         # GET /api/v1/alerts 系
+│       └── sensors.py        # GET /api/v1/sensors（JSON / GeoJSON）
+├── scripts/                  # 手動検証スクリプト
+│   ├── check_telemetry.py    # E2E検証（サーバー起動前提・requests使用）
+│   └── check_alerts.py       # アラート・センサーAPI の E2E検証
+├── tests/                    # pytest テスト
+│   ├── conftest.py           # TestClient / ストアリセット フィクスチャ
+│   ├── test_telemetry.py     # BE-1 の正常系・異常系 + モック解析
+│   ├── test_store.py         # インメモリストア単体（maxlen / 並行性）
+│   └── test_alerts.py        # 参照 API 統合（404 / 501 / GeoJSON）
+├── main.py                   # FastAPI アプリ本体（router 登録・CORS）
+├── requirements.txt          # 依存パッケージ（pip freeze で固定）
+├── .env                      # 環境変数（git 管理外）
+└── .env.example              # 環境変数のサンプル
 ```
 
 ---
@@ -117,10 +128,11 @@ venv\Scripts\uvicorn.exe main:app --reload --port 8000
 
 # ターミナル2: E2E検証
 cd backend
-venv\Scripts\python.exe scripts/check_telemetry.py
+venv\Scripts\python.exe scripts/check_telemetry.py   # 受信 API（6ケース）
+venv\Scripts\python.exe scripts/check_alerts.py      # アラート・センサー API（10ケース）
 ```
 
-正常系1件＋異常系4件＋TZ検証の計6ケースを実行し、`6/6 PASS` が表示されれば成功。
+それぞれ `N/N PASS` が表示されれば成功。
 
 ---
 
@@ -129,7 +141,11 @@ venv\Scripts\python.exe scripts/check_telemetry.py
 | メソッド | パス | 説明 | 現状 |
 |---|---|---|---|
 | GET | `/` | ヘルスチェック | 実装済み |
-| POST | `/api/v1/telemetry` | センサテレメトリ受取 | 実装済み（`analysis` は `null`） |
+| POST | `/api/v1/telemetry` | センサテレメトリ受取（モック解析つき） | 実装済み（`analysis` に解析結果） |
+| GET | `/api/v1/alerts` | アラート一覧（`?level=` / `?limit=`） | 実装済み |
+| GET | `/api/v1/alerts/{telemetry_id}` | アラート詳細 | 実装済み（不明 ID は 404） |
+| POST | `/api/v1/alerts/{telemetry_id}/work-order` | 工事発注書の自動起票 | スタブ（501 / BE-5 未実装） |
+| GET | `/api/v1/sensors` | センサー状態一覧（`?format=geojson` 可） | 実装済み |
 | GET | `/docs` | Swagger UI | 実装済み |
 
 ### POST /api/v1/telemetry のリクエスト例
@@ -148,7 +164,7 @@ venv\Scripts\python.exe scripts/check_telemetry.py
 ```
 
 - 入力は `strict=True` / `extra="forbid"` のため、型不一致・未知フィールド・TZなし時刻は `422` になる。
-- `analysis` は BE-3（`app/services/audio.py`）実装までは常に `null`。
+- `analysis` は BE-3（`app/services/audio.py`）実装まではモック解析（`telemetry.py` の `_analyze_audio_mock`）で生成する。BE-3 実装で `analyze_audio()` に置き換わる。
 
 ---
 

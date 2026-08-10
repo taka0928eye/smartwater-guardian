@@ -1,4 +1,6 @@
-"""BE-1 検証スクリプト: POST /api/v1/telemetry の正常系・異常系を確認する。
+"""BE-1 + BE-6 検証スクリプト: POST /api/v1/telemetry の正常系・異常系を確認する。
+
+BE-6 でモック解析が入ったため、正常系の ``analysis`` は null ではなく解析結果が返る。
 
 前提: 別ターミナルでサーバーが起動していること。
 
@@ -83,7 +85,10 @@ def case_1_valid_payload() -> None:
 
     body = response.json()
     expect(body["status"] == "accepted", f"status が accepted ではない: {body['status']}")
-    expect(body["analysis"] is None, f"BE-1 では analysis は null のはず: {body['analysis']}")
+    # BE-6: モック解析により analysis に解析結果が入る（BE-1 の null ではない）
+    expect(body["analysis"] is not None, f"BE-6 では analysis に解析結果が入るはず: {body['analysis']}")
+    expect(body["analysis"]["severity_level"] in (1, 2, 3), f"severity_level が 1〜3 ではない: {body['analysis']['severity_level']}")
+    expect(len(body["analysis"]["spectrum"]) == 128, f"spectrum が 128 点ではない: {len(body['analysis']['spectrum'])}")
     expect(body["sensor_id"] == "SNS-001", f"sensor_id がエコーされていない: {body['sensor_id']}")
     expect(bool(body["telemetry_id"]), "telemetry_id が空")
     expect(bool(body["received_at"]), "received_at が空")
@@ -130,7 +135,7 @@ def case_6_naive_datetime() -> None:
 
 
 CASES = [
-    ("正常系: 妥当なペイロードで 200 / analysis=null", case_1_valid_payload),
+    ("正常系: 妥当なペイロードで 200 / analysis=mock結果", case_1_valid_payload),
     ("異常系: sample_rate_hz が文字列 → 422", case_2_type_mismatch),
     ("異常系: audio_base64 が不正 → 422", case_3_invalid_base64),
     ("異常系: latitude が範囲外 → 422", case_4_latitude_out_of_range),
