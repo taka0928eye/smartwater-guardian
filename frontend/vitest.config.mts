@@ -4,10 +4,13 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // api.ts は純 TypeScript（DOM 不要）のため node 環境で十分。
+    // デフォルト環境は node。tsx のコンポーネントテストはファイル先頭の
+    // `// @vitest-environment jsdom` で jsdom に切り替える（FE-2）。
     environment: "node",
     // tests ディレクトリ等の補助コードをテスト対象から除外する。
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    // jest-dom のカスタムマッチャー（toBeInTheDocument 等）を読み込む。
+    setupFiles: ["./src/test/setup.ts"],
   },
   resolve: {
     alias: {
