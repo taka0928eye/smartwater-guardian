@@ -251,6 +251,23 @@ describe("onEachFeature", () => {
     expect(content).toContain(getSeverityLabel(2));
     expect(content).toContain("2026-08-10T00:00:00Z");
   });
+
+  it("sensorId に含まれる HTML メタ文字はエスケープしてポップアップに渡す(XSS対策)", () => {
+    const bindPopup = vi.fn();
+    const feature = makeFeature(
+      "<img src=x onerror=alert(1)>",
+      139.7,
+      35.7,
+      2,
+      "2026-08-10T00:00:00Z",
+    );
+    onEachFeature(feature, { bindPopup } as unknown as L.Layer);
+
+    const content = bindPopup.mock.calls[0]?.[0] as string | undefined;
+    expect(content).not.toContain("<img");
+    expect(content).toContain("&lt;img");
+    expect(content).toContain("&gt;");
+  });
 });
 
 describe("SensorMapInner", () => {

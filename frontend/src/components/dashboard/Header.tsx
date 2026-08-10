@@ -27,26 +27,30 @@ function formatJstNow(date: Date): string {
 // モジュールレベルで状態を管理するストアを作成
 // ----------------------------------------------------
 let currentTimestamp: number | null = null;
+let intervalId: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
 function subscribe(callback: () => void) {
   listeners.add(callback);
 
-  // 初回購読時かつ未初期化の場合のみタイマーを開始
-  if (currentTimestamp === null) {
+  // 最初の購読者のときだけタイマーを開始する（複数インスタンスが同時に
+  // マウントされても setInterval は1本だけになる。多重生成するとリスナー数×
+  // インターバル数だけ通知が重複し、アンマウント順によっては一部の
+  // インターバルが clearInterval されずに残り続けてしまう）。
+  if (intervalId === null) {
     currentTimestamp = Date.now();
+    intervalId = setInterval(() => {
+      currentTimestamp = Date.now();
+      // 登録されているリスナーに通知
+      listeners.forEach((listener) => listener());
+    }, 30_000);
   }
-
-  const id = setInterval(() => {
-    currentTimestamp = Date.now();
-    // 登録されているリスナーに通知
-    listeners.forEach((listener) => listener());
-  }, 30_000);
 
   return () => {
     listeners.delete(callback);
-    if (listeners.size === 0) {
-      clearInterval(id);
+    if (listeners.size === 0 && intervalId !== null) {
+      clearInterval(intervalId);
+      intervalId = null;
       currentTimestamp = null;
     }
   };

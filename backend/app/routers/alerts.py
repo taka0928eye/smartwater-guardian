@@ -11,7 +11,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.schemas.alert import AlertDetail, AlertSummary
-from app.schemas.telemetry import SeverityLevel
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])

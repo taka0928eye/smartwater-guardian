@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import numpy as np
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.telemetry import (
     AnalysisResult,
@@ -150,7 +150,15 @@ def ingest_telemetry(payload: TelemetryRequest) -> TelemetryResponse:
     """
     # TODO(BE-3): app/services/audio.py の analyze_audio() を呼び出し analysis を格納する。
     #   解析ロジックは CLAUDE.md §5.3 により audio.py に集約する。ここは BE-6 までの仮実装。
-    analysis = _analyze_audio_mock(payload.audio_base64, payload.sample_rate_hz)
+    # audio_base64 は Base64 として妥当でも、PCM16（2バイト/サンプル）として不正な
+    # バイト長の場合がある。境界で 422 に変換し、クライアント起因のエラーとして扱う。
+    try:
+        analysis = _analyze_audio_mock(payload.audio_base64, payload.sample_rate_hz)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"audio_base64 を解析できません: {exc}",
+        ) from exc
     now = datetime.now(timezone.utc)
     telemetry_id = f"tlm_{uuid4().hex[:12]}"
 

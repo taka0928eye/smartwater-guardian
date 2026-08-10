@@ -68,4 +68,19 @@ describe("Home (page.tsx)", () => {
     // フォールバックは hydrants.json 由来の10件で描画される。
     expect(screen.getByTestId("sensor-map").textContent).toBe("count=10");
   });
+
+  it("取得失敗時はフォールバックで描画するだけでなく、原因をログに記録する", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const backendError = new Error("backend unreachable");
+    mockedFetch.mockRejectedValue(backendError);
+
+    const { default: Home } = await import("@/app/page");
+    render(await Home());
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("fetchSensorsGeoJson"),
+      backendError,
+    );
+    consoleErrorSpy.mockRestore();
+  });
 });

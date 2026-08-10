@@ -133,6 +133,21 @@ class TestInvalidPayload:
         payload["location"]["latitude"] = 200.0
         assert client.post("/api/v1/telemetry", json=payload).status_code == 422
 
+    def test_empty_audio_returns_422_not_500(self, client):
+        # 空データは Base64 としては妥当だが解析不能。境界で 422 に変換されるべき（500 ではない）
+        payload = valid_payload()
+        payload["audio_base64"] = base64.b64encode(b"").decode("ascii")
+        response = client.post("/api/v1/telemetry", json=payload)
+        assert response.status_code == 422
+
+    def test_odd_byte_length_audio_returns_422_not_500(self, client):
+        # PCM16 は2バイト/サンプル。奇数バイト長は np.frombuffer が例外を送出するが、
+        # 境界で 422 に変換されるべき（500 ではない）
+        payload = valid_payload()
+        payload["audio_base64"] = base64.b64encode(b"\x00" * 3).decode("ascii")
+        response = client.post("/api/v1/telemetry", json=payload)
+        assert response.status_code == 422
+
     def test_longitude_out_of_range(self, client):
         payload = valid_payload()
         payload["location"]["longitude"] = -181.0

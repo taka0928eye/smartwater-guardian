@@ -89,6 +89,20 @@ export function pointToLayer(
 }
 
 /**
+ * HTML メタ文字をエスケープする。
+ * Leaflet の bindPopup は文字列コンテンツを innerHTML としてそのまま挿入するため、
+ * API から取得した値（sensorId 等）を埋め込む前に必ず通す（XSS対策）。
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * onEachFeature: ポップアップ（センサーID / 深刻度ラベル / 最終計測時刻）を設定する。
  */
 export function onEachFeature(feature: SensorFeature, layer: L.Layer): void {
@@ -96,7 +110,7 @@ export function onEachFeature(feature: SensorFeature, layer: L.Layer): void {
   const label = getSeverityLabel(severityLevel ?? 0);
   const readingAt = lastReadingAt ?? "—";
   layer.bindPopup(
-    `センサーID: ${sensorId}<br/>深刻度: ${label}<br/>最終計測: ${readingAt}`,
+    `センサーID: ${escapeHtml(sensorId)}<br/>深刻度: ${escapeHtml(label)}<br/>最終計測: ${escapeHtml(readingAt)}`,
   );
 }
 

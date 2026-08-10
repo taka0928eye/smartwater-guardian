@@ -148,7 +148,11 @@ export default async function Home() {
   let sensorFeatures: SensorFeatureCollection;
   try {
     sensorFeatures = await fetchSensorsGeoJson();
-  } catch {
+  } catch (error) {
+    console.error(
+      "fetchSensorsGeoJson に失敗したため、フォールバックデータで描画します。",
+      error,
+    );
     sensorFeatures = FALLBACK_SENSOR_FEATURES;
   }
 
