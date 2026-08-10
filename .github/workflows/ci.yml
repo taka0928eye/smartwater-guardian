@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  # --- バックエンドの自動テスト ---
+  # --- バックエンドの自動テスト & カバレッジ測定 ---
   backend-test:
     runs-on: ubuntu-latest
 
@@ -25,6 +25,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
+          pip install pytest pytest-cov httpx
 
       - name: Verify Backend Routes & Imports
         run: |
@@ -41,7 +42,18 @@ jobs:
           # 検証スクリプト実行
           python scripts/check_telemetry.py
 
-  # --- フロントエンドの自動テスト ---
+      - name: Run Pytest with Coverage
+        run: |
+          cd backend
+          python -m pytest --cov=app --cov-report=term-missing --cov-report=xml
+
+      - name: Upload Backend Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: backend/coverage.xml
+
+  # --- フロントエンドの自動テスト & カバレッジ測定 ---
   frontend-test:
     runs-on: ubuntu-latest
 
@@ -66,10 +78,16 @@ jobs:
           cd frontend
           npm run lint
 
-      - name: Run Vitest Tests
+      - name: Run Vitest Tests with Coverage
         run: |
           cd frontend
-          npm run test -- --run
+          npm run test -- --run --coverage
+
+      - name: Upload Frontend Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage-report
+          path: frontend/coverage/
 
       - name: Build Next.js App
         run: |
