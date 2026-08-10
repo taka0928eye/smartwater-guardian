@@ -1,0 +1,32 @@
+# ---- Python / FastAPI backend ----
+backend/venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- 環境変数 / 機密情報 ----
+
+.env.*
+backend/.env.example
+
+# ---- Node.js / Next.js frontend ----
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+node_modules/
+
+# ---- OS / エディタ ----
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- AI-DLC: per-user cursors & machine-local runtime (.claude/CLAUDE.md 記載分) ----
+aidlc/active-space
+aidlc/spaces/*/intents/active-intent
+aidlc/.aidlc-clone-id
+aidlc/.aidlc-sessions/
+aidlc/spaces/*/intents/.aidlc-*
+aidlc/spaces/*/intents/*/runtime-graph.json
+aidlc/spaces/*/intents/*/.aidlc-*
+.claude/settings.local.json
