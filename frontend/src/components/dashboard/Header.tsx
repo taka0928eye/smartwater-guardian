@@ -4,9 +4,9 @@
  * FE-2: ダッシュボードヘッダー。
  *
  * タイトル・リアルタイム時刻・監視ステータス（システム正常稼働中）を表示する。
- * 時刻は Client Component として setInterval で更新する。
+ * 時刻は Client Component として useSyncExternalStore で更新する。
  */
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { ShieldCheck } from "lucide-react";
 
 /** JST 表記の現在時刻（例: 2026-08-10 10:00 JST）。 */
@@ -20,17 +20,53 @@ function formatJstNow(date: Date): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-  // "2026/08/10 10:00" -> "2026-08-10 10:00 JST"
   return `${formatted.replace(/\//g, "-")} JST`;
 }
 
-export default function Header() {
-  const [now, setNow] = useState<Date>(() => new Date());
+// ----------------------------------------------------
+// モジュールレベルで状態を管理するストアを作成
+// ----------------------------------------------------
+let currentTimestamp: number | null = null;
+const listeners = new Set<() => void>();
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
+function subscribe(callback: () => void) {
+  listeners.add(callback);
+
+  // 初回購読時かつ未初期化の場合のみタイマーを開始
+  if (currentTimestamp === null) {
+    currentTimestamp = Date.now();
+  }
+
+  const id = setInterval(() => {
+    currentTimestamp = Date.now();
+    // 登録されているリスナーに通知
+    listeners.forEach((listener) => listener());
+  }, 30_000);
+
+  return () => {
+    listeners.delete(callback);
+    if (listeners.size === 0) {
+      clearInterval(id);
+      currentTimestamp = null;
+    }
+  };
+}
+
+function getSnapshot() {
+  // キャッシュされた同じ値を返す（setInterval で更新された時だけ値が変わる）
+  return currentTimestamp;
+}
+
+function getServerSnapshot() {
+  return null; // SSR 時は null
+}
+
+// ----------------------------------------------------
+// コンポーネント本体
+// ----------------------------------------------------
+export default function Header() {
+  const timestamp = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const now = timestamp ? new Date(timestamp) : null;
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 px-6 py-4 text-white">
@@ -43,9 +79,9 @@ export default function Header() {
       <div className="flex items-center gap-4 text-sm">
         <time
           className="tabular-nums text-slate-200"
-          dateTime={now.toISOString()}
+          dateTime={now ? now.toISOString() : undefined}
         >
-          {formatJstNow(now)}
+          {now ? formatJstNow(now) : "-- JST"}
         </time>
         <span className="inline-flex items-center gap-2 font-medium text-emerald-300">
           <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
