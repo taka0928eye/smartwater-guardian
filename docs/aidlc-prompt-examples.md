@@ -4,26 +4,18 @@
 
 ---
 
-## 1. バックエンド（Spring Boot / API）開発用プロンプト
+## 1. Inceptionフェーズ
 
-### 1.1 センサーデータ受信API＆モック生成
-```text
-Spring Boot (Java 17) を使用して、IoT音響センサーからのデータを受信するREST APIコントローラーを作成してください。
-エンドポイント: POST /api/v1/sensor-data
-リクエストボディ (JSON):
-{
-  "sensorId": "SN-001",
-  "latitude": 35.681236,
-  "longitude": 139.767125,
-  "timestamp": "2026-08-10T03:00:00Z",
-  "audioBase64": "..." 
-}
-レスポンス (JSON):
-{
-  "status": "success",
-  "leakDetected": true,
-  "confidence": 0.88,
-  "severityLevel": 1,
-  "recommendedPart": "鋳鉄管150mm用 補修クランプA型"
-}
-Swagger注記と、処理の骨組みを含めてください。
+/aidlc `.aidlc/v2/workflows/architecture.md` と `@CLAUDE.md` をロードしてください。
+
+「SmartWater Guardian」のMVP開発における最初のInceptionフェーズを開始します。
+以下の指示に従い、PRD（添付要件および `CLAUDE.md`）に基づいた全体タスクの分解と、最初のタスクの実装計画を日本語で提案してください。
+
+【実行指示】
+1. システム全体のコンポーネント構成と全体タスク（バックエンド・フロントエンド・Orcarouter連携・画面設計）のリストアップ
+2. 最初のタスク「バックエンド: センサテレメトリ受取API (POST /api/v1/telemetry) の型定義 (Pydantic v2) とダミーエンドポイントの実装」についての詳細計画（変更予定ファイル、修正内容、検証方法）の提示
+3. gh issue list を実行して重複がないか確認の上、最初のタスク用の GitHub Issue を gh issue create で作成してください。
+   (Issue本文には「目的」「作業内容 (- [ ])」「受け入れ条件」を含めること)
+
+※プラン提示後、私の承認を得てからコード作成および Issue 作成へ進んでください。
+
