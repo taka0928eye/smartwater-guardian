@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // vitest --coverage が生成するレポートは lint 対象外。
+    "coverage/**",
   ]),
 ]);
 

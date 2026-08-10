@@ -18,6 +18,7 @@ import {
   fetchAlertDetail,
   fetchAlerts,
   fetchSensors,
+  fetchSensorsGeoJson,
 } from "../api";
 
 const MOCK_SENSOR = {
@@ -89,6 +90,33 @@ const badResponse: AxiosResponse = {
   statusText: "Internal Server Error",
   headers: {},
   config: {} as InternalAxiosRequestConfig,
+};
+
+/** GET /api/v1/sensors?format=geojson のレスポンス（BE-6）。座標は [経度, 緯度] 順。 */
+const MOCK_GEOJSON = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: {
+        sensor_id: "SNS-001",
+        status: "critical",
+        severity_level: 3,
+        last_reading_at: "2026-08-10T09:02:00Z",
+      },
+      geometry: { type: "Point", coordinates: [139.7744, 35.6812] },
+    },
+    {
+      type: "Feature",
+      properties: {
+        sensor_id: "SNS-006",
+        status: "unknown",
+        severity_level: null,
+        last_reading_at: null,
+      },
+      geometry: { type: "Point", coordinates: [139.7005, 35.6595] },
+    },
+  ],
 };
 
 function axiosError(
@@ -174,6 +202,51 @@ describe("fetchSensors", () => {
 
     const promise = fetchSensors();
     await expect(promise).rejects.toBe(boom);
+  });
+});
+
+describe("fetchSensorsGeoJson", () => {
+  it("GET /api/v1/sensors を format=geojson で呼び、camelCase へ変換して返す", async () => {
+    const spy = vi
+      .spyOn(apiClient, "get")
+      .mockResolvedValue({ data: MOCK_GEOJSON });
+
+    const fc = await fetchSensorsGeoJson();
+
+    expect(spy).toHaveBeenCalledWith("/api/v1/sensors", {
+      params: { format: "geojson" },
+    });
+    // トップレベル構造は GeoJSON のまま
+    expect(fc.type).toBe("FeatureCollection");
+    expect(fc.features).toHaveLength(2);
+    // properties は camelCase へ変換される
+    expect(fc.features[0]?.properties).toEqual({
+      sensorId: "SNS-001",
+      status: "critical",
+      severityLevel: 3,
+      lastReadingAt: "2026-08-10T09:02:00Z",
+    });
+    // 座標順序は GeoJSON[lng, lat] のまま保持される（変換しない）
+    expect(fc.features[0]?.geometry.coordinates).toEqual([139.7744, 35.6812]);
+  });
+
+  it("severity_level / last_reading_at が null の場合は null のまま返す", async () => {
+    vi.spyOn(apiClient, "get").mockResolvedValue({ data: MOCK_GEOJSON });
+
+    const fc = await fetchSensorsGeoJson();
+    const second = fc.features[1]?.properties;
+    expect(second?.severityLevel).toBeNull();
+    expect(second?.lastReadingAt).toBeNull();
+  });
+
+  it("axios エラー（HTTP 500）を ApiError に変換して throw する", async () => {
+    vi.spyOn(apiClient, "get").mockRejectedValue(
+      axiosError("Request failed with status code 500", "ERR_BAD_RESPONSE", badResponse),
+    );
+
+    const promise = fetchSensorsGeoJson();
+    await expect(promise).rejects.toBeInstanceOf(ApiError);
+    await expect(promise).rejects.toMatchObject({ status: 500, message: "boom" });
   });
 });
 

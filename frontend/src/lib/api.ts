@@ -15,6 +15,7 @@ import type {
   SeverityLevel,
   WorkOrder,
 } from "../types/api";
+import type { SensorFeatureCollection } from "../types/sensor";
 
 /** NEXT_PUBLIC_API_BASE_URL はクライアントバンドルに載るため、機密情報は置かない（CLAUDE.md §5.1）。 */
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -103,6 +104,19 @@ async function unwrap<T>(request: Promise<{ data: unknown }>): Promise<T> {
 /** 消火栓・センサー一覧を取得する。 */
 export function fetchSensors(): Promise<SensorInfo[]> {
   return unwrap<SensorInfo[]>(apiClient.get("/api/v1/sensors"));
+}
+
+/**
+ * センサー地図（FE-3）用の GeoJSON FeatureCollection を取得する。
+ * GET /api/v1/sensors?format=geojson（BE-6）。unwrap の camelCase 変換により
+ * sensor_id -> sensorId / severity_level -> severityLevel / last_reading_at -> lastReadingAt
+ * へ変換され、src/types/sensor.ts の SensorFeatureCollection と一致する。
+ * 座標は GeoJSON 標準の [経度, 緯度] 順のまま保持される（Leaflet 側の変換は FE-3 の責務）。
+ */
+export function fetchSensorsGeoJson(): Promise<SensorFeatureCollection> {
+  return unwrap<SensorFeatureCollection>(
+    apiClient.get("/api/v1/sensors", { params: { format: "geojson" } }),
+  );
 }
 
 /** アラート一覧を取得する。level / limit で絞り込み可能。 */

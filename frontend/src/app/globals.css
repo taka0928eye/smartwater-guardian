@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* FE-3: Level 3（管路破裂）マーカーの点滅アニメーション。
+ * SensorMapInner の pointToLayer が CircleMarker の SVG path に
+ * sensor-pulse-3 クラスを付与する（Leaflet の className Path オプション）。 */
+@keyframes sensor-pulse-3 {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.sensor-pulse-3 {
+  animation: sensor-pulse-3 1.2s ease-in-out infinite;
+}
