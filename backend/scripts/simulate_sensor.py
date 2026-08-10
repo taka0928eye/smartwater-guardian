@@ -1,275 +1,278 @@
-"""BE-2: 疑似センサーデータ生成・送信スクリプト。
-
-レベル 0～3 の音響シグナルを生成し、POST /api/v1/telemetry へ複数回送信する。
-デモシナリオで「異常検知」を実演するため、再現可能性（seed 固定）を提供。
-
-前提: 別ターミナルでサーバーが起動していること。
-
-    backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000
-
-実行例:
-
-    # Level 1（微小漏水）を3回、5秒間隔で送信
-    backend/venv/Scripts/python.exe scripts/simulate_sensor.py --level 1 --count 3 --interval 5
-
-    # Level 0（正常）10回、同一ハイドラント、固定 seed で再現可能に
-    backend/venv/Scripts/python.exe scripts/simulate_sensor.py --level 0 --count 10 --hydrant HYD-001 --seed 42
-
-コマンドラインオプション:
-    --level {0,1,2,3}  : 深刻度。0=正常 / 1=微小漏水 / 2=進行性漏水 / 3=大漏水（デフォルト: 1）
-    --count N          : 送信回数（デフォルト: 1）
-    --interval SEC     : 送信間隔（秒）（デフォルト: 0）
-    --hydrant ID       : 固定送信先の消火栓 ID。未指定なら hydrants.json から巡回（デフォルト: 未指定）
-    --url URL          : テレメトリエンドポイント（デフォルト: http://localhost:8000/api/v1/telemetry）
-    --seed N           : 乱数 seed（デフォルト: 固定値で再現可能に）
-"""
+"""BE-2: 疑似音響センサーデータを生成して telemetry API へ送信するCLI。"""
 
 from __future__ import annotations
 
 import argparse
 import base64
-import io
 import json
 import sys
 import time
-import wave
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import requests
 
-# 疑似センサーのサンプリング設定
-SAMPLE_RATE_HZ = 16_000
-DURATION_SEC = 2.0  # 2秒の音響データを毎回送信
+DEFAULT_SAMPLE_RATE_HZ = 16_000
+DEFAULT_DURATION_SEC = 2.0
+DEFAULT_HYDRANTS_PATH = (
+    Path(__file__).resolve().parents[1] / "app" / "data" / "hydrants.json"
+)
+INT16_MAX = np.iinfo(np.int16).max
 
-# 消火栓マスタのパス（hydrant を指定しない場合に巡回用）
-HYDRANTS_PATH = Path(__file__).resolve().parent.parent / "app" / "data" / "hydrants.json"
-
-# デフォルト seed（再現可能なデモの実現）
-DEFAULT_SEED = 12345
+Hydrant = dict[str, Any]
+Payload = dict[str, Any]
+PostFunc = Callable[[str, Payload, float], dict[str, Any]]
 
 
-def load_hydrants() -> list[dict]:
-    """hydrants.json から消火栓マスタを読み込む。"""
-    try:
-        with open(HYDRANTS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"エラー: {HYDRANTS_PATH} が見つかりません", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"エラー: {HYDRANTS_PATH} の JSON が不正です: {e}", file=sys.stderr)
-        sys.exit(1)
+class SimulationError(Exception):
+    """疑似センサーCLIで扱う明示的な失敗。"""
+
+
+class HydrantDataError(SimulationError):
+    """消火栓マスタを読み込めない、または形式が不正。"""
+
+
+class HydrantNotFoundError(SimulationError):
+    """指定された消火栓IDがマスタに存在しない。"""
+
+
+class SignalGenerationError(SimulationError):
+    """指定パラメータでは疑似音響信号を生成できない。"""
+
+
+class TelemetrySendError(SimulationError):
+    """Telemetry APIへの送信失敗。"""
+
+
+REQUIRED_HYDRANT_KEYS = ("hydrant_id", "sensor_id", "latitude", "longitude")
+# irfft後の信号がほぼ無音（帯域内にエネルギーが存在しない）とみなす閾値。
+_MIN_FILTERED_STD = 1e-9
+
+
+def _time_axis(sample_rate_hz: int, duration_sec: float) -> np.ndarray:
+    sample_count = int(sample_rate_hz * duration_sec)
+    return np.arange(sample_count, dtype=np.float64) / sample_rate_hz
+
+
+def _tone(t: np.ndarray, freq_hz: float, amplitude: float) -> np.ndarray:
+    return amplitude * np.sin(2.0 * np.pi * freq_hz * t)
+
+
+def _band_limited_noise(
+    rng: np.random.Generator,
+    sample_count: int,
+    sample_rate_hz: float,
+    low_hz: float,
+    high_hz: float,
+    amplitude: float,
+) -> np.ndarray:
+    noise = rng.normal(0.0, 1.0, size=sample_count)
+    spectrum = np.fft.rfft(noise)
+    freqs = np.fft.rfftfreq(sample_count, d=1.0 / sample_rate_hz)
+    spectrum[(freqs < low_hz) | (freqs > high_hz)] = 0.0
+    filtered = np.fft.irfft(spectrum, n=sample_count)
+    std = np.std(filtered)
+    if std < _MIN_FILTERED_STD:
+        raise SignalGenerationError(
+            f"帯域 {low_hz}-{high_hz}Hz にエネルギーが存在しません "
+            f"(sample_rate_hz={sample_rate_hz}, duration_sec={sample_count / sample_rate_hz})。"
+            "sample_rate_hz または duration_sec を見直してください。"
+        )
+    return filtered * (amplitude / std)
+
+
+def _validate_signal_options(level: int, sample_rate_hz: int, duration_sec: float) -> None:
+    if level not in (0, 1, 2, 3):
+        raise ValueError("level must be one of 0, 1, 2, 3")
+    if sample_rate_hz <= 0:
+        raise ValueError("sample_rate_hz must be positive")
+    if duration_sec <= 0:
+        raise ValueError("duration_sec must be positive")
+
+
+def _compose_waveform(
+    level: int,
+    t: np.ndarray,
+    rng: np.random.Generator,
+    sample_rate_hz: int,
+) -> np.ndarray:
+    if level == 0:
+        return rng.normal(0.0, 0.035, size=t.size)
+    if level == 1:
+        return rng.normal(0.0, 0.05, size=t.size) + _tone(t, 980.0, 0.025)
+    if level == 2:
+        waveform = rng.normal(0.0, 0.06, size=t.size)
+        tones = _tone(t, 650.0, 0.04) + _tone(t, 950.0, 0.05)
+        return waveform + tones + _tone(t, 1_320.0, 0.04)
+
+    broadband = rng.normal(0.0, 0.06, size=t.size)
+    leak_band = _band_limited_noise(
+        rng, t.size, sample_rate_hz, 500.0, 1_500.0, amplitude=0.18
+    )
+    return broadband + leak_band
 
 
 def generate_signal(
     level: int,
-    sample_rate_hz: int,
-    duration_sec: float,
-    rng: np.random.Generator,
+    sample_rate_hz: int = DEFAULT_SAMPLE_RATE_HZ,
+    duration_sec: float = DEFAULT_DURATION_SEC,
+    seed: int | None = None,
 ) -> np.ndarray:
-    """
-    深刻度レベル別に音響シグナルを生成する。
-
-    Args:
-        level: 深刻度 (0=正常, 1=微小漏水, 2=進行性漏水, 3=大漏水)
-        sample_rate_hz: サンプリング周波数
-        duration_sec: 信号長（秒）
-        rng: NumPy 乱数生成器（seed 制御用）
-
-    Returns:
-        float64 正規化音響データ (-1.0 ~ 1.0)
-    """
-    n_samples = int(sample_rate_hz * duration_sec)
-    t = np.linspace(0, duration_sec, n_samples, dtype=np.float64)
-
-    if level == 0:
-        # Level 0: 正常。環境ノイズのみ。
-        signal = rng.normal(0, 0.02, n_samples).astype(np.float64)
-
-    elif level == 1:
-        # Level 1: 微小漏水。800〜1200Hz の狭帯域トーン。
-        freq_hz = rng.uniform(800, 1200)
-        signal = 0.15 * np.sin(2 * np.pi * freq_hz * t)
-        # ノイズを微量混入
-        signal += rng.normal(0, 0.01, n_samples)
-
-    elif level == 2:
-        # Level 2: 進行性漏水。500〜1500Hz に複数トーン + 増幅。
-        signal = np.zeros(n_samples, dtype=np.float64)
-        for _ in range(3):
-            freq_hz = rng.uniform(500, 1500)
-            amplitude = rng.uniform(0.1, 0.2)
-            signal += amplitude * np.sin(2 * np.pi * freq_hz * t)
-        signal += rng.normal(0, 0.02, n_samples)
-
-    elif level == 3:
-        # Level 3: 大漏水。広帯域・大振幅。
-        signal = np.zeros(n_samples, dtype=np.float64)
-        for _ in range(5):
-            freq_hz = rng.uniform(200, 3000)
-            amplitude = rng.uniform(0.15, 0.3)
-            signal += amplitude * np.sin(2 * np.pi * freq_hz * t)
-        signal += rng.normal(0, 0.05, n_samples)
-
-    else:
-        raise ValueError(f"不正な深刻度: {level}。0-3 を指定してください")
-
-    # クリッピング
-    signal = np.clip(signal, -1.0, 1.0)
-    return signal
+    """漏水レベルごとの疑似PCM16モノラル信号を生成する。"""
+    _validate_signal_options(level, sample_rate_hz, duration_sec)
+    rng = np.random.default_rng(seed)
+    t = _time_axis(sample_rate_hz, duration_sec)
+    waveform = _compose_waveform(level, t, rng, sample_rate_hz)
+    return np.clip(waveform * INT16_MAX, -32768, 32767).astype(np.int16)
 
 
-def encode_pcm16(samples: np.ndarray) -> str:
-    """
-    float64 信号を PCM16 WAV エンコード → Base64 文字列に変換する。
-    """
-    # float64 → int16
-    pcm16 = (samples * np.iinfo(np.int16).max).astype(np.int16)
-
-    # WAV フォーマットで出力（モノラル）
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(SAMPLE_RATE_HZ)
-        wav_file.writeframes(pcm16.tobytes())
-
-    # Base64 エンコード
-    wav_buffer.seek(0)
-    return base64.b64encode(wav_buffer.read()).decode("ascii")
+def encode_audio(signal: np.ndarray) -> str:
+    """PCM16 little-endian raw bytesをBase64文字列へ変換する。"""
+    pcm_bytes = signal.astype("<i2", copy=False).tobytes()
+    return base64.b64encode(pcm_bytes).decode("ascii")
 
 
-def send_telemetry(
+def load_hydrants(path: Path = DEFAULT_HYDRANTS_PATH) -> list[Hydrant]:
+    """デモ用消火栓マスタを読み込む。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HydrantDataError(f"hydrants.json が見つかりません: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise HydrantDataError(f"hydrants.json が壊れています: {path}") from exc
+
+    if not isinstance(data, list):
+        raise HydrantDataError("hydrants.json は配列である必要があります")
+
+    for index, entry in enumerate(data):
+        if not isinstance(entry, dict):
+            raise HydrantDataError(
+                f"hydrants.json の要素[{index}]はオブジェクトである必要があります"
+            )
+        missing_keys = [key for key in REQUIRED_HYDRANT_KEYS if key not in entry]
+        if missing_keys:
+            raise HydrantDataError(
+                f"hydrants.json の要素[{index}]に必須キーがありません: {missing_keys}"
+            )
+    return data
+
+
+def find_hydrant(hydrants: list[Hydrant], hydrant_id: str) -> Hydrant:
+    """消火栓IDから1件を選ぶ。"""
+    for hydrant in hydrants:
+        if hydrant.get("hydrant_id") == hydrant_id:
+            return hydrant
+    raise HydrantNotFoundError(f"指定された hydrant が見つかりません: {hydrant_id}")
+
+
+def build_payload(
+    hydrant: Hydrant,
+    signal: np.ndarray,
+    sample_rate_hz: int = DEFAULT_SAMPLE_RATE_HZ,
+    duration_sec: float = DEFAULT_DURATION_SEC,
+    recorded_at: datetime | None = None,
+    battery_pct: int | None = 87,
+) -> Payload:
+    """BE-1のTelemetryRequestに一致するpayloadを組み立てる。"""
+    timestamp = recorded_at or datetime.now(timezone.utc)
+    payload: Payload = {
+        "sensor_id": hydrant["sensor_id"],
+        "hydrant_id": hydrant["hydrant_id"],
+        "recorded_at": timestamp.isoformat(),
+        "location": {
+            "latitude": hydrant["latitude"],
+            "longitude": hydrant["longitude"],
+        },
+        "sample_rate_hz": sample_rate_hz,
+        "duration_sec": duration_sec,
+        "audio_base64": encode_audio(signal),
+        "battery_pct": battery_pct,
+    }
+    return payload
+
+
+def send_telemetry(url: str, payload: Payload, timeout_sec: float = 10.0) -> dict[str, Any]:
+    """Telemetry APIへ1件送信する。テストでは差し替え可能。"""
+    try:
+        response = requests.post(url, json=payload, timeout=timeout_sec)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as exc:
+        raise TelemetrySendError(f"Telemetry API への送信に失敗しました: {exc}") from exc
+    except ValueError as exc:
+        raise TelemetrySendError("Telemetry API のレスポンスJSONを解読できません") from exc
+
+
+def _validate_run_options(count: int, interval_sec: float) -> None:
+    if count <= 0:
+        raise ValueError("count must be greater than 0")
+    if interval_sec < 0:
+        raise ValueError("interval must be 0 or greater")
+
+
+def run_simulation(
     level: int,
     count: int,
     interval_sec: float,
-    hydrant: dict | None,
-    endpoint_url: str,
-    seed: int | None,
-) -> None:
-    """テレメトリを count 回送信する。"""
-    # seed の初期化（未指定なら DEFAULT_SEED）
-    actual_seed = seed if seed is not None else DEFAULT_SEED
-    rng = np.random.default_rng(actual_seed)
+    hydrant_id: str,
+    url: str,
+    seed: int | None = None,
+    hydrants_path: Path = DEFAULT_HYDRANTS_PATH,
+    post_func: PostFunc = send_telemetry,
+    sample_rate_hz: int = DEFAULT_SAMPLE_RATE_HZ,
+    duration_sec: float = DEFAULT_DURATION_SEC,
+) -> list[dict[str, Any]]:
+    """指定回数分の疑似音響データを生成し、順に送信する。"""
+    _validate_signal_options(level, sample_rate_hz, duration_sec)
+    _validate_run_options(count, interval_sec)
+    hydrant = find_hydrant(load_hydrants(hydrants_path), hydrant_id)
 
-    hydrants_list = load_hydrants()
-
-    for i in range(count):
-        # 送信先ハイドラントを決定
-        if hydrant:
-            target = hydrant
-        else:
-            target = hydrants_list[i % len(hydrants_list)]
-
-        # シグナル生成
-        signal = generate_signal(level, SAMPLE_RATE_HZ, DURATION_SEC, rng)
-        audio_base64 = encode_pcm16(signal)
-
-        # テレメトリペイロード
-        now = datetime.now(timezone.utc)
-        payload = {
-            "sensor_id": target["sensor_id"],
-            "hydrant_id": target["hydrant_id"],
-            "recorded_at": (now - timedelta(seconds=1)).isoformat(),
-            "location": {
-                "latitude": target["latitude"],
-                "longitude": target["longitude"],
-            },
-            "sample_rate_hz": SAMPLE_RATE_HZ,
-            "duration_sec": DURATION_SEC,
-            "audio_base64": audio_base64,
-            "battery_pct": 85,
-        }
-
-        # POST 送信
-        try:
-            response = requests.post(endpoint_url, json=payload, timeout=10)
-            status = "✓" if response.status_code == 200 else "✗"
-            print(
-                f"{status} [{i+1}/{count}] {target['hydrant_id']} "
-                f"(Level {level}) → {response.status_code}"
-            )
-            if response.status_code != 200:
-                print(f"  応答: {response.text[:200]}")
-        except requests.RequestException as e:
-            print(
-                f"✗ [{i+1}/{count}] {target['hydrant_id']} "
-                f"(Level {level}) → 通信エラー: {e}",
-                file=sys.stderr,
-            )
-
-        # 次回送信の遅延
-        if i < count - 1 and interval_sec > 0:
+    results: list[dict[str, Any]] = []
+    for index in range(count):
+        signal_seed = None if seed is None else seed + index
+        signal = generate_signal(level, sample_rate_hz, duration_sec, seed=signal_seed)
+        payload = build_payload(hydrant, signal, sample_rate_hz, duration_sec)
+        results.append(post_func(url, payload, 10.0))
+        if index < count - 1:
             time.sleep(interval_sec)
+    return results
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="疑似センサーからテレメトリを送信する"
-    )
-    parser.add_argument(
-        "--level",
-        type=int,
-        default=1,
-        choices=[0, 1, 2, 3],
-        help="深刻度レベル (デフォルト: 1)",
-    )
-    parser.add_argument(
-        "--count", type=int, default=1, help="送信回数 (デフォルト: 1)"
-    )
-    parser.add_argument(
-        "--interval",
-        type=float,
-        default=0,
-        help="送信間隔（秒） (デフォルト: 0)",
-    )
-    parser.add_argument(
-        "--hydrant",
-        type=str,
-        default=None,
-        help="固定送信先の消火栓 ID (未指定なら巡回)",
-    )
-    parser.add_argument(
-        "--url",
-        type=str,
-        default="http://localhost:8000/api/v1/telemetry",
-        help="テレメトリエンドポイント",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="乱数 seed (未指定なら {})".format(DEFAULT_SEED),
-    )
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="疑似センサーデータをtelemetry APIへ送信します。")
+    parser.add_argument("--level", type=int, choices=[0, 1, 2, 3], default=0)
+    parser.add_argument("--count", type=int, default=1)
+    parser.add_argument("--interval", type=float, default=1.0)
+    parser.add_argument("--hydrant", default="HYD-001")
+    parser.add_argument("--url", default="http://localhost:8000/api/v1/telemetry")
+    parser.add_argument("--seed", type=int, default=None)
+    return parser.parse_args(argv)
 
-    args = parser.parse_args()
 
-    # ハイドラントが指定されている場合は検証
-    target_hydrant = None
-    if args.hydrant:
-        hydrants_list = load_hydrants()
-        matches = [h for h in hydrants_list if h["hydrant_id"] == args.hydrant]
-        if not matches:
-            print(
-                f"エラー: ハイドラント '{args.hydrant}' が見つかりません",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        target_hydrant = matches[0]
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        results = run_simulation(
+            level=args.level,
+            count=args.count,
+            interval_sec=args.interval,
+            hydrant_id=args.hydrant,
+            url=args.url,
+            seed=args.seed,
+        )
+    except SimulationError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 2
 
-    print(f"送信開始: Level {args.level} × {args.count} 回")
-    send_telemetry(
-        level=args.level,
-        count=args.count,
-        interval_sec=args.interval,
-        hydrant=target_hydrant,
-        endpoint_url=args.url,
-        seed=args.seed,
-    )
-    print("送信完了")
+    print(f"[OK] {len(results)} telemetry payload(s) sent to {args.url}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
