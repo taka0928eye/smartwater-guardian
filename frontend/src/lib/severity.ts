@@ -36,10 +36,10 @@ export const SEVERITY_META: Record<SeverityLevel, SeverityMeta> = {
   },
   1: {
     level: 1,
-    label: "Level 1 微小漏水",
-    color: "#22c55e",
-    badgeClass: "bg-green-500/15 text-green-700",
-    accentClass: "border-green-200 text-green-700",
+    label: "Level 1 微小漏水（AI検知）",
+    color: "#84cc16",
+    badgeClass: "bg-lime-500/15 text-lime-700",
+    accentClass: "border-lime-200 text-lime-700",
   },
   2: {
     level: 2,

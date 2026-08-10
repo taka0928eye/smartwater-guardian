@@ -14,8 +14,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-# 漏水深刻度。1=微小漏水（経過観察）/ 2=進行性漏水（要点検）/ 3=管路破裂（緊急対応）
-SeverityLevel = Literal[1, 2, 3]
+# 漏水深刻度。0=正常 / 1=微小漏水（AI検知）/ 2=進行性漏水 / 3=管路破裂
+SeverityLevel = Literal[0, 1, 2, 3]
 
 # センサー由来の外部入力は暗黙の型強制を許さず、未知フィールドも拒否する。
 STRICT_INPUT_CONFIG = ConfigDict(strict=True, extra="forbid")

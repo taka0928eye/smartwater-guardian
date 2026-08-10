@@ -65,7 +65,7 @@ class SensorInfo(BaseModel):
 
     sensor_id: str
     hydrant_id: str
-    status: Literal["normal", "warning", "critical", "unknown"] = Field(
+    status: Literal["normal", "watch", "warning", "critical", "unknown"] = Field(
         description="監視状態（最新 severity から導出）"
     )
     location: GeoLocation

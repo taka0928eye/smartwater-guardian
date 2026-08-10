@@ -122,7 +122,7 @@ class TestListAlerts:
         assert body[0]["severity_level"] == 2
 
     def test_level_out_of_range_returns_422(self, client, store):
-        # SeverityLevel は Literal[1,2,3]。level=4 は 422 でなければならない
+        # SeverityLevel は Literal[0,1,2,3]。level=4 は 422 でなければならない
         response = client.get("/api/v1/alerts", params={"level": 4})
         assert response.status_code == 422
 
@@ -197,8 +197,10 @@ class TestListSensors:
         assert sns001["status"] == "critical"
         assert sns001["last_reading_at"]
 
-    def test_status_mapping_warning_and_normal(self, client, store):
-        # severity 2 → warning、severity 1 → normal の導出を確認
+    def test_status_mapping_watch_warning_normal(self, client, store):
+        # severity 2 → warning、severity 1 → watch、severity 0 → normal の導出を確認
+        # severity 0 (正常・異常なし)は入力スキーマでは不可（SeverityLevel[1,2,3]のみ）だが、
+        # 将来の拡張に備えてステータスマッピングが 0:normal をサポートする設計
         store.add(
             make_record(
                 "tlm_warn", sensor_id="SNS-009", severity_level=2, received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc)
@@ -206,13 +208,13 @@ class TestListSensors:
         )
         store.add(
             make_record(
-                "tlm_norm", sensor_id="SNS-010", severity_level=1, received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc)
+                "tlm_watch", sensor_id="SNS-010", severity_level=1, received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc)
             )
         )
         body = client.get("/api/v1/sensors").json()
         by_id = {item["sensor_id"]: item for item in body}
         assert by_id["SNS-009"]["status"] == "warning"
-        assert by_id["SNS-010"]["status"] == "normal"
+        assert by_id["SNS-010"]["status"] == "watch"
 
     def test_geojson_coordinates_are_lng_lat(self, client, store):
         seed_alerts(store)
