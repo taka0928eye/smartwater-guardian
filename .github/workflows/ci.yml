@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install Dependencies
@@ -29,7 +29,7 @@ jobs:
       - name: Verify Backend Routes & Imports
         run: |
           cd backend
-          python -c "import main; print([r.path for r in main.app.routes])"
+          python -c "import main; print([r.path for r in main.app.routes if hasattr(r, 'path')])"
 
       - name: Run Telemetry Verification Script
         run: |
@@ -52,7 +52,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
