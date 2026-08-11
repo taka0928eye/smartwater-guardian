@@ -147,3 +147,8 @@ Issue/ステージ参照（BE-x / FE-x）を添えること。 (affirmed 2026-08
 - 表示ラベルは承認済み表示文言を固定値とし、表示メタ（SEVERITY_META 等）の label とは分離する（色・accentClass のみ単一ソースを利用）。 (learned 2026-08-11) <!-- cid:application-design:c6 -->
 - 作業タスクはGitHubのISSUESを正とし、Unit Generationステージは実施しない（ユーザー指示 2026-08-11。Issue 単位でタスク分解が確定している場合は Units Generation を省略し、直接 Delivery Planning へ進む）。 (learned 2026-08-11) <!-- cid:units-generation:c1 -->
 - Delivery Planning ステージも実施しない（ユーザー指示 2026-08-11。GitHub Issue を参照し、タスク分解が Issue 単位で確定している場合は Units Generation に続き Delivery Planning も省略し、直接 Construction（Functional Design）へ進む）。 (learned 2026-08-11) <!-- cid:delivery-planning:c1 -->
+- ステージ本文の対象ファイルが Issue 記載の4ファイルに限定されていても、受入条件（`source == "fallback"` 等）を満たすための不足成果物（`data/repair_parts.json` 等）は、Q 回答に従い対象ファイルへ追加して BE-5 内で内包する。後続 Issue（OR-3 等）マージ時に委譲・強化へ切替可能な境界を保つ。 (learned 2026-08-11) <!-- cid:feasibility:c1 -->
+- ゲート付きステージでは、サマリー確認の質問ファイル編集（produces 成果物への書き込み）と人間ターンの順序に注意する。初回の質問回答（Q1）の後に produces ファイルを編集するとリビジョンバックストップが誤発火しうるため、質問ファイルの編集は最初の人間ターン前にまとめて行うか、成果物の書き込みと分離する。 (learned 2026-08-12) <!-- cid:approval-handoff:custom-backstop -->
+- 受入条件の件数・内容は一次ソース（GitHub Issue）を正とし、上流成果物（intent-statement / scope-document / intent-backlog 等）との乖離は次段の成果物（イニシアティブ・ブリーフ・phase-check 等）で追跡可能に明記して引き継ぐ。 (learned 2026-08-11) <!-- cid:approval-handoff:c7 -->
+- フォールバック WorkOrder はワークオーダーキャッシュに保存しない（一時的障害が telemetry_id に永続化して LLM 出力を実演できないのを防ぐ）。受入条件の「2回目以降はキャッシュ」は LLM 成功生成に適用する。 (learned 2026-08-11) <!-- cid:code-generation:c11 -->
+- キャッシュの並行安全性は生成処理全体を asyncio.Lock で直列化するシンプル構成を優先（get / 検証 / set の精密なクリティカル区間より）。デモスコープの単一ワーカーで許容する。 (learned 2026-08-11) <!-- cid:code-generation:c12 -->

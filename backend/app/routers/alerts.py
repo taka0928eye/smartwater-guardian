@@ -2,15 +2,18 @@
 
 GET /api/v1/alerts で解析済みテレメトリをアラートとして一覧・詳細参照できる。
 データは ``app.store`` のインメモリストアを参照する（本番用 DB は CLAUDE.md §3
-で構築しない）。``work-order`` は BE-5（補修部材選定・見積自動起票）のスタブで、
-実在 ID には 501 を返す。
+で構築しない）。``work-order`` は BE-5（補修部材選定・見積自動起票）で実装済みで、
+LLM 呼び出しは ``app.services.orcarouter`` にカプセル化する（CLAUDE.md §5.3）。
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.dependencies import HttpClientDep
 from app.schemas.alert import AlertDetail, AlertSummary, PipeInfo
+from app.schemas.work_order import WorkOrder
+from app.services import orcarouter
 from app.services.ledger import find_pipe_by_hydrant, get_pipe_age
 from app.store import StoredTelemetry, get_store
 
@@ -94,20 +97,28 @@ def get_alert_detail(telemetry_id: str) -> AlertDetail:
 
 @router.post(
     "/alerts/{telemetry_id}/work-order",
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
-    summary="工事発注書の自動起票（BE-5 スタブ）",
+    response_model=WorkOrder,
+    status_code=status.HTTP_200_OK,
+    summary="工事発注書の自動起票（BE-5）",
 )
-def create_work_order(telemetry_id: str) -> None:
-    """BE-5（補修部材選定・見積自動起票）のスタブ。
+async def create_work_order(telemetry_id: str, client: HttpClientDep) -> WorkOrder:
+    """指定したテレメトリの補修部材選定・概算見積・作業指示書を自動起票する。
 
-    実在する ID には 501、存在しない ID には 404 を返す。
+    BE-5 実装。LLM 呼び出しは ``services/orcarouter.py`` にカプセル化する
+    （CLAUDE.md §5.3）。API キー未設定時はフォールバック応答（source == "fallback"）を
+    返す。存在しない ID は 404（クライアント起因で 500 にしない）。
     """
-    if get_store().get(telemetry_id) is None:
+    record = get_store().get(telemetry_id)
+    if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"テレメトリ {telemetry_id} は見つかりません",
         )
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="BE-5 未実装のため自動起票は利用できません",
+    alert = AlertDetail(
+        **_to_alert_summary(record).model_dump(),
+        location=record.location,
+        analysis=record.analysis,
+        pipe_info=_build_pipe_info(record.hydrant_id),
     )
+    pipe = find_pipe_by_hydrant(record.hydrant_id)
+    return await orcarouter.create_work_order(client, telemetry_id, alert, pipe)

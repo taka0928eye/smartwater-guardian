@@ -1,0 +1,249 @@
+{
+  "entries": {
+    "ductile_iron": {
+      "75": {
+        "parts": [
+          { "name": "ダクタイル鋳鉄管 継手", "spec": "A形 75mm", "quantity": 2, "unit_price_yen": 9000, "subtotal_yen": 18000 },
+          { "name": "ゴム輪", "spec": "75mm用", "quantity": 2, "unit_price_yen": 800, "subtotal_yen": 1600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品のダクタイル鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "100": {
+        "parts": [
+          { "name": "ダクタイル鋳鉄管 継手", "spec": "A形 100mm", "quantity": 2, "unit_price_yen": 11000, "subtotal_yen": 22000 },
+          { "name": "ゴム輪", "spec": "100mm用", "quantity": 2, "unit_price_yen": 900, "subtotal_yen": 1800 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品のダクタイル鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "150": {
+        "parts": [
+          { "name": "ダクタイル鋳鉄管 継手", "spec": "A形 150mm", "quantity": 2, "unit_price_yen": 15000, "subtotal_yen": 30000 },
+          { "name": "ゴム輪", "spec": "150mm用", "quantity": 2, "unit_price_yen": 1200, "subtotal_yen": 2400 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品のダクタイル鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.5
+      },
+      "200": {
+        "parts": [
+          { "name": "ダクタイル鋳鉄管 継手", "spec": "K形 200mm", "quantity": 2, "unit_price_yen": 20000, "subtotal_yen": 40000 },
+          { "name": "ゴム輪", "spec": "200mm用", "quantity": 2, "unit_price_yen": 1800, "subtotal_yen": 3600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品のダクタイル鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 3,
+        "estimated_duration_hours": 4.0
+      }
+    },
+    "cast_iron": {
+      "75": {
+        "parts": [
+          { "name": "鋳鉄管 継手", "spec": "A形 75mm", "quantity": 2, "unit_price_yen": 8500, "subtotal_yen": 17000 },
+          { "name": "鉛状ガスケット", "spec": "75mm用", "quantity": 2, "unit_price_yen": 700, "subtotal_yen": 1400 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品の鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "100": {
+        "parts": [
+          { "name": "鋳鉄管 継手", "spec": "A形 100mm", "quantity": 2, "unit_price_yen": 10000, "subtotal_yen": 20000 },
+          { "name": "鉛状ガスケット", "spec": "100mm用", "quantity": 2, "unit_price_yen": 800, "subtotal_yen": 1600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品の鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "150": {
+        "parts": [
+          { "name": "鋳鉄管 継手", "spec": "A形 150mm", "quantity": 2, "unit_price_yen": 14000, "subtotal_yen": 28000 },
+          { "name": "鉛状ガスケット", "spec": "150mm用", "quantity": 2, "unit_price_yen": 1100, "subtotal_yen": 2200 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品の鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.5
+      },
+      "200": {
+        "parts": [
+          { "name": "鋳鉄管 継手", "spec": "K形 200mm", "quantity": 2, "unit_price_yen": 19000, "subtotal_yen": 38000 },
+          { "name": "鉛状ガスケット", "spec": "200mm用", "quantity": 2, "unit_price_yen": 1700, "subtotal_yen": 3400 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、現場状況を確認する。",
+          "新品の鋳鉄管継手に交換し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 3,
+        "estimated_duration_hours": 4.0
+      }
+    },
+    "pvc": {
+      "75": {
+        "parts": [
+          { "name": "塩ビ管 継手", "spec": "TS 75mm", "quantity": 2, "unit_price_yen": 5000, "subtotal_yen": 10000 },
+          { "name": "接着剤", "spec": "塩ビ管用", "quantity": 1, "unit_price_yen": 1500, "subtotal_yen": 1500 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、切断面を整える。",
+          "新品の塩ビ管継手を接着し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 2.5
+      },
+      "100": {
+        "parts": [
+          { "name": "塩ビ管 継手", "spec": "TS 100mm", "quantity": 2, "unit_price_yen": 7000, "subtotal_yen": 14000 },
+          { "name": "接着剤", "spec": "塩ビ管用", "quantity": 1, "unit_price_yen": 1500, "subtotal_yen": 1500 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、切断面を整える。",
+          "新品の塩ビ管継手を接着し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 2.5
+      },
+      "150": {
+        "parts": [
+          { "name": "塩ビ管 継手", "spec": "TS 150mm", "quantity": 2, "unit_price_yen": 10000, "subtotal_yen": 20000 },
+          { "name": "接着剤", "spec": "塩ビ管用", "quantity": 1, "unit_price_yen": 1500, "subtotal_yen": 1500 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、切断面を整える。",
+          "新品の塩ビ管継手を接着し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "200": {
+        "parts": [
+          { "name": "塩ビ管 継手", "spec": "TS 200mm", "quantity": 2, "unit_price_yen": 15000, "subtotal_yen": 30000 },
+          { "name": "接着剤", "spec": "塩ビ管用", "quantity": 2, "unit_price_yen": 1500, "subtotal_yen": 3000 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、切断面を整える。",
+          "新品の塩ビ管継手を接着し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 3,
+        "estimated_duration_hours": 3.5
+      }
+    },
+    "steel": {
+      "75": {
+        "parts": [
+          { "name": "鋼管 継手", "spec": "ねじ込み 75mm", "quantity": 2, "unit_price_yen": 7000, "subtotal_yen": 14000 },
+          { "name": "シールテープ", "spec": "配管用", "quantity": 2, "unit_price_yen": 300, "subtotal_yen": 600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、ねじ部を確認する。",
+          "新品の鋼管継手をねじ込み、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 2.5
+      },
+      "100": {
+        "parts": [
+          { "name": "鋼管 継手", "spec": "ねじ込み 100mm", "quantity": 2, "unit_price_yen": 9500, "subtotal_yen": 19000 },
+          { "name": "シールテープ", "spec": "配管用", "quantity": 2, "unit_price_yen": 300, "subtotal_yen": 600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、ねじ部を確認する。",
+          "新品の鋼管継手をねじ込み、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 2.5
+      },
+      "150": {
+        "parts": [
+          { "name": "鋼管 継手", "spec": "ねじ込み 150mm", "quantity": 2, "unit_price_yen": 13000, "subtotal_yen": 26000 },
+          { "name": "シールテープ", "spec": "配管用", "quantity": 2, "unit_price_yen": 300, "subtotal_yen": 600 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、ねじ部を確認する。",
+          "新品の鋼管継手をねじ込み、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 2,
+        "estimated_duration_hours": 3.0
+      },
+      "200": {
+        "parts": [
+          { "name": "鋼管 継手", "spec": "溶接 200mm", "quantity": 2, "unit_price_yen": 18000, "subtotal_yen": 36000 },
+          { "name": "溶接棒", "spec": "被覆アーク", "quantity": 4, "unit_price_yen": 500, "subtotal_yen": 2000 }
+        ],
+        "work_steps": [
+          "漏水箇所を特定し、止水弁を閉止する。",
+          "損傷部材を撤去し、溶接面を整える。",
+          "新品の鋼管継手を溶接し、接合する。",
+          "通水試験を実施し、漏水がないことを確認する。"
+        ],
+        "required_workers": 3,
+        "estimated_duration_hours": 4.0
+      }
+    }
+  },
+  "default": {
+    "parts": [
+      { "name": "配管用継手（汎用）", "spec": "現地確認後選定", "quantity": 2, "unit_price_yen": 10000, "subtotal_yen": 20000 }
+    ],
+    "work_steps": [
+      "漏水箇所を特定し、止水弁を閉止する。",
+      "損傷部材を撤去し、配管状況を確認する。",
+      "適切な部材で交換し、接合する。",
+      "通水試験を実施し、漏水がないことを確認する。"
+    ],
+    "required_workers": 2,
+    "estimated_duration_hours": 4.0
+  }
+}

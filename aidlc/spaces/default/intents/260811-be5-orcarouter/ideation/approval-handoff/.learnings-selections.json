@@ -1,0 +1,19 @@
+{
+  "stage_slug": "approval-handoff",
+  "selections": [
+    {
+      "candidate_id": "c7",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "受入条件の件数・内容は一次ソース（GitHub Issue）を正とし、上流成果物（intent-statement / scope-document / intent-backlog 等）との乖離は次段の成果物（イニシアティブ・ブリーフ・phase-check 等）で追跡可能に明記して引き継ぐ。"
+    },
+    {
+      "candidate_id": "custom-backstop",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "ゲート付きステージでは、サマリー確認の質問ファイル編集（produces 成果物への書き込み）と人間ターンの順序に注意する。初回の質問回答（Q1）の後に produces ファイルを編集するとリビジョンバックストップが誤発火しうるため、質問ファイルの編集は最初の人間ターン前にまとめて行うか、成果物の書き込みと分離する。"
+    }
+  ]
+}

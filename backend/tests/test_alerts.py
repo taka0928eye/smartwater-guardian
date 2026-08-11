@@ -25,6 +25,20 @@ from app.store import StoredTelemetry
 N_SPECTRUM = 128
 
 
+@pytest.fixture(autouse=True)
+def _clear_work_order_cache():
+    """BE-5: orcarouter のワークオーダーキャッシュを各テスト前に空にする。
+
+    セッション共有の TestClient 経由で同一 telemetry_id の POST が走っても、
+    前のテストのキャッシュが残らないように分離する。
+    """
+    from app.services.orcarouter import clear_work_order_cache
+
+    clear_work_order_cache()
+    yield
+    clear_work_order_cache()
+
+
 def make_record(
     telemetry_id: str,
     sensor_id: str = "SNS-001",
@@ -177,17 +191,46 @@ class TestAlertDetail:
         assert response.status_code == 404
 
 
-class TestWorkOrderStub:
-    """POST /api/v1/alerts/{telemetry_id}/work-order（BE-5 スタブ）。"""
+class TestWorkOrder:
+    """POST /api/v1/alerts/{telemetry_id}/work-order（BE-5 実装後）。
 
-    def test_existing_id_returns_501(self, client, store):
+    API キー未設定環境（monkeypatch.delenv で保証）で実ネットワーク呼び出しを避けつつ、
+    フォールバック応答（source == "fallback"）を検証する。
+    """
+
+    def test_existing_id_returns_fallback_work_order(self, client, store, monkeypatch):
+        monkeypatch.delenv("ORCAROUTER_API_KEY", raising=False)
         ids = seed_alerts(store)
         response = client.post(f"/api/v1/alerts/{ids[0]}/work-order")
-        assert response.status_code == 501
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source"] == "fallback"
+        assert body["cost_yen"] == 0.0
+        assert body["parts"]
+        assert body["work_steps"]
+        assert body["notification_text"]
 
     def test_unknown_id_returns_404(self, client, store):
         response = client.post("/api/v1/alerts/tlm_not_exist/work-order")
         assert response.status_code == 404
+
+    def test_same_id_second_post_returns_same_content(self, client, store, monkeypatch):
+        """同一 ID への2回目の POST も同じ内容を返す（エンドポイントの冪等性）。
+
+        API キー未設定のためフォールバックは決定的（同じ部材マスタから毎回同じ内容）。
+        キャッシュの実証（LLM 再呼び出しなし）はサービス級 T9（test_orcarouter.py の
+        ``handler.calls == 1``）が担うため、ルーター級では内容一致のみを検証する（Info #6）。
+        """
+        monkeypatch.delenv("ORCAROUTER_API_KEY", raising=False)
+        ids = seed_alerts(store)
+        first = client.post(f"/api/v1/alerts/{ids[0]}/work-order")
+        second = client.post(f"/api/v1/alerts/{ids[0]}/work-order")
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["source"] == "fallback"
+        assert second.json()["source"] == "fallback"
+        # フォールバックは決定的なため2回とも同一内容になる
+        assert first.json()["parts"] == second.json()["parts"]
 
 
 class TestListSensors:
