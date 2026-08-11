@@ -1,0 +1,37 @@
+{
+  "stage_slug": "code-generation",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "単一イテレーションのダイレクティブで unit-of-work が存在しないため、`{unit-name}` を `be4-ledger` に解決して記録パスを決定。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "「モジュールロード時のキャッシュ」は store.py の `@lru_cache(maxsize=1)` 先例に合わせ、初回呼び出し時に読み込んで以後キャッシュする設計と解釈（「リクエスト毎の再読み込みをしない」要件を満たし、テスト分離も壊さない）。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "store.py は欠損を RuntimeError で包むが、受け入れ条件が FileNotFoundError / ValueError の明示指定の場合は、ledger.py のようにそのまま伝播・変換する。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c4",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "find_nearest_pipe は路線の LineString 頂点との Haversine 最小距離で判定する（路線全体の中心点方式より、消火栓位置に近い頂点を考慮でき直感的）。",
+      "source": "orchestrator"
+    }
+  ]
+}

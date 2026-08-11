@@ -10,10 +10,29 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.schemas.alert import AlertDetail, AlertSummary
+from app.schemas.alert import AlertDetail, AlertSummary, PipeInfo
+from app.services.ledger import find_pipe_by_hydrant, get_pipe_age
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])
+
+
+def _build_pipe_info(hydrant_id: str) -> PipeInfo | None:
+    """消火栓IDから配管台帳（BE-4）を照合し、PipeInfo を組み立てる。
+
+    台帳に該当しない hydrant_id は None（フロントは null を許容する設計）。
+    """
+    pipe = find_pipe_by_hydrant(hydrant_id)
+    if pipe is None:
+        return None
+    return PipeInfo(
+        pipe_id=pipe.pipe_id,
+        material=pipe.material,
+        diameter_mm=pipe.diameter_mm,
+        installed_year=pipe.installed_year,
+        burial_depth_m=pipe.burial_depth_m,
+        age_years=get_pipe_age(pipe.installed_year),
+    )
 
 
 def _to_alert_summary(record: StoredTelemetry) -> AlertSummary:
@@ -69,7 +88,7 @@ def get_alert_detail(telemetry_id: str) -> AlertDetail:
         **_to_alert_summary(record).model_dump(),
         location=record.location,
         analysis=record.analysis,
-        pipe_info=None,  # BE-4（配管台帳）実装までは常に null
+        pipe_info=_build_pipe_info(record.hydrant_id),  # BE-4: 配管台帳から照合
     )
 
 

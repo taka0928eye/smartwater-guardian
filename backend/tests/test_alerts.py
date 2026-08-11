@@ -135,7 +135,7 @@ class TestListAlerts:
 class TestAlertDetail:
     """GET /api/v1/alerts/{telemetry_id}。"""
 
-    def test_returns_detail_with_spectrum_and_null_pipe(self, client, store):
+    def test_returns_detail_with_spectrum_and_pipe_info(self, client, store):
         ids = seed_alerts(store)
         response = client.get(f"/api/v1/alerts/{ids[0]}")
         assert response.status_code == 200
@@ -146,8 +146,29 @@ class TestAlertDetail:
         assert "location" in body
         assert body["location"]["latitude"] == 35.7019
         assert len(body["analysis"]["spectrum"]) == N_SPECTRUM
-        # BE-4 未実装のため pipe_info は null
-        assert body["pipe_info"] is None
+        # A5: BE-4 実装により HYD-001 の pipe_info に P-001 の配管情報が入る
+        pipe_info = body["pipe_info"]
+        assert pipe_info is not None
+        assert pipe_info["pipe_id"] == "P-001"
+        assert pipe_info["material"] == "ductile_iron"
+        assert pipe_info["diameter_mm"] == 150
+        assert pipe_info["installed_year"] == 1998
+        assert pipe_info["burial_depth_m"] == 1.2
+        assert pipe_info["age_years"] == 28  # D-5: 2026 - 1998
+
+    def test_unknown_hydrant_detail_keeps_pipe_info_null(self, client, store):
+        # 台帳に存在しない hydrant_id のレコードでは pipe_info は null のまま
+        store.add(
+            make_record(
+                "tlm_hyd_999",
+                sensor_id="SNS-999",
+                hydrant_id="HYD-999",
+                severity_level=1,
+            )
+        )
+        response = client.get("/api/v1/alerts/tlm_hyd_999")
+        assert response.status_code == 200
+        assert response.json()["pipe_info"] is None
 
     def test_unknown_id_returns_404_not_500(self, client, store):
         response = client.get("/api/v1/alerts/tlm_not_exist")

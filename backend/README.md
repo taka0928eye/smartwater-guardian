@@ -124,7 +124,6 @@ venv\Scripts\python.exe -m pytest tests/ -v
 ```powershell
 # ターミナル1: サーバー起動
 cd backend
-venv\Scripts\uvicorn.exe main:app --reload --port 8000
 
 # ターミナル2: E2E検証
 cd backend

@@ -1,0 +1,29 @@
+{
+  "stage_slug": "approval-handoff",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "最小スコープで scope-document / intent-backlog が存在しなくても、イニシアティブ・ブリーフは既存成果物とリポジトリ実態で整合を担保できる。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "ステージの質問群のうちスコープに該当しない質問（市場検証・モックアップ・モブ編成等）は省略し、実決定に必要な質問のみ提示する。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "pipe_id 等の識別子は Issue 例示よりマスタ（hydrants.json）と整合する形式を優先する（変換不要で照合信頼性が高い）。",
+      "source": "orchestrator"
+    }
+  ]
+}

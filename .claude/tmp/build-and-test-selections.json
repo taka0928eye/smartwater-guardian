@@ -1,0 +1,37 @@
+{
+  "stage_slug": "build-and-test",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "Minimal テスト戦略では統合・性能・セキュリティのテスト指示書はスキップする（produces リストは最大集合で戦略により絞られる）。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "バックエンド Python のビルドは「依存導入の確認 + アプリ import スモークテスト + 検証スクリプト実行」で定義する（コンパイル工程がないため）。フロントエンドは変更対象外なら対象外と明記する。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "pytest は `venv/Scripts/pytest.exe` でなく `venv/Scripts/python.exe -m pytest` で実行する（pytest.exe は cwd を sys.path に挿入せず `app` を import できないため）。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c4",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "Minimal 戦略で統合テスト指示書を生成しない判断は、TestClient のエンドポイントテスト（test_alerts.py）が統合境界を実質カバーしていることを根拠にする。",
+      "source": "orchestrator"
+    }
+  ]
+}

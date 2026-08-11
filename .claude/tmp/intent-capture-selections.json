@@ -1,0 +1,13 @@
+{
+  "stage_slug": "intent-capture",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "スコープ境界（対象ファイル・配線範囲）はユーザー確認で確定する。",
+      "source": "orchestrator"
+    }
+  ]
+}
