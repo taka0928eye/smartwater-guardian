@@ -1,7 +1,8 @@
 """プロンプト生成およびレスポンス解析サービス."""
 
 import json
-from typing import Any, Dict
+from typing import Any
+
 from app.schemas.work_order import WorkOrder
 
 # 原価5フィールド（LLMに入力させない除外キー定数）
@@ -22,7 +23,7 @@ SYSTEM_PROMPT = """あなたは日本の水道事業体の補修設計担当エ�
 """
 
 
-def get_clean_work_order_schema() -> Dict[str, Any]:
+def get_clean_work_order_schema() -> dict[str, Any]:
     """WorkOrderモデルから原価5フィールドを除外したJSON Schemaを取得する."""
     schema = WorkOrder.model_json_schema()
     properties = schema.get("properties", {})
@@ -41,7 +42,7 @@ def build_system_prompt() -> str:
     )
 
 
-def build_user_prompt(telemetry_data: Dict[str, Any], pipe_info: Dict[str, Any]) -> str:
+def build_user_prompt(telemetry_data: dict[str, Any], pipe_info: dict[str, Any]) -> str:
     """ユーザープロンプトを構築する（スペクトル128点はコスト削減のため除外）."""
     clean_telemetry = {
         k: v for k, v in telemetry_data.items() if k not in ["spectrum", "raw_audio"]
@@ -59,7 +60,7 @@ def build_user_prompt(telemetry_data: Dict[str, Any], pipe_info: Dict[str, Any])
     )
 
 
-def extract_json_from_response(response_text: str) -> Dict[str, Any]:
+def extract_json_from_response(response_text: str) -> dict[str, Any]:
     """LLMの応答テキストからコードフェンスを除去してJSONを抽出する."""
     text = response_text.strip()
 
@@ -77,6 +78,8 @@ def extract_json_from_response(response_text: str) -> Dict[str, Any]:
         text = text[start : end + 1]
 
     try:
-        return json.loads(text)
+        res = json.loads(text)
     except Exception as e:
         raise ValueError(f"有効なJSON文字列をパースできませんでした: {e}") from e
+
+    return res
