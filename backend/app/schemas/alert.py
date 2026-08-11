@@ -29,7 +29,7 @@ class AlertSummary(BaseModel):
     telemetry_id: str = Field(description="テレメトリ識別子")
     sensor_id: str = Field(description="センサー識別子")
     hydrant_id: str = Field(description="消火栓識別子")
-    severity_level: SeverityLevel = Field(description="深刻度 Level 1〜3")
+    severity_level: SeverityLevel = Field(description="深刻度 Level 0〜3")
     leak_confidence: float = Field(ge=0.0, le=100.0, description="漏水確信度（%）")
     detected_at: datetime = Field(description="検知時刻（サーバー受信時刻）")
 

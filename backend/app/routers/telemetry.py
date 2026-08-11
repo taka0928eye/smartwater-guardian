@@ -34,10 +34,13 @@ router = APIRouter(prefix="/api/v1", tags=["telemetry"])
 LEAK_BAND_HZ = (500.0, 1500.0)
 # FE-4 が描画するスペクトル点数（PSD をダウンサンプルする）
 N_SPECTRUM = 128
-# 帯域エネルギー比がこれ未満なら卓越ピークなしとして severity 1
+# 帯域エネルギー比がこれ未満なら卓越ピークなしとして severity 0 または 1 に振り分ける
 SEVERITY_BAND_RATIO_MIN = 0.20
 # RMS 振幅の仮閾値（BE-2 の実振幅が確定したら再調整が必要）
 SEVERITY_RMS_THRESHOLDS = {3: 0.25, 2: 0.08}
+# 帯域内に卓越ピークが無い場合、この振幅未満なら「正常」（severity 0）と判定する仮閾値。
+# 無音（rms=0）はこの典型例。閾値以上は帯域外ノイズとして severity 1（経過観察）のまま扱う。
+SEVERITY_RMS_THRESHOLD_NORMAL_MAX = 0.02
 
 
 def _decode_pcm16(audio_base64: str) -> np.ndarray:
@@ -95,12 +98,14 @@ def _band_energy_ratio(
 
 
 def _classify_severity(rms: float, band_ratio: float) -> SeverityLevel:
-    """帯域エネルギー比 + RMS 振幅の2因子で深刻度 Level 1〜3 を仮判定する。
+    """帯域エネルギー比 + RMS 振幅の2因子で深刻度 Level 0〜3 を仮判定する。
 
     閾値は BE-2 の実振幅が未確定のため仮値。BE-3 の本実装が入れば不要になる。
     """
     if band_ratio < SEVERITY_BAND_RATIO_MIN:
-        return 1  # 漏水帯域に卓越ピークが無い → 正常/微小
+        if rms < SEVERITY_RMS_THRESHOLD_NORMAL_MAX:
+            return 0  # 漏水帯域に卓越ピークが無く、振幅も小さい → 正常
+        return 1  # 漏水帯域に卓越ピークは無いが振幅はある → 微小漏水（経過観察）
     if rms >= SEVERITY_RMS_THRESHOLDS[3]:
         return 3
     if rms >= SEVERITY_RMS_THRESHOLDS[2]:

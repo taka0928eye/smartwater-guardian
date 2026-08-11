@@ -67,15 +67,33 @@ vi.mock("@/lib/api", () => ({
     isEstimate: true,
     assumptionDoc: "docs/business-model.md",
   }),
+  // FE-3/FE-5 統合: DashboardClient が useSensorPolling 経由で呼ぶ。デフォルトで
+  // FEATURES の値を返す（ポーリング同期の基本ケースをカバー）。
+  fetchSensorsGeoJson: vi.fn().mockResolvedValue({
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          sensorId: "SNS-001",
+          status: "normal",
+          severityLevel: 0,
+          lastReadingAt: null,
+        },
+        geometry: { type: "Point", coordinates: [139.7444, 35.7019] },
+      },
+    ],
+  }),
 }));
 
 // --- API モックの参照（vi.mock の後で取得する） ---
-import { fetchAlertDetail, fetchAlerts, fetchKpiSummary } from "@/lib/api";
+import { fetchAlertDetail, fetchAlerts, fetchKpiSummary, fetchSensorsGeoJson } from "@/lib/api";
 import DashboardClient from "../DashboardClient";
 
 const mockedFetchAlerts = vi.mocked(fetchAlerts);
 const mockedFetchAlertDetail = vi.mocked(fetchAlertDetail);
 const mockedFetchKpiSummary = vi.mocked(fetchKpiSummary);
+const mockedFetchSensorsGeoJson = vi.mocked(fetchSensorsGeoJson);
 
 /** DashboardClient に渡す最小の GeoJSON（FE-3 型）。 */
 const FEATURES: SensorFeatureCollection = {
@@ -301,5 +319,95 @@ describe("DashboardClient", () => {
 
     expect(screen.getByTestId("kpi-skeleton")).toBeInTheDocument();
     expect(screen.queryByTestId("kpi-card-sensors")).not.toBeInTheDocument();
+  });
+
+  it("地図マーカーが同じ5秒間隔でポーリングされ、漏水判定の新しい色が反映される", async () => {
+    vi.useFakeTimers();
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    // FEATURES（Level 1）で初回ポーリング、その後 Level 3 の更新を返す
+    mockedFetchSensorsGeoJson
+      .mockResolvedValueOnce(FEATURES)
+      .mockResolvedValueOnce({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: {
+              sensorId: "SNS-001",
+              status: "critical",
+              severityLevel: 3,
+              lastReadingAt: "2026-08-11T09:00:00Z",
+            },
+            geometry: { type: "Point", coordinates: [139.7444, 35.7019] },
+          },
+        ],
+      });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    // 初回ポーリングは FEATURES（Level 1）の状態で地図が表示される
+    expect(mockedFetchSensorsGeoJson).toHaveBeenCalledTimes(1);
+    const mapProps1 = captured.sensorMapProps.at(-1) as {
+      data: SensorFeatureCollection;
+    };
+    expect(mapProps1.data.features[0]?.properties.severityLevel).toBe(1);
+
+    // 5 秒後のポーリングで新しい GeoJSON（Level 3）が取得され、SensorMap へ渡される
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    await act(async () => {});
+
+    expect(mockedFetchSensorsGeoJson).toHaveBeenCalledTimes(2);
+    const mapProps2 = captured.sensorMapProps.at(-1) as {
+      data: SensorFeatureCollection;
+    };
+    expect(mapProps2.data.features[0]?.properties.severityLevel).toBe(3);
+  });
+
+  it("「正常も表示」トグルが機能する: Level 0 のアラートが非表示→表示→非表示に切り替わる", async () => {
+    mockedFetchAlerts.mockResolvedValue([
+      ALERTS[0]!,
+      ALERTS[1]!,
+      {
+        telemetryId: "t0",
+        sensorId: "SNS-000",
+        hydrantId: "HYD-000",
+        severityLevel: 0,
+        leakConfidence: 0,
+        detectedAt: "2026-08-10T07:00:00Z",
+      },
+    ]);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await screen.findAllByTestId("alert-row");
+
+    // 初期状態: Level 0 は非表示（3行 Level 3/1 のみ表示）
+    const rows = screen.getAllByTestId("alert-row");
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => {
+      const alertId = row.getAttribute("data-alert-id");
+      return alertId === "t1" || alertId === "t2";
+    })).toBe(true);
+
+    // チェックボックスを ON → Level 0 が表示される
+    const toggle = screen.getByTestId("show-level0-toggle");
+    fireEvent.click(toggle);
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    const rowsWithLevel0 = screen.getAllByTestId("alert-row");
+    expect(rowsWithLevel0).toHaveLength(3);
+    expect(
+      rowsWithLevel0.some((row) => row.getAttribute("data-alert-id") === "t0"),
+    ).toBe(true);
+
+    // 再度クリック → Level 0 が非表示に戻る
+    fireEvent.click(toggle);
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    const rowsWithoutLevel0 = screen.getAllByTestId("alert-row");
+    expect(rowsWithoutLevel0).toHaveLength(2);
+    expect(
+      rowsWithoutLevel0.some((row) => row.getAttribute("data-alert-id") === "t0"),
+    ).toBe(false);
   });
 });

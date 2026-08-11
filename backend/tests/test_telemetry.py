@@ -100,7 +100,8 @@ class TestValidPayload:
         assert body["status"] == "accepted"
         # BE-6 ではモック解析により analysis に解析結果が入る（BE-1 の null ではない）
         assert body["analysis"] is not None
-        assert body["analysis"]["severity_level"] in (1, 2, 3)
+        # VALID_AUDIO_B64 は全ゼロ（無音）のため Level 0（正常）を含む 0〜3 を許容する
+        assert body["analysis"]["severity_level"] in (0, 1, 2, 3)
         assert len(body["analysis"]["spectrum"]) == 128  # FE-4 描画用の固定点数
         assert body["sensor_id"] == "SNS-001"
         assert body["telemetry_id"].startswith("tlm_")
@@ -264,11 +265,23 @@ class TestMockAnalysis:
     def test_all_zero_audio_does_not_crash(self):
         from app.routers.telemetry import _analyze_audio_mock
 
-        # 全ゼロの 256B（128サンプル）でもクラッシュせず、severity 1 を返す
+        # 全ゼロの 256B（128サンプル、無音）でもクラッシュせず、
+        # 帯域内ピーク無し・振幅ゼロ → 正常（severity 0）を返す
         result = _analyze_audio_mock(VALID_AUDIO_B64, SAMPLE_RATE_HZ)
-        assert result.severity_level == 1
+        assert result.severity_level == 0
         assert result.leak_confidence == 0.0
         assert len(result.spectrum) == 128
+
+    def test_out_of_band_noise_with_amplitude_is_severity_1(self):
+        from app.routers.telemetry import _analyze_audio_mock
+
+        # 漏水帯域(500〜1500Hz)外の 3000Hz トーン・振幅0.1（rms ≈ 0.07 > 0.02）→
+        # 帯域内にピークは無いが振幅はあるノイズとして severity 1（経過観察）を維持する
+        result = _analyze_audio_mock(
+            build_tone_base64(freq_hz=3000.0, amplitude=0.1), SAMPLE_RATE_HZ
+        )
+        assert result.severity_level == 1
+        assert result.band_energy_ratio < 0.2
 
     def test_empty_audio_raises_value_error(self):
         from app.routers.telemetry import _analyze_audio_mock

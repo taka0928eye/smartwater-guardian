@@ -77,7 +77,7 @@ class AnalysisResult(BaseModel):
     model_config = ConfigDict(strict=True)
 
     leak_confidence: float = Field(ge=0.0, le=100.0, description="漏水確信度（%）")
-    severity_level: SeverityLevel = Field(description="深刻度 Level 1〜3")
+    severity_level: SeverityLevel = Field(description="深刻度 Level 0〜3")
     dominant_freq_hz: float = Field(ge=0.0, description="卓越周波数")
     band_energy_ratio: float = Field(ge=0.0, le=1.0, description="漏水帯域のエネルギー比")
     spectrum: list[SpectrumPoint] = Field(default_factory=list, description="スペクトル")
