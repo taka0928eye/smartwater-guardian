@@ -1,6 +1,6 @@
 """ワークオーダースキーマ定義."""
 
-from typing import Literal, Optional
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -27,8 +27,8 @@ class WorkOrder(BaseModel):
     source: Literal["llm", "fallback"] = Field("llm", description="生成元")
 
     # FR-6 原価5フィールド（LLMプロンプトのSchemaからは除外される）
-    prompt_tokens: Optional[int] = Field(0, description="プロンプトトークン数")
-    completion_tokens: Optional[int] = Field(0, description="生成トークン数")
-    cost_yen: Optional[float] = Field(0.0, description="概算コスト（円）")
-    model: Optional[str] = Field("orcarouter", description="使用モデル")
-    latency_ms: Optional[int] = Field(0, description="レイテンシ（ms）")
+    prompt_tokens: int | None = Field(0, description="プロンプトトークン数")
+    completion_tokens: int | None = Field(0, description="生成トークン数")
+    cost_yen: float | None = Field(0.0, description="概算コスト（円）")
+    model: str | None = Field("orcarouter", description="使用モデル")
+    latency_ms: int | None = Field(0, description="レイテンシ（ms）")
