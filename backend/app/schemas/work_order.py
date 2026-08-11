@@ -27,9 +27,10 @@ class WorkOrder(BaseModel):
     notification_text: str = Field(..., description="Teams/Email通知用文面")
     source: Literal["llm", "fallback"] = Field("llm", description="生成元")
 
-    # FR-6 原価5フィールド（LLMプロンプトのSchemaからは除外される）
+    # FR-6 原価フィールド（LLMプロンプトのSchemaからは除外される）
     prompt_tokens: int | None = Field(0, description="プロンプトトークン数")
     completion_tokens: int | None = Field(0, description="生成トークン数")
     cost_yen: float | None = Field(0.0, description="概算コスト（円）")
     model: str | None = Field("orcarouter", description="使用モデル")
     latency_ms: int | None = Field(0, description="レイテンシ（ms）")
+    is_estimated: bool = Field(False, description="usage欠損時の概算フラグ")
