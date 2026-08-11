@@ -12,5 +12,12 @@
     "dirName": "260811-alert-schema-cleanup",
     "scope": "bugfix",
     "status": "complete"
+  },
+  {
+    "uuid": "019fee9b-29f7-7b06-9d06-73235888d4ac",
+    "slug": "be8-kpi-summary",
+    "dirName": "260811-be8-kpi-summary",
+    "scope": "be8-kpi-summary",
+    "status": "in-flight"
   }
 ]
