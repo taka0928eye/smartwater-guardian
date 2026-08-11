@@ -79,4 +79,4 @@ def extract_json_from_response(response_text: str) -> Dict[str, Any]:
     try:
         return json.loads(text)
     except Exception as e:
-        raise ValueError(f"有効なJSON文字列をパースできませんでした: {e}")
+        raise ValueError(f"有効なJSON文字列をパースできませんでした: {e}") from e
