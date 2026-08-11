@@ -7,6 +7,7 @@ import base64
 import json
 import sys
 import time
+import wave
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ INT16_MAX = np.iinfo(np.int16).max
 
 Hydrant = dict[str, Any]
 Payload = dict[str, Any]
+AudioData = tuple[np.ndarray, int, float]
 PostFunc = Callable[[str, Payload, float], dict[str, Any]]
 
 
@@ -50,6 +52,10 @@ class TelemetrySendError(SimulationError):
 REQUIRED_HYDRANT_KEYS = ("hydrant_id", "sensor_id", "latitude", "longitude")
 # irfft後の信号がほぼ無音（帯域内にエネルギーが存在しない）とみなす閾値。
 _MIN_FILTERED_STD = 1e-9
+
+
+class AudioFileError(SimulationError):
+    """Replay用音声ファイルが存在しない、または形式が不正。"""
 
 
 def _time_axis(sample_rate_hz: int, duration_sec: float) -> np.ndarray:
@@ -135,6 +141,35 @@ def encode_audio(signal: np.ndarray) -> str:
     return base64.b64encode(pcm_bytes).decode("ascii")
 
 
+def load_audio_file(path: Path) -> AudioData:
+    """Replay用の非圧縮PCM16モノラルWAVを読み込む。"""
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            if wav_file.getcomptype() != "NONE":
+                raise AudioFileError("圧縮WAVには対応していません")
+            if wav_file.getnchannels() != 1:
+                raise AudioFileError("音声ファイルはモノラルWAVである必要があります")
+            if wav_file.getsampwidth() != 2:
+                raise AudioFileError("音声ファイルは16bit PCMである必要があります")
+
+            sample_rate_hz = wav_file.getframerate()
+            sample_count = wav_file.getnframes()
+            pcm_bytes = wav_file.readframes(sample_count)
+    except FileNotFoundError as exc:
+        raise AudioFileError(f"音声ファイルが見つかりません: {path}") from exc
+    except (OSError, EOFError, wave.Error) as exc:
+        raise AudioFileError(f"音声ファイルを読み込めません: {path}") from exc
+
+    if sample_rate_hz <= 0 or sample_count <= 0:
+        raise AudioFileError("音声ファイルのsample rateまたはsample countが不正です")
+    if len(pcm_bytes) != sample_count * 2:
+        raise AudioFileError("音声ファイルのPCMデータが破損しています")
+
+    signal = np.frombuffer(pcm_bytes, dtype="<i2").copy()
+    duration_sec = sample_count / sample_rate_hz
+    return signal, sample_rate_hz, duration_sec
+
+
 def load_hydrants(path: Path = DEFAULT_HYDRANTS_PATH) -> list[Hydrant]:
     """デモ用消火栓マスタを読み込む。"""
     try:
@@ -214,7 +249,7 @@ def _validate_run_options(count: int, interval_sec: float) -> None:
 
 
 def run_simulation(
-    level: int,
+    level: int | None,
     count: int,
     interval_sec: float,
     hydrant_id: str,
@@ -224,17 +259,41 @@ def run_simulation(
     post_func: PostFunc = send_telemetry,
     sample_rate_hz: int = DEFAULT_SAMPLE_RATE_HZ,
     duration_sec: float = DEFAULT_DURATION_SEC,
+    audio_file: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """指定回数分の疑似音響データを生成し、順に送信する。"""
-    _validate_signal_options(level, sample_rate_hz, duration_sec)
+    """人工信号またはReplay音声を指定回数送信する。"""
     _validate_run_options(count, interval_sec)
+    if level is not None and audio_file is not None:
+        raise ValueError("level and audio_file cannot be specified together")
+
+    replay_audio: AudioData | None = None
+    if audio_file is not None:
+        replay_audio = load_audio_file(audio_file)
+    else:
+        if level is None:
+            raise ValueError("level or audio_file must be specified")
+        _validate_signal_options(level, sample_rate_hz, duration_sec)
+
     hydrant = find_hydrant(load_hydrants(hydrants_path), hydrant_id)
 
     results: list[dict[str, Any]] = []
     for index in range(count):
-        signal_seed = None if seed is None else seed + index
-        signal = generate_signal(level, sample_rate_hz, duration_sec, seed=signal_seed)
-        payload = build_payload(hydrant, signal, sample_rate_hz, duration_sec)
+        audio = replay_audio
+        if audio is None:
+            assert level is not None
+            signal_seed = None if seed is None else seed + index
+            audio = (
+                generate_signal(level, sample_rate_hz, duration_sec, seed=signal_seed),
+                sample_rate_hz,
+                duration_sec,
+            )
+        signal, payload_sample_rate_hz, payload_duration_sec = audio
+        payload = build_payload(
+            hydrant,
+            signal,
+            payload_sample_rate_hz,
+            payload_duration_sec,
+        )
         results.append(post_func(url, payload, 10.0))
         if index < count - 1:
             time.sleep(interval_sec)
@@ -243,13 +302,18 @@ def run_simulation(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="疑似センサーデータをtelemetry APIへ送信します。")
-    parser.add_argument("--level", type=int, choices=[0, 1, 2, 3], default=0)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--level", type=int, choices=[0, 1, 2, 3], default=None)
+    source.add_argument("--audio-file", type=Path, default=None)
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--hydrant", default="HYD-001")
     parser.add_argument("--url", default="http://localhost:8000/api/v1/telemetry")
     parser.add_argument("--seed", type=int, default=None)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.level is None and args.audio_file is None:
+        args.level = 0
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -262,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
             hydrant_id=args.hydrant,
             url=args.url,
             seed=args.seed,
+            audio_file=args.audio_file,
         )
     except SimulationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
