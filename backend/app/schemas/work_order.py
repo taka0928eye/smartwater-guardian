@@ -1,8 +1,12 @@
+"""ワークオーダースキーマ定義."""
+
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
 class RepairPart(BaseModel):
+    """補修部材モデル."""
+
     name: str = Field(..., description="補修部材名称")
     spec: str = Field(..., description="規格・サイズ")
     quantity: int = Field(..., description="数量")
@@ -11,6 +15,8 @@ class RepairPart(BaseModel):
 
 
 class WorkOrder(BaseModel):
+    """ワークオーダーモデル."""
+
     parts: List[RepairPart] = Field(..., description="推奨補修部材リスト")
     total_estimate_yen: int = Field(..., description="概算見積合計（円）")
     work_steps: List[str] = Field(..., description="作業手順リスト")
