@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import base64
 import json
+import struct
+import wave
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -17,14 +20,88 @@ from scripts.simulate_sensor import (
     HydrantDataError,
     HydrantNotFoundError,
     SignalGenerationError,
+    SimulationError,
     TelemetrySendError,
     build_payload,
     encode_audio,
     generate_signal,
     load_hydrants,
+    parse_args,
     run_simulation,
     send_telemetry,
 )
+
+
+def write_test_wav(
+    path: Path,
+    pcm_bytes: bytes,
+    *,
+    sample_rate_hz: int = 8_000,
+    channels: int = 1,
+    sample_width: int = 2,
+) -> None:
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate_hz)
+        wav_file.writeframes(pcm_bytes)
+
+
+def write_compressed_wav(path: Path) -> None:
+    audio_format_alaw = 6
+    channels = 1
+    sample_rate_hz = 8_000
+    sample_width = 1
+    pcm_bytes = b"\xd5" * 8
+    fmt_chunk = struct.pack(
+        "<HHIIHH",
+        audio_format_alaw,
+        channels,
+        sample_rate_hz,
+        sample_rate_hz * channels * sample_width,
+        channels * sample_width,
+        sample_width * 8,
+    )
+    riff_size = 4 + (8 + len(fmt_chunk)) + (8 + len(pcm_bytes))
+    path.write_bytes(
+        struct.pack("<4sI4s", b"RIFF", riff_size, b"WAVE")
+        + struct.pack("<4sI", b"fmt ", len(fmt_chunk))
+        + fmt_chunk
+        + struct.pack("<4sI", b"data", len(pcm_bytes))
+        + pcm_bytes
+    )
+
+
+def run_replay(
+    audio_file: Path,
+    post_func,
+    *,
+    count: int = 1,
+    interval_sec: float = 0,
+):
+    return run_simulation(
+        level=None,
+        count=count,
+        interval_sec=interval_sec,
+        hydrant_id="HYD-001",
+        url="http://example.test/api/v1/telemetry",
+        audio_file=audio_file,
+        post_func=post_func,
+    )
+
+
+def assert_replay_rejected_before_posting(audio_file: Path) -> None:
+    post_calls = 0
+
+    def fake_post(url: str, payload: dict, timeout_sec: float) -> dict:
+        nonlocal post_calls
+        post_calls += 1
+        return {"status": "accepted"}
+
+    with pytest.raises(SimulationError):
+        run_replay(audio_file, fake_post)
+
+    assert post_calls == 0
 
 
 def rms(signal: np.ndarray) -> float:
@@ -205,6 +282,106 @@ def test_run_simulation_reproduces_the_same_distinct_signal_sequence():
 
     assert len(set(sequences[0])) == 3
     assert sequences[0] == sequences[1]
+
+
+def test_replay_pcm16_mono_wav_builds_payload_from_audio_file(tmp_path):
+    sample_rate_hz = 8_000
+    samples = np.array([0, 1, -2, 1_024, -32_768, 32_767], dtype="<i2")
+    pcm_bytes = samples.tobytes()
+    audio_file = tmp_path / "replay.wav"
+    write_test_wav(audio_file, pcm_bytes, sample_rate_hz=sample_rate_hz)
+    posted_payloads: list[dict] = []
+
+    def fake_post(url: str, payload: dict, timeout_sec: float) -> dict:
+        posted_payloads.append(payload)
+        TelemetryRequest.model_validate(payload)
+        return {"status": "accepted"}
+
+    results = run_replay(audio_file, fake_post)
+
+    assert results == [{"status": "accepted"}]
+    assert len(posted_payloads) == 1
+    payload = posted_payloads[0]
+    assert payload["sample_rate_hz"] == sample_rate_hz
+    assert payload["duration_sec"] == pytest.approx(len(samples) / sample_rate_hz)
+    assert base64.b64decode(payload["audio_base64"]) == pcm_bytes
+
+
+def test_parse_args_accepts_audio_file_without_level(tmp_path):
+    audio_file = tmp_path / "replay.wav"
+
+    args = parse_args(["--audio-file", str(audio_file)])
+
+    assert args.level is None
+    assert Path(args.audio_file) == audio_file
+
+
+def test_parse_args_rejects_level_and_audio_file_together(tmp_path, capsys):
+    audio_file = tmp_path / "replay.wav"
+
+    with pytest.raises(SystemExit):
+        parse_args(["--level", "1", "--audio-file", str(audio_file)])
+
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_replay_rejects_missing_file_before_posting(tmp_path):
+    assert_replay_rejected_before_posting(tmp_path / "missing.wav")
+
+
+def test_replay_rejects_corrupt_wav_before_posting(tmp_path):
+    audio_file = tmp_path / "corrupt.wav"
+    audio_file.write_bytes(b"not a wav file")
+
+    assert_replay_rejected_before_posting(audio_file)
+
+
+def test_replay_rejects_stereo_wav_before_posting(tmp_path):
+    audio_file = tmp_path / "stereo.wav"
+    stereo_samples = np.array([[1, -1], [2, -2]], dtype="<i2")
+    write_test_wav(audio_file, stereo_samples.tobytes(), channels=2)
+
+    assert_replay_rejected_before_posting(audio_file)
+
+
+def test_replay_rejects_non_pcm16_wav_before_posting(tmp_path):
+    audio_file = tmp_path / "pcm8.wav"
+    write_test_wav(audio_file, b"\x00\x7f\xff", sample_width=1)
+
+    assert_replay_rejected_before_posting(audio_file)
+
+
+def test_replay_rejects_compressed_wav_before_posting(tmp_path):
+    audio_file = tmp_path / "compressed.wav"
+    write_compressed_wav(audio_file)
+
+    assert_replay_rejected_before_posting(audio_file)
+
+
+def test_replay_count_reuses_existing_send_flow(tmp_path, monkeypatch):
+    samples = np.array([1, -2, 3, -4], dtype="<i2")
+    pcm_bytes = samples.tobytes()
+    audio_file = tmp_path / "replay.wav"
+    write_test_wav(audio_file, pcm_bytes)
+    posted_audio: list[bytes] = []
+    slept: list[float] = []
+
+    def fake_post(url: str, payload: dict, timeout_sec: float) -> dict:
+        posted_audio.append(base64.b64decode(payload["audio_base64"]))
+        return {"status": "accepted"}
+
+    monkeypatch.setattr("scripts.simulate_sensor.time.sleep", slept.append)
+
+    results = run_replay(
+        audio_file,
+        fake_post,
+        count=3,
+        interval_sec=0.25,
+    )
+
+    assert len(results) == 3
+    assert posted_audio == [pcm_bytes, pcm_bytes, pcm_bytes]
+    assert slept == [0.25, 0.25]
 
 
 def test_run_simulation_rejects_unknown_hydrant_without_posting():
