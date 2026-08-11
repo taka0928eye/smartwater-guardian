@@ -11,6 +11,7 @@ import axios from "axios";
 import type {
   AlertDetail,
   AlertSummary,
+  KpiSummary,
   SensorInfo,
   SeverityLevel,
   WorkOrder,
@@ -136,4 +137,10 @@ export function createWorkOrder(telemetryId: string): Promise<WorkOrder> {
   return unwrap<WorkOrder>(
     apiClient.post(`/api/v1/alerts/${encodeURIComponent(telemetryId)}/work-order`),
   );
+}
+
+/** KPI サマリ（BE-8: GET /api/v1/kpi/summary）を取得する。
+ *  unwrap により snake_case 7 フィールドを camelCase へ変換して返す。 */
+export function fetchKpiSummary(): Promise<KpiSummary> {
+  return unwrap<KpiSummary>(apiClient.get("/api/v1/kpi/summary"));
 }

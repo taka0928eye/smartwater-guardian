@@ -1,324 +1,112 @@
 # SmartWater Guardian - 依存関係
 
-## Internal Dependencies (Cross-Module)
+## 外部依存
 
-### Import Graph
+### Python（backend/requirements.txt・== ピン固定）
 
-```
-main.py (Bootstrap)
-  ├─ FastAPI()
-  ├─ routers/telemetry.py
-  ├─ routers/alerts.py
-  ├─ routers/sensors.py
-  └─ dependencies.py
+| パッケージ | バージョン | 用途 | 使用箇所 |
+|------------|------------|------|----------|
+| fastapi | 0.141.1 | Web フレームワーク | main.py・routers/* |
+| pydantic | 2.13.4 | データ検証（v2 strict） | schemas/*・store.py |
+| uvicorn | 0.52.1 | ASGI サーバー | 起動 |
+| numpy | 2.5.2 | FFT モック解析 | routers/telemetry.py |
+| scipy | 1.18.0 | （未使用）BE-3 予定 | - |
+| httpx | 0.28.1 | 外部 API クライアント | app/dependencies.py（未使用） |
+| python-dotenv | 1.2.2 | .env 読込 | 環境設定 |
+| pytest | 9.1.1 | テスト | tests/* |
+| requests | 2.34.2 | 検証スクリプト | scripts/check_*.py 等 |
 
-routers/telemetry.py
-  ├─ FastAPI router
-  ├─ schemas/telemetry.py (TelemetryRequest, TelemetryResponse)
-  └─ store.py (get_store())
+（annotated-doc / anyio / certifi / click 等は上記の推移的依存）
 
-routers/alerts.py ★KEY MODULE
-  ├─ FastAPI router
-  ├─ schemas/alert.py (AlertSummary, AlertDetail, PipeInfo)
-  ├─ services/ledger.py (find_pipe_by_hydrant, get_pipe_age)
-  └─ store.py (get_store(), StoredTelemetry)
+### npm（frontend/package.json）
 
-routers/sensors.py
-  ├─ FastAPI router
-  ├─ schemas/alert.py (SensorInfo, HydrantMaster, GeoJSON*)
-  └─ store.py (get_store())
+**dependencies**
+- `axios ^1.19.0`（lib/api.ts）
+- `leaflet ^1.9.4` + `react-leaflet ^5.0.0`（components/map）
+- `lucide-react ^1.31.0`（アイコン）
+- `next 16.3.0` / `react 19.2.8` / `react-dom 19.2.8`
+- `recharts ^3.10.1`（**import 未使用**・FE-4 予定）
 
-services/ledger.py (BE-4)
-  ├─ schemas/pipe.py (PipeRecord)
-  ├─ data/pipes.json (load via pathlib)
-  └─ functools.lru_cache
+**devDependencies**
+- `typescript ^5` / `@types/*`（node/react/react-dom/leaflet）
+- `vitest ^4.1.10` / `@vitest/coverage-v8 ^4.1.10`
+- `@testing-library/react ^16.3.2` / `@testing-library/jest-dom ^7.0.1` / `@testing-library/dom ^10.4.1` / `jsdom ^30.0.1`
+- `eslint ^9` / `eslint-config-next 16.3.0`
+- `tailwindcss ^4` / `@tailwindcss/postcss ^4`
 
-services/audio.py (BE-3 stub)
-  ├─ numpy (future FFT)
-  ├─ scipy (future filters)
-  └─ schemas/telemetry.py (AnalysisResult)
+## 内部依存（パッケージ間）
 
-schemas/telemetry.py
-  ├─ pydantic (BaseModel, validators, ConfigDict)
-  └─ datetime
-
-schemas/alert.py ★TYPE INCONSISTENCY TARGET
-  ├─ pydantic
-  ├─ schemas/telemetry.py (SeverityLevel, GeoLocation, AnalysisResult)
-  └─ (no direct import of PipeMaterial - uses str instead)
-
-schemas/pipe.py
-  ├─ pydantic
-  └─ typing (Literal)
-
-store.py
-  ├─ threading (Lock for concurrent access)
-  ├─ dataclass
-  ├─ schemas/telemetry.py (TelemetryRequest, TelemetryResponse, AnalysisResult)
-  └─ (implicit: StoredTelemetry dict)
-
-dependencies.py
-  └─ FastAPI Depends()
-```
-
-### Detailed Call Paths
-
-#### Alert Detail Retrieval (BE-6)
-```
-GET /api/v1/alerts/{telemetry_id}
-  ↓
-routers/alerts.py::get_alert_detail(telemetry_id)
-  ├─ store.get(telemetry_id) → StoredTelemetry
-  ├─ _build_pipe_info(record.hydrant_id)
-  │   └─ services/ledger.py::find_pipe_by_hydrant(hydrant_id)
-  │       └─ services/ledger.py::get_pipes() → list[PipeRecord]
-  │           └─ data/pipes.json (loaded once, cached)
-  ├─ services/ledger.py::get_pipe_age(pipe.installed_year) → int
-  └─ Return: AlertDetail
-     ├─ AlertSummary (base)
-     ├─ location: GeoLocation
-     ├─ analysis: AnalysisResult | None
-     └─ pipe_info: PipeInfo ★ (material: str ← pipe.material: PipeMaterial)
-```
-
-#### Telemetry Reception (BE-1)
-```
-POST /api/v1/telemetry
-  ↓
-routers/telemetry.py::create_telemetry(request: TelemetryRequest)
-  ├─ Pydantic validation (TelemetryRequest)
-  │   ├─ audio_base64 decode check (validator)
-  │   ├─ AwareDatetime timezone validation
-  │   └─ GeoLocation range check
-  └─ store.add_telemetry(request) → StoredTelemetry
-      └─ (analysis: None for BE-1)
-```
-
-#### Pipe Lookup (BE-4)
-```
-services/ledger.py
-  ├─ get_pipes() @lru_cache
-  │   └─ _load_pipes(PIPES_PATH)
-  │       ├─ path.read_text()
-  │       ├─ json.loads()
-  │       └─ [PipeRecord.model_validate(item) for item in data]
-  │           └─ schemas/pipe.py validation
-  │               ├─ pipe_id: str
-  │               ├─ material: PipeMaterial ← Literal["ductile_iron", ...]
-  │               ├─ diameter_mm: PipeDiameterMm ← Literal[75, 100, ...]
-  │               ├─ route: GeoJSONLineString
-  │               │   └─ validators: coordinate range check
-  │               └─ hydrant_ids: list[str]
-  │
-  ├─ find_pipe_by_hydrant(hydrant_id: str) → PipeRecord|None
-  │   └─ iterate get_pipes()[*].hydrant_ids
-  │
-  ├─ find_nearest_pipe(lat, lng) → PipeRecord|None
-  │   └─ iterate get_pipes()[*].route.coordinates
-  │       └─ _haversine_km(lat1, lng1, lat2, lng2) → distance
-  │
-  └─ get_pipe_age(installed_year: int) → int
-      └─ REFERENCE_YEAR (2026) - installed_year
-```
-
----
-
-## External Dependencies
-
-### Python Backend (pip packages)
-
-#### Production Dependencies
-```
-FastAPI==0.104+          # Web framework (ASGI)
-pydantic==2.x.x          # Data validation & serialization (strict mode)
-numpy==1.26+             # Numerical arrays (FFT future use)
-scipy==1.11+             # Scientific computing (signal processing future use)
-uvicorn[standard]        # ASGI server (development/production)
-python-multipart         # Form data handling
-```
-
-#### Development Dependencies
-```
-pytest==7.x.x            # Test framework
-pytest-cov==4.x.x        # Coverage measurement
-ruff==0.1+               # Python linter (fast, ESLint-like)
-black==23.x.x            # Code formatter (optional, Ruff subsumes)
-mypy==1.x.x              # Static type checker (optional)
-```
-
-#### Version Strategy
-- **FastAPI, Pydantic**: Pinned minor version (security updates only)
-  - Reason: Type contracts are strict; major bumps risk incompatibility
-- **NumPy, SciPy**: Pinned minor version
-  - Reason: API stability, numerical precision
-- **Pytest, Ruff**: Latest compatible
-  - Reason: No runtime dependency; safe to upgrade
-
-### Node.js Frontend (npm packages)
-
-#### Core Dependencies
-```json
-{
-  "react": "^18.0.0",
-  "next": "latest",
-  "typescript": "^5.0",
-  "tailwindcss": "^3.x",
-  "lucide-react": "latest",
-  "leaflet": "1.9.4",
-  "react-leaflet": "5.0.0",
-  "recharts": "^2.x"
-}
-```
-
-#### Dev Dependencies
-```json
-{
-  "vitest": "latest",
-  "eslint": "latest",
-  "@types/react": "^18.x",
-  "@types/node": "^18.x",
-  "postcss": "^8.x",
-  "autoprefixer": "^10.x"
-}
-```
-
-#### Version Pinning
-- **leaflet, react-leaflet**: Strict versions (1.9.4, 5.0.0)
-  - Reason: Map rendering stability; minor bumps risk breaking changes
-- **React, Next.js**: Caret ranges
-  - Reason: Well-versioned; minor updates are backwards compatible
-- **Tailwind, Lucide**: Latest with `^` caret
-  - Reason: CSS/icon library; backward compatible
-
----
-
-## Data Dependencies
-
-### Master Data Files (JSON)
-
-#### pipes.json (10 routes)
-```
-Location: backend/app/data/pipes.json
-Format: Array of PipeRecord objects
-Schema:
-  - pipe_id: string
-  - material: "ductile_iron" | "cast_iron" | "pvc" | "steel"
-  - diameter_mm: 75 | 100 | 150 | 200
-  - installed_year: 1965-2015
-  - burial_depth_m: > 0
-  - route: GeoJSON LineString [lng, lat]
-  - hydrant_ids: string[]
-
-Usage:
-  - ledger.get_pipes() loads once, cached
-  - find_pipe_by_hydrant() searches hydrant_ids
-  - find_nearest_pipe() iterates coordinates
-
-Validation:
-  - Pydantic PipeRecord.model_validate()
-  - GeoJSONLineString coordinate checks
-```
-
-#### hydrants.json (consumer hydrant list)
-```
-Location: backend/app/data/hydrants.json
-Format: Array of HydrantMaster objects
-Schema:
-  - hydrant_id: string
-  - sensor_id: string
-  - name: string (descriptive)
-  - latitude: -90 to 90
-  - longitude: -180 to 180
-  - pipe_id: string (cross-ref to pipes.json)
-
-Usage:
-  - sensors.py lists SensorInfo / GeoJSON Features
-  - alerts.py uses hydrant_id to find pipe via ledger
-  - FE displays on map
-
-Validation:
-  - Pydantic HydrantMaster.model_validate()
-  - GeoLocation coordinate range checks
-```
-
-### Runtime Data (In-Memory)
-
-#### StoredTelemetry (Store._records dict)
-```
-Structure:
-  telemetry_id → StoredTelemetry
-    ├─ sensor_id, hydrant_id
-    ├─ received_at: datetime
-    ├─ location: GeoLocation
-    └─ analysis: AnalysisResult | None (BE-1: null)
-
-Lifecycle:
-  1. POST /api/v1/telemetry → store.add_telemetry()
-  2. GET /api/v1/alerts/{id} → store.get(telemetry_id)
-  3. Program exit → data lost (MVP scope)
-
-Thread Safety:
-  - threading.Lock protects concurrent access
-```
-
----
-
-## Cross-Layer Dependencies
-
-### Module Dependency Matrix
-
-| From | To | Type | Status |
-|------|----|----|--------|
-| alerts.py | ledger.py | Service | ✓ Used in _build_pipe_info() |
-| alerts.py | store.py | Data | ✓ list_alerts(), get() |
-| telemetry.py | store.py | Data | ✓ add_telemetry() |
-| sensors.py | store.py | Data | ✓ implicit list via SensorInfo |
-| ledger.py | pipes.json | File | ✓ Master data |
-| routers/* | schemas/* | Validation | ✓ Request/Response contracts |
-| audio.py | telemetry.py | Schema | ⊘ Future (AnalysisResult) |
-
-### ★ Type Inconsistency Chain
+### フロントエンド（page → api → backend）
 
 ```
-pipes.json
-  ├─ "material": "ductile_iron" (JSON string)
-  └─ schemas/pipe.py
-      └─ PipeMaterial = Literal["ductile_iron", ...]
-         └─ PipeRecord.material: PipeMaterial (typed)
-             └─ services/ledger.py
-                 └─ find_pipe_by_hydrant() → PipeRecord
-                     └─ routers/alerts.py
-                         └─ _build_pipe_info()
-                             └─ PipeInfo.material: str ★ (untyped)
-                                 └─ AlertDetail.pipe_info
-                                     └─ GET /api/v1/alerts/{id}
-
-Problem: Type narrowing lost
-- PipeRecord.material ∈ PipeMaterial (Literal, type-safe)
-- PipeInfo.material: str (Any value, type-unsafe)
-- Assignment: pipe_info.material = pipe.material ✓ compiles but untyped
-
-Solution: Change PipeInfo.material: str → PipeMaterial
+page.tsx (Server Component)
+  -> Header / KpiSummary / DashboardClient / lib/api(fetchSensorsGeoJson)
+DashboardClient.tsx (Client)
+  -> useAlertPolling / SensorMap / AlertList / AlertDetailDrawer
+useAlertPolling
+  -> lib/api(fetchAlerts)
+lib/api
+  -> types/api (AlertSummary, AlertDetail, SensorInfo, WorkOrder, ...)
+  -> types/sensor (SensorFeatureCollection)
+KpiSummary
+  -> lib/severity (getSeverityMeta) / props KpiData
+AlertList -> lib/alertSort / SeverityBadge
+SensorMap/SensorMapInner -> lib/severity (getSeverityColor) / types/sensor
+AlertDetailDrawer -> lib/api (fetchAlertDetail)
 ```
 
----
+### バックエンド（routers → store / services / schemas）
 
-## Dependency Audit
+```
+main.py
+  -> routers/telemetry | alerts | sensors | kpi
+routers/telemetry
+  -> schemas/telemetry / store(get_store, StoredTelemetry)
+routers/alerts
+  -> schemas/alert / store(get_store) / services/ledger(find_pipe_by_hydrant, get_pipe_age)
+routers/sensors
+  -> schemas/alert / store(get_store, get_hydrants) / schemas/telemetry(GeoLocation)
+routers/kpi
+  -> schemas/kpi / services/kpi(calculate_kpi_summary)
+services/kpi
+  -> schemas/kpi / store(get_store, get_hydrants) / schemas/telemetry(SeverityLevel)
+services/ledger
+  -> schemas/pipe(PipeRecord) / data/pipes.json
+store
+  -> schemas/alert(HydrantMaster) / schemas/telemetry(AnalysisResult, GeoLocation) / data/hydrants.json
+schemas/alert -> schemas/telemetry(SeverityLevel, GeoLocation, AnalysisResult, STRICT_INPUT_CONFIG) / schemas/pipe(PipeMaterial)
+schemas/kpi  -> schemas/telemetry(STRICT_INPUT_CONFIG)
+schemas/pipe -> schemas/telemetry(STRICT_INPUT_CONFIG)
+```
 
-### Unused Imports
-- None identified in focused scan
+### フロント ↔ バックエンドの契約境界
 
-### Circular Dependencies
-- None detected
+- バックエンドは snake_case（Pydantic）、フロントは camelCase。変換は `lib/api.ts` の `unwrap()` が 1 回実施
+- 型対応: `KpiSummary`(BE) ↔ `KpiData`(FE・**要整合**)、`AlertSummary/Detail` ↔ `types/api.ts`、
+  `SensorFeatureCollection` ↔ `types/sensor.ts`
+- **FE-7 ギャップ**: バックエンド `GET /api/v1/kpi/summary`（7 フィールド）は実装済みだが、
+  `lib/api.ts` に `fetchKpiSummary` がなく、`KpiData` 型も契約と乖離している
 
-### Deprecated APIs
-- ConfigDict(strict=True) is Pydantic v2 standard (not deprecated)
-- AwareDatetime is Pydantic v2 preferred (replaces older custom validators)
+## データ依存
 
-### Security Advisories
-- Monitor FastAPI, Pydantic monthly for CVEs
-- NumPy/SciPy: Standard libraries with good maintenance
+### マスタデータ（JSON）
 
-### Future Upgrade Blockers
-- None known; Pydantic v2 is stable LTS target
+| ファイル | 内容 | 読込元 | キャッシュ |
+|----------|------|--------|------------|
+| `backend/app/data/hydrants.json` | 消火栓マスタ（10 件） | store.get_hydrants() | `@lru_cache(maxsize=1)` |
+| `backend/app/data/pipes.json` | 配管台帳（10 路線・GeoJSON LineString） | ledger.get_pipes() | `@lru_cache(maxsize=1)` |
 
+### ランタイムデータ（インメモリ）
+
+- `Store._records: deque[StoredTelemetry]`（maxlen=500・`threading.Lock` 保護）
+- `Store._index: dict[telemetry_id, StoredTelemetry]` / `Store._sensor_latest: dict[sensor_id, StoredTelemetry]`
+- プロセス再起動で消える（MVP スコープ）
+
+## 依存関係の監査
+
+| 項目 | 結果 |
+|------|------|
+| 循環依存 | なし（クリーンな DAG） |
+| 未使用 import | `scipy`（BE-3 予定）・`recharts`（FE-4 予定）・`HttpClientDep`（BE-5 予定） |
+| 重複定義 | `SeverityLevel` が `types/api.ts` と `lib/severity.ts` の 2 箇所（単一ソース化方針は確定済み） |
+| 破壊的変更リスク | `types/api.ts` の `SeverityLevel` を re-export に変える際、import 元の影響確認が必要 |

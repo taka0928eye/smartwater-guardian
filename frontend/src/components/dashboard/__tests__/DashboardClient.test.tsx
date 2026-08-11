@@ -56,14 +56,26 @@ vi.mock("@/components/map/SensorMap", () => ({
 vi.mock("@/lib/api", () => ({
   fetchAlerts: vi.fn(),
   fetchAlertDetail: vi.fn(),
+  // FE-7: DashboardClient が useKpiPolling 経由で呼ぶ。既存テストを壊さないよう
+  // デフォルトで BE-8 契約の解決値を返す（FE-7 のカード描画用）。
+  fetchKpiSummary: vi.fn().mockResolvedValue({
+    totalSensors: 10,
+    level1Count: 8,
+    level2Count: 3,
+    level3Count: 1,
+    estimatedCostSavedYen: 2048400,
+    isEstimate: true,
+    assumptionDoc: "docs/business-model.md",
+  }),
 }));
 
 // --- API モックの参照（vi.mock の後で取得する） ---
-import { fetchAlertDetail, fetchAlerts } from "@/lib/api";
+import { fetchAlertDetail, fetchAlerts, fetchKpiSummary } from "@/lib/api";
 import DashboardClient from "../DashboardClient";
 
 const mockedFetchAlerts = vi.mocked(fetchAlerts);
 const mockedFetchAlertDetail = vi.mocked(fetchAlertDetail);
+const mockedFetchKpiSummary = vi.mocked(fetchKpiSummary);
 
 /** DashboardClient に渡す最小の GeoJSON（FE-3 型）。 */
 const FEATURES: SensorFeatureCollection = {
@@ -126,6 +138,17 @@ const DETAIL: AlertDetail = {
     spectrum: [],
   },
   pipeInfo: null,
+};
+
+/** KPI ポーリングのモック戻り値（BE-8 契約・ADR-003）。 */
+const KPI = {
+  totalSensors: 10,
+  level1Count: 8,
+  level2Count: 3,
+  level3Count: 1,
+  estimatedCostSavedYen: 2048400,
+  isEstimate: true,
+  assumptionDoc: "docs/business-model.md",
 };
 
 afterEach(() => {
@@ -215,5 +238,59 @@ describe("DashboardClient", () => {
     await waitFor(() =>
       expect(captured.sensorMapProps.at(-1)?.selectedAlertId).toBe("t2"),
     );
+  });
+
+  it("KPI セクションのランドマーク（section[aria-labelledby]/h2/aria-busy）を所有する", async () => {
+    mockedFetchKpiSummary.mockResolvedValue(KPI);
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    const section = screen.getByRole("region", { name: "KPI サマリ" });
+    expect(section).toHaveAttribute("aria-labelledby", "kpi-summary-title");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "KPI サマリ" }),
+    ).toHaveAttribute("id", "kpi-summary-title");
+
+    // 取得成功後は aria-busy=false（スケルトン中は true）
+    await waitFor(() => expect(section).toHaveAttribute("aria-busy", "false"));
+  });
+
+  it("KPI: 初回スケルトン → 成功でカードグリッドへ切り替わる", async () => {
+    mockedFetchKpiSummary.mockResolvedValue(KPI);
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    // 初回はスケルトン（h2 とランドマークは維持される）
+    expect(screen.getByTestId("kpi-skeleton")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "KPI サマリ" }),
+    ).toHaveAttribute("aria-busy", "true");
+
+    // 成功後はカードグリッドへ切り替わり、スケルトンは消える
+    expect(await screen.findByTestId("kpi-card-sensors")).toBeInTheDocument();
+    expect(screen.queryByTestId("kpi-skeleton")).not.toBeInTheDocument();
+  });
+
+  it("KPI: ポーリング失敗時は再スケルトン（stale 値非表示）", async () => {
+    vi.useFakeTimers();
+    mockedFetchKpiSummary
+      .mockResolvedValueOnce(KPI)
+      .mockRejectedValueOnce(new Error("backend down"));
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    // 初回成功 → カード表示
+    expect(screen.getByTestId("kpi-card-sensors")).toBeInTheDocument();
+
+    // 5 秒後のポーリング失敗 → 再スケルトン（古い値を最新として見せない）
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    await act(async () => {});
+
+    expect(screen.getByTestId("kpi-skeleton")).toBeInTheDocument();
+    expect(screen.queryByTestId("kpi-card-sensors")).not.toBeInTheDocument();
   });
 });

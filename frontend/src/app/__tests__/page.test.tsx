@@ -17,6 +17,17 @@ import type { SensorFeatureCollection } from "@/types/sensor";
 vi.mock("@/lib/api", () => ({
   fetchSensorsGeoJson: vi.fn(),
   fetchAlerts: vi.fn().mockResolvedValue([]),
+  // FE-7: DashboardClient（useKpiPolling）が呼ぶ。モック由来の固定 KPI 数値を
+  // 描画しない検証のため、実データ風の解決値を返す。
+  fetchKpiSummary: vi.fn().mockResolvedValue({
+    totalSensors: 10,
+    level1Count: 8,
+    level2Count: 3,
+    level3Count: 1,
+    estimatedCostSavedYen: 2048400,
+    isEstimate: true,
+    assumptionDoc: "docs/business-model.md",
+  }),
 }));
 
 vi.mock("@/components/map/SensorMap", () => ({
@@ -93,5 +104,21 @@ describe("Home (page.tsx)", () => {
       backendError,
     );
     consoleErrorSpy.mockRestore();
+  });
+
+  it("モック KPI データ由来の固定数値（1,240 等）は描画されない", async () => {
+    mockedFetch.mockResolvedValue(REAL_DATA);
+
+    const { default: Home } = await import("@/app/page");
+    await act(async () => {
+      render(await Home());
+    });
+    await act(async () => {});
+
+    // FE-2 の MOCK 由来固定値（1,420,000円 → "142万円" / 1,240台）は実データ連携後は
+    // 描画されない（C-4 / project.md Forbidden）。表示形式（formatManYen / 台）で検証する
+    // （reviewer Minor 4: 生数値 "1,420,000" は常に変換されるため空振りだった）。
+    expect(screen.queryByText("142万円")).not.toBeInTheDocument();
+    expect(screen.queryByText("1,240台")).not.toBeInTheDocument();
   });
 });

@@ -10,10 +10,12 @@
 
 /**
  * 漏水深刻度。0=正常 / 1=微小漏水 / 2=進行性漏水 / 3=管路破裂。
- * Level 0 は PRD §2 更新（2026-08-10）で追加された。BE-6 の一覧APIは Level 0 も返すため、
- * 一覧側（FE-5）では既定で非表示にし「正常も表示」トグルで切替える。
+ * 単一ソースは lib/severity.ts（表示メタと同居）。FE-7 で二重定義を解消し、
+ * 本ファイルからも re-export する（FR-2）。本ファイル内の各型でも使用するため
+ * ローカル import も併せて行う。
  */
-export type SeverityLevel = 0 | 1 | 2 | 3;
+import type { SeverityLevel } from "../lib/severity";
+export type { SeverityLevel };
 
 /** 作業指示書の生成元（AI生成 / 規定ルールによる自動算出）。 */
 export type WorkOrderSource = "llm" | "fallback";
@@ -110,4 +112,16 @@ export interface WorkOrder {
   urgency: Urgency;
   notificationText: string;
   source: WorkOrderSource;
+}
+
+/** GET /api/v1/kpi/summary のレスポンス（BE-8 契約・snake_case→camelCase 変換済み）。
+ *  変換は src/lib/api.ts の unwrap で 1 回だけ行う。 */
+export interface KpiSummary {
+  totalSensors: number; // total_sensors
+  level1Count: number; // level1_count
+  level2Count: number; // level2_count
+  level3Count: number; // level3_count
+  estimatedCostSavedYen: number; // estimated_cost_saved_yen
+  isEstimate: boolean; // is_estimate
+  assumptionDoc: string; // assumption_doc
 }

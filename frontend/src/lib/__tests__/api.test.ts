@@ -17,6 +17,7 @@ import {
   createWorkOrder,
   fetchAlertDetail,
   fetchAlerts,
+  fetchKpiSummary,
   fetchSensors,
   fetchSensorsGeoJson,
 } from "../api";
@@ -81,6 +82,17 @@ const MOCK_WORK_ORDER = {
   urgency: "critical",
   notification_text: "至急対応してください。",
   source: "fallback",
+};
+
+/** GET /api/v1/kpi/summary のレスポンス（BE-8）。snake_case 7 フィールド。 */
+const MOCK_KPI_SUMMARY = {
+  total_sensors: 10,
+  level1_count: 8,
+  level2_count: 3,
+  level3_count: 1,
+  estimated_cost_saved_yen: 2048400,
+  is_estimate: true,
+  assumption_doc: "docs/business-model.md",
 };
 
 /** status:500 の AxiosError を生成するためのレスポンス。 */
@@ -344,5 +356,44 @@ describe("createWorkOrder", () => {
     expect(order.urgency).toBe("critical");
     expect(order.source).toBe("fallback");
     expect(order.notificationText).toBe("至急対応してください。");
+  });
+});
+
+describe("fetchKpiSummary", () => {
+  it("GET /api/v1/kpi/summary を呼び、snake_case 7 フィールドを camelCase へ変換して返す", async () => {
+    const spy = vi
+      .spyOn(apiClient, "get")
+      .mockResolvedValue({ data: MOCK_KPI_SUMMARY });
+
+    const summary = await fetchKpiSummary();
+
+    expect(spy).toHaveBeenCalledWith("/api/v1/kpi/summary");
+    expect(summary).toEqual({
+      totalSensors: 10,
+      level1Count: 8,
+      level2Count: 3,
+      level3Count: 1,
+      estimatedCostSavedYen: 2048400,
+      isEstimate: true,
+      assumptionDoc: "docs/business-model.md",
+    });
+  });
+
+  it("axios エラー（HTTP 500）を ApiError に変換して throw する", async () => {
+    vi.spyOn(apiClient, "get").mockRejectedValue(
+      axiosError("Request failed with status code 500", "ERR_BAD_RESPONSE", badResponse),
+    );
+
+    const promise = fetchKpiSummary();
+    await expect(promise).rejects.toBeInstanceOf(ApiError);
+    await expect(promise).rejects.toMatchObject({ status: 500, message: "boom" });
+  });
+
+  it("axios 以外のエラーはそのまま throw する（透過）", async () => {
+    const boom = new Error("non-axios failure");
+    vi.spyOn(apiClient, "get").mockRejectedValue(boom);
+
+    const promise = fetchKpiSummary();
+    await expect(promise).rejects.toBe(boom);
   });
 });

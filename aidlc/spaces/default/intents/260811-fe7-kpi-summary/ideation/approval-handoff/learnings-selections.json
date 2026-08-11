@@ -1,0 +1,12 @@
+{
+  "stage_slug": "approval-handoff",
+  "selections": [
+    {
+      "candidate_id": "c6",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "上流レビュー（advisory）で残った Major 指摘は修正ループに回さず、次段の成果物（例: イニシアティブ・ブリーフ）で解決・明記して引き継ぐ（無断で拡大も無視もしない）。"
+    }
+  ]
+}

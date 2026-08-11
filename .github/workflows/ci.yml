@@ -25,12 +25,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-          pip install pytest pytest-cov httpx
+          pip install -r backend/requirements-dev.txt
 
       - name: Verify Backend Routes & Imports
         run: |
           cd backend
           python -c "import main; print([r.path for r in main.app.routes if hasattr(r, 'path')])"
+
+      - name: Run Ruff Lint (Q6: C)
+        run: |
+          cd backend
+          ruff check app main.py scripts
+
+      - name: Run Mypy Type Check (Q6: C)
+        run: |
+          cd backend
+          mypy app main.py --ignore-missing-imports
 
       - name: Run Telemetry Verification Script
         run: |
@@ -42,10 +52,11 @@ jobs:
           # 検証スクリプト実行
           python scripts/check_telemetry.py
 
-      - name: Run Pytest with Coverage
+      - name: Run Pytest with Coverage (Q4: B)
         run: |
           cd backend
-          python -m pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+          # 行 + branch 各 80%（Q4: B 確定）。requirements-dev.txt の pytest-cov を使用。
+          python -m pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80
 
       - name: Upload Backend Coverage Artifact
         if: always()
@@ -82,7 +93,9 @@ jobs:
       - name: Run Vitest Tests with Coverage
         run: |
           cd frontend
-          npx vitest run --coverage --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80
+          # thresholds（4 指標 80%）の単一ソースは vitest.config.mts。
+          # ローカル npm run test と同一のコマンドでゲートを一致させる（NFR-1 / team-practices Q3=A）。
+          npm run test
 
       - name: Upload Frontend Coverage Artifact
         if: always()

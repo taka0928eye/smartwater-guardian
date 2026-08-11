@@ -19,5 +19,12 @@
     "dirName": "260811-be8-kpi-summary",
     "scope": "be8-kpi-summary",
     "status": "complete"
+  },
+  {
+    "uuid": "019fef34-5697-76d3-9d41-3ae4c73a21b7",
+    "slug": "fe7-kpi-summary",
+    "dirName": "260811-fe7-kpi-summary",
+    "scope": "feature",
+    "status": "in-flight"
   }
 ]

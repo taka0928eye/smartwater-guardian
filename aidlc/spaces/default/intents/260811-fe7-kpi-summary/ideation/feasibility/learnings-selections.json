@@ -1,0 +1,33 @@
+{
+  "stage_slug": "feasibility",
+  "selections": [
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "型の二重定義の単一ソース化は、表示メタ（SEVERITY_META 等）と同居するユーティリティ層を本拠とし、契約層から re-export する方針で進める（Issue 指定・intent-statement 成功指標の根拠を優先）。"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "デモ評価者向け内部機能・PIIなし・認証スコープ外の実装では、規制・コンプライアンス要件（PCI / HIPAA / SOC2 / データレジデンシー）は N/A として扱い、質問も省略する。"
+    },
+    {
+      "candidate_id": "c5",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "実データ不在のカードは削除し、実データで埋められるカード（例: BE-8 が返す level1_count）を追加する構成に揃える。モック値の表示を残さない。"
+    },
+    {
+      "candidate_id": "c6",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "共通型の単一ソース化は、型とその表示メタ（SEVERITY_META / getSeverityColor 等）が同居するユーティリティ層を本拠にする。"
+    }
+  ]
+}

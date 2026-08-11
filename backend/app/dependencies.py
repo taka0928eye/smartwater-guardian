@@ -1,6 +1,9 @@
-from typing import AsyncGenerator, Annotated
+from collections.abc import AsyncGenerator
+from typing import Annotated
+
 import httpx
 from fastapi import Depends
+
 
 async def get_http_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     """

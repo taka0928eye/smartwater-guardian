@@ -21,5 +21,5 @@
 
 
 ## 2. Constructionフェーズ
-/aidlc GitHub内のISUUESを確認し、ISSUE#18「BE-8: KPI「推定削減コスト」の算定ロジックとサマリAPIの実装」を実装してください。なお、BE-3は未実装であることに留意してください。
+/aidlc GitHub内のISUUESを確認し、ISSUE#18「BE-8: KPI「推定削減コスト」の算定ロジックとサマリAPIの実装」を実装してください。短期開発で時間が限られているので、GitHub ISSUEに書かれている作業内容に沿ってコード生成を始めてください。
 

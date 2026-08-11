@@ -9,7 +9,7 @@ import sys
 import time
 import wave
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -212,7 +212,7 @@ def build_payload(
     battery_pct: int | None = 87,
 ) -> Payload:
     """BE-1のTelemetryRequestに一致するpayloadを組み立てる。"""
-    timestamp = recorded_at or datetime.now(timezone.utc)
+    timestamp = recorded_at or datetime.now(UTC)
     payload: Payload = {
         "sensor_id": hydrant["sensor_id"],
         "hydrant_id": hydrant["hydrant_id"],

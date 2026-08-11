@@ -1,0 +1,12 @@
+{
+  "stage_slug": "market-research",
+  "selections": [
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "外部 BI・可視化ツールの導入は build-vs-buy の評価対象外（既存 Next.js/Recharts スタックとの一貫性を優先）。将来、ダッシュボードの可視化要求が高度化した場合に再評価する。"
+    }
+  ]
+}

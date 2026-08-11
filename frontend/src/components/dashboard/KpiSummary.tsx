@@ -1,28 +1,22 @@
 /**
- * FE-2: KPI サマリ（5枚の監視カード）。
+ * FE-7: KPI サマリ（5枚の監視カード・表示専用）。
  *
- * 監視センサー数 / Level 3 破裂リスク / Level 2 警告 / 本日の検知数 /
- * 推定削減コスト を表示する。値のフォーマットは UI-1 ワイヤーフレームに準拠し、
- * Level 3・Level 2 カードは深刻度色（赤・黄）で強調する。
- * 表示専用で副作用がないため Server Component として実装する。
+ * 監視センサー数 / Level 3 破裂リスク / Level 2 警告 / Level 1 微小漏水（AI検知） /
+ * 推定削減コスト を降順で表示する。値は BE-8 の GET /api/v1/kpi/summary の実データ
+ * （camelCase 変換済み）を受け取って描画する。
+ * ランドマーク（section / h2 / aria-labelledby / aria-busy）はラッパー側
+ * （DashboardClient）が一元所有するため、本コンポーネントは描画しない（表示専用）。
+ * コメント・docstring は日本語（NFR-4 / FE-7）。
  */
+import type { ReactNode } from "react";
+
 import { getSeverityMeta } from "@/lib/severity";
+import type { KpiSummary } from "../../types/api";
 
-/** KPI サマリに渡す監視指標データ。 */
-export interface KpiData {
-  /** 監視対象センサーの総数。 */
-  totalSensors: number;
-  /** Level 3（管路破裂リスク）の件数。 */
-  level3Count: number;
-  /** Level 2（進行性漏水警告）の件数。 */
-  level2Count: number;
-  /** 本日の検知数。 */
-  todayDetections: number;
-  /** 推定削減コスト（円）。 */
-  estimatedCostSavedYen: number;
-}
+/** KPI サマリの表示層データ型（契約層 KpiSummary の別名。BE-8 契約と 1:1）。 */
+export type KpiSummaryData = KpiSummary;
 
-/** 円を万円表記へ変換する（例: 1,420,000 → "142万円"）。 */
+/** 円を万円表記へ変換する（例: 2,048,400 → "204.8万円"）。 */
 export function formatManYen(yen: number): string {
   const man = yen / 10000;
   const formatted = man.toLocaleString("ja-JP", {
@@ -37,6 +31,8 @@ interface KpiCardProps {
   unit?: string;
   accentClass?: string;
   testId: string;
+  /** 値の下に表示する注記（コストカードの試算値 2 段注記など）。 */
+  note?: ReactNode;
 }
 
 /** KPI カード1枚の表示。 */
@@ -46,6 +42,7 @@ function KpiCard({
   unit,
   accentClass,
   testId,
+  note,
 }: KpiCardProps) {
   return (
     <div
@@ -63,23 +60,34 @@ function KpiCard({
           </span>
         ) : null}
       </p>
+      {note}
+    </div>
+  );
+}
+
+/** コストカードの 2 段注記（見出し「試算値」+ 本文「前提: docs/business-model.md」）。
+ *  固定リテラルは承認済み表示文言（FE-7 FR-6・application-design:c6）。 */
+function EstimateNote() {
+  return (
+    <div className="mt-2 border-t border-slate-200 pt-2">
+      <p className="text-xs font-semibold text-slate-500">試算値</p>
+      <p className="mt-0.5 text-xs text-slate-400">前提: docs/business-model.md</p>
     </div>
   );
 }
 
 export interface KpiSummaryProps {
-  kpiData: KpiData;
+  kpiData: KpiSummaryData;
 }
 
+/** KPI サマリ（表示専用）。5 カードを降順（sensors → L3 → L2 → L1 → cost）で描画する。 */
 export default function KpiSummary({ kpiData }: KpiSummaryProps) {
   const level3Meta = getSeverityMeta(3);
   const level2Meta = getSeverityMeta(2);
+  const level1Meta = getSeverityMeta(1);
 
   return (
-    <section
-      aria-label="KPI サマリ"
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5"
-    >
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <KpiCard
         testId="kpi-card-sensors"
         label="監視センサー数"
@@ -101,16 +109,18 @@ export default function KpiSummary({ kpiData }: KpiSummaryProps) {
         accentClass={level2Meta.accentClass}
       />
       <KpiCard
-        testId="kpi-card-today"
-        label="本日の検知数"
-        value={kpiData.todayDetections.toLocaleString("ja-JP")}
+        testId="kpi-card-level1"
+        label="Level 1 微小漏水（AI検知）"
+        value={kpiData.level1Count.toLocaleString("ja-JP")}
         unit="件"
+        accentClass={level1Meta.accentClass}
       />
       <KpiCard
         testId="kpi-card-cost"
         label="推定削減コスト"
         value={formatManYen(kpiData.estimatedCostSavedYen)}
+        note={<EstimateNote />}
       />
-    </section>
+    </div>
   );
 }

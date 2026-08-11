@@ -1,0 +1,13 @@
+# ruff / mypy の静的チェック設定（Q6: C 確定 — バックエンドに ruff + mypy を導入し CI ゲートに追加）
+# ruff の対象: 実稼働コード app/ + エントリ main.py + 検証スクリプト scripts/
+# mypy の対象: 実稼働コード app/ + エントリ main.py（検証スクリプト scripts/ は CI 対象外）
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["venv"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+ignore_missing_imports = true

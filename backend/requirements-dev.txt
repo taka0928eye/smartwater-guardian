@@ -1,0 +1,7 @@
+# 開発用依存（CI の静的チェック・カバレッジ計測で使用）
+# プロダクション実行には requirements.txt を使用する。
+# Q4: B 確定 — pytest-cov はピン固定。Q6: C 確定 — ruff + mypy を CI ゲートに追加。
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.2
+mypy==2.3.0

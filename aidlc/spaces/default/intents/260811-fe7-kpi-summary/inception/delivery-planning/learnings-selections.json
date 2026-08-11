@@ -1,0 +1,13 @@
+{
+  "stage_slug": "delivery-planning",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "Delivery Planning ステージも実施しない（ユーザー指示 2026-08-11。GitHub Issue を参照し、タスク分解が Issue 単位で確定している場合は Units Generation に続き Delivery Planning も省略し、直接 Construction（Functional Design）へ進む）。",
+      "source": "user_addition"
+    }
+  ]
+}

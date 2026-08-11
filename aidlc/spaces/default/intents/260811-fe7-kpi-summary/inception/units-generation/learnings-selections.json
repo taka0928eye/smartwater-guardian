@@ -1,0 +1,13 @@
+{
+  "stage_slug": "units-generation",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "作業タスクはGitHubのISSUESを正とし、Unit Generationステージは実施しない（ユーザー指示 2026-08-11。Issue 単位でタスク分解が確定している場合は Units Generation を省略し、直接 Delivery Planning へ進む）。",
+      "source": "user_addition"
+    }
+  ]
+}

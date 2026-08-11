@@ -1,0 +1,40 @@
+{
+  "stage_slug": "practices-discovery",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "keep": true,
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "プロジェクト種別は Brownfield（aidlc-state.md 確認）。Step 1 の再実行コンテキスト用 team.md は空のため、今回は既存 affirmation なしの初回として進める。証拠源は reverse-engineering の codekb（code-structure / technology-stack / dependencies / code-quality-assessment / architecture / business-overview の6点）と git 履歴・CI 設定。"
+    },
+    {
+      "candidate_id": "c2",
+      "keep": true,
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "Step 4 インタビュー完了。12問中、ブランチ戦略(A)・WS不実施(A)・カバレッジゲート固定(A)・branch80%(B)・E2E不導入(A)・ruff+mypy導入(C)・デモはローカル実行のままAWS余裕時(C)・規約化(A)・SeverityLevel FE-7実施予定表記(A)・フォールバック限定(A)・Dependabotのみ(A)・secret scanning有効化(B)と回答。特に Python リント導入（C: ruff+mypy）と backend branch カバレッジ（B）は、Minimal 戦略のデモスコープを超える追加投資の承認として有意。"
+    },
+    {
+      "candidate_id": "c3",
+      "keep": true,
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "Step 5 リード統合完了。3 contribution とインタビュー回答を統合し、4 宣言成果物を最終化。team-practices.md（5セクション最終版・Q1〜Q12 反映）、discovered-rules.md（Mandated 12件・Forbidden 6件）、evidence.md（確定/推測/未確定 をインタビュー結果で解決、CORS ハードコード等を既知負債として明記）、practices-discovery-timestamp.md（`Discovered: 2026-08-11T07:17:07Z at commit 78303016...`）。`PRACTICES_DISCOVERED` イベント発行済み。"
+    },
+    {
+      "candidate_id": "c4",
+      "keep": true,
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "リード（aidlc-pipeline-deploy-agent）のディスパッチがモデル解決で失敗（セッション開始時に `model: sonnet` としてキャッシュされ、`claude-sonnet-5` への解決が続くため 503。ファイル編集は次のセッションで反映される）。一般用途エージェント（general-purpose、セッションモデル継承）に `.claude/agents/aidlc-pipeline-deploy-agent.md` のペルソナを自己ロードさせてリード作業を代行した。support 3 名は開始時点で `inherit` のため影響なし。"
+    },
+    {
+      "candidate_id": "c5",
+      "keep": true,
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "モデル解決は harness のコンパイル済みレジストリではなく Claude Code ネイティブの Agent ツールが行い、エージェント定義をセッション開始時にキャッシュすることを確認（`.claude/tools/data/harness.json` にモデルマッピングなし）。"
+    }
+  ]
+}

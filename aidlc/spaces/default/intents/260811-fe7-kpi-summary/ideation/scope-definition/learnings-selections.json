@@ -1,0 +1,26 @@
+{
+  "stage_slug": "scope-definition",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "相互依存する複数ファイルの変更（1 Issue 完結）は、分割せず単一 proto-Unit として扱う。スコープ管理・受入条件検証が容易になる。"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "実装順序は依存先順（型 → APIクライアント → 表示）で進める。TDD（Red→Green）と整合し、テストも同順に追加できる。"
+    },
+    {
+      "candidate_id": "c5",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "単一 Issue 完結のスコープでは、バックログの優先度をすべて Must-have として扱う（Should-have 分離は不要）。"
+    }
+  ]
+}

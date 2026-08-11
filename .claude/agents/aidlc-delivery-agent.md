@@ -9,7 +9,7 @@ description: >
   Leads Team Formation, Initiative Approval & Handoff, and Delivery Planning stages.
   Supports Scope Definition and Units Generation.
 disallowedTools: Task
-model: sonnet
+model: inherit
 effort: medium
 ---
 

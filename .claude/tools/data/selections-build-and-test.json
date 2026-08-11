@@ -1,0 +1,26 @@
+{
+  "stage_slug": "build-and-test",
+  "selections": [
+    {
+      "candidate_id": "bt-standard-strategy",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "テスト戦略は aidlc-state.md の `**Test Strategy**` に従う。Standard 戦略では performance / security テスト指示書を生成しない（Comprehensive 戦略限定。build-and-test.md Step 4-8。produces は最大集合で戦略により絞られる）。"
+    },
+    {
+      "candidate_id": "bt-component-integration",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "フロントは外部 API（axios）を `vi.mock` で境界モックするため実ネットワーク統合を持たない。既存の component テスト（DashboardClient.test.tsx / page.test.tsx）が事実上の統合境界テストを担うため、integration テスト指示書はそれらを再利用・整理して記載する。"
+    },
+    {
+      "candidate_id": "bt-frontend-integration",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Testing Posture",
+      "text": "フロントエンドのみの変更では、integration テスト指示書の統合境界を「バックエンド TestClient に対する統合」でなくフロント内部境界（page.tsx → DashboardClient → KpiSummary / useKpiPolling → lib/api の連携）として定義する。バックエンド統合は既存 test_alerts.py が BE-8 で実質カバー済み。"
+    }
+  ]
+}

@@ -19,7 +19,7 @@ import base64
 import io
 import sys
 import wave
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import requests
@@ -56,7 +56,7 @@ def build_valid_payload() -> dict:
     return {
         "sensor_id": "SNS-001",
         "hydrant_id": "HYD-001",
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "location": {"latitude": 35.7022, "longitude": 139.7448},
         "sample_rate_hz": SAMPLE_RATE_HZ,
         "duration_sec": DURATION_SEC,

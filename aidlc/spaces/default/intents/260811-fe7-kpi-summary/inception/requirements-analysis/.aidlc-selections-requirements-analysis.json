@@ -1,0 +1,21 @@
+{
+  "stage_slug": "requirements-analysis",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "上流成果物（intent-statement / scope-document / practices-discovery）で要件が高度に確定済みのスコープでは、要件分析の質問を実決定が必要な事項に絞って提示する（approval-handoff:c2 学習と整合）。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "Issue の記述前提（例: FE-7 の SeverityLevel「1|2|3」）が陳腐化している場合、現状コードを検証してから要件化し、前提ズレを要件に注記する（code-generation:asc-c2 と同系）。",
+      "source": "orchestrator"
+    }
+  ]
+}

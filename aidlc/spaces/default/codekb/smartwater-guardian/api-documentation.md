@@ -3,39 +3,47 @@
 ## Base URL
 
 ```
-http://localhost:8000/api/v1
+http://localhost:8000
 ```
 
-## Endpoints Overview
+OpenAPI ドキュメントは FastAPI が自動生成（`/docs`）。
 
-| Method | Endpoint | Purpose | Status |
-|--------|----------|---------|--------|
-| POST | `/telemetry` | IoT音響テレメトリ受信 | ✓ BE-1 実装 |
-| GET | `/alerts` | アラート一覧（深刻度降順） | ✓ BE-6 実装 |
-| GET | `/alerts/{telemetry_id}` | アラート詳細 | ✓ BE-6 実装 |
-| POST | `/alerts/{telemetry_id}/work-order` | 工事発注（スタブ） | ⊘ BE-5 未実装 |
-| GET | `/sensors` | センサー・マスタ一覧 | ✓ 実装 |
-| GET | `/sensors?format=geojson` | GeoJSON形式センサー位置 | ✓ FE連携 |
+## 外部 API サマリ（バックエンド 7 エンドポイント）
+
+| # | Method | Path | 目的 | 状態 |
+|---|--------|------|------|------|
+| 1 | GET | `/` | ヘルスチェック | 実装済み |
+| 2 | POST | `/api/v1/telemetry` | 音響テレメトリ受信（モック解析付き） | 実装済み |
+| 3 | GET | `/api/v1/alerts` | アラート一覧（深刻度降順） | 実装済み |
+| 4 | GET | `/api/v1/alerts/{telemetry_id}` | アラート詳細（配管情報付与） | 実装済み |
+| 5 | POST | `/api/v1/alerts/{telemetry_id}/work-order` | 工事発注書自動起票 | 501 スタブ（BE-5 未実装） |
+| 6 | GET | `/api/v1/sensors?format=json|geojson` | センサー一覧（JSON / GeoJSON） | 実装済み |
+| 7 | GET | `/api/v1/kpi/summary` | KPI サマリ（推定削減コスト） | 実装済み（BE-8） |
+
+レスポンスはすべて snake_case（Pydantic v2）。フロントは `lib/api.ts` が camelCase へ変換する。
 
 ---
 
-## 1. テレメトリ受信
+## 1. GET /
 
-### POST `/telemetry`
+**Response 200**
+```json
+{ "message": "SmartWater Guardian API Ready" }
+```
 
-IoT消火栓型センサーから音響データを受信。BE-1段階では解析なし（analysis=null）。
+---
 
-**Request Body**
+## 2. POST /api/v1/telemetry
 
+疑似 IoT センサーからの音響テレメトリを受信・検証し、モック FFT 解析してストアに登録する。
+
+**Request Body**（`TelemetryRequest`、strict / extra=forbid）
 ```json
 {
   "sensor_id": "S-001",
   "hydrant_id": "H-001",
   "recorded_at": "2026-08-11T10:30:00+09:00",
-  "location": {
-    "latitude": 35.6762,
-    "longitude": 139.7674
-  },
+  "location": { "latitude": 35.6762, "longitude": 139.7674 },
   "sample_rate_hz": 16000,
   "duration_sec": 10.5,
   "audio_base64": "//NExAAAAANIAAAyAABAAJAA...",
@@ -43,99 +51,77 @@ IoT消火栓型センサーから音響データを受信。BE-1段階では解�
 }
 ```
 
-**Validation Rules**
+**Validation**
+- `sensor_id` / `hydrant_id`: 1〜64 文字
+- `recorded_at`: AwareDatetime（タイムゾーン必須。strict はこのフィールドのみ外し TZ 必須で補強）
+- `location.latitude` / `longitude`: 範囲チェック
+- `sample_rate_hz`: 1〜192,000 / `duration_sec`: 0 < x <= 60
+- `audio_base64`: 妥当な Base64（`b64decode(validate=True)` で検証）
 
-- `sensor_id`, `hydrant_id`: 1-64文字
-- `recorded_at`: ISO 8601形式、タイムゾーン必須（複数自治体対応）
-- `location.latitude`: -90.0 〜 90.0
-- `location.longitude`: -180.0 〜 180.0
-- `sample_rate_hz`: 1 〜 192000 Hz
-- `duration_sec`: 0.0 < x ≤ 60.0 秒
-- `audio_base64`: 妥当なBase64（デコード試行で検証）
-- `battery_pct`: 0 〜 100（オプション）
-
-**Response**
-
+**Response 200**（`TelemetryResponse`）
 ```json
 {
-  "telemetry_id": "T-20260811-001",
+  "telemetry_id": "tlm_1a2b3c4d5e6f",
   "sensor_id": "S-001",
-  "received_at": "2026-08-11T10:30:15Z",
+  "received_at": "2026-08-11T01:30:15Z",
   "status": "accepted",
-  "analysis": null
+  "analysis": {
+    "leak_confidence": 87.5,
+    "severity_level": 2,
+    "dominant_freq_hz": 900.0,
+    "band_energy_ratio": 0.75,
+    "spectrum": [ { "freq_hz": 0.0, "magnitude": 0.5 } ]
+  }
 }
 ```
 
 **Status Codes**
-
-- `200` — 受け入れ成功
-- `422` — バリデーション失敗（Base64エラー、座標範囲外、ISO 8601エラーなど）
+- `200` — 受け入れ成功（`analysis` はモック解析結果）
+- `422` — バリデーション失敗（Base64 不正・座標範囲外・音声データ空等）
 
 ---
 
-## 2. アラート参照
+## 3. GET /api/v1/alerts
 
-### GET `/alerts`
-
-深刻度降順・新着順に並んだアラート一覧を返す。
+解析済みテレメトリをアラートとして一覧返す（深刻度降順 → 新着順）。
 
 **Query Parameters**
-
 | Name | Type | Description |
 |------|------|-------------|
-| `level` | int | 深刻度 1〜3 でフィルタ（オプション） |
-| `limit` | int | 取得件数上限 1〜500（デフォルト: 全件） |
+| `level` | int | 1〜3 で絞り込み（`ge=1, le=3`。strict の Literal だとクエリ文字列が弾かれるため int で受ける） |
+| `limit` | int | 1〜500（デフォルト: 全件） |
 
-**Response**
-
+**Response 200** — `list[AlertSummary]`
 ```json
 [
   {
-    "telemetry_id": "T-20260811-001",
+    "telemetry_id": "tlm_1a2b3c4d5e6f",
     "sensor_id": "S-001",
     "hydrant_id": "H-001",
     "severity_level": 2,
     "leak_confidence": 87.5,
-    "detected_at": "2026-08-11T10:30:15Z"
-  },
-  ...
+    "detected_at": "2026-08-11T01:30:15Z"
+  }
 ]
 ```
 
-**Status Codes**
-
-- `200` — 成功（空配列も含む）
-
 ---
 
-### GET `/alerts/{telemetry_id}`
+## 4. GET /api/v1/alerts/{telemetry_id}
 
-指定したテレメトリの詳細を返す。配管情報（BE-4）を自動付与。
+指定テレメトリの詳細を返す。消火栓 ID から配管台帳を照合し `pipe_info` を自動付与する（BE-4）。
 
-**Response**
-
+**Response 200** — `AlertDetail`（= AlertSummary + location + analysis + pipe_info）
 ```json
 {
-  "telemetry_id": "T-20260811-001",
+  "telemetry_id": "tlm_1a2b3c4d5e6f",
   "sensor_id": "S-001",
   "hydrant_id": "H-001",
   "severity_level": 2,
   "leak_confidence": 87.5,
-  "detected_at": "2026-08-11T10:30:15Z",
-  "location": {
-    "latitude": 35.6762,
-    "longitude": 139.7674
-  },
-  "analysis": {
-    "leak_confidence": 87.5,
-    "severity_level": 2,
-    "dominant_freq_hz": 4500.0,
-    "band_energy_ratio": 0.68,
-    "spectrum": [
-      {"freq_hz": 0.0, "magnitude": 0.5},
-      ...
-    ]
-  },
+  "detected_at": "2026-08-11T01:30:15Z",
+  "location": { "latitude": 35.6762, "longitude": 139.7674 },
+  "analysis": { "leak_confidence": 87.5, "severity_level": 2, "dominant_freq_hz": 900.0, "band_energy_ratio": 0.75, "spectrum": [] },
   "pipe_info": {
     "pipe_id": "P-001",
     "material": "ductile_iron",
@@ -148,54 +134,44 @@ IoT消火栓型センサーから音響データを受信。BE-1段階では解�
 ```
 
 **Status Codes**
-
-- `200` — 成功
-- `404` — テレメトリが見つからない
-
----
-
-### POST `/alerts/{telemetry_id}/work-order`
-
-補修部材選定・見積自動起票（BE-5スタブ）。
-
-**Response**
-
-- `501` — 実装待ち（存在しない ID なら `404`）
+- `200` — 成功（台帳未登録の hydrant は `pipe_info: null`）
+- `404` — テレメトリが存在しない
 
 ---
 
-## 3. センサー・マスタ参照
+## 5. POST /api/v1/alerts/{telemetry_id}/work-order
 
-### GET `/sensors`
+工事発注書の自動起票（BE-5 スタブ。Orcarouter 連携は将来）。
 
-センサーとマスタ情報の統合情報を返す。
+**Status Codes**
+- `404` — テレメトリが存在しない
+- `501` — `BE-5 未実装のため自動起票は利用できません`
 
-**Response**
+---
 
+## 6. GET /api/v1/sensors
+
+消火栓マスタ（hydrants.json）を台帳に、各センサーの最新状態を重ねて返す。
+
+**Query Parameters**
+| Name | Type | Description |
+|------|------|-------------|
+| `format` | `json` \| `geojson` | 応答形式（デフォルト `json`） |
+
+**Response 200（format=json）** — `list[SensorInfo]`
 ```json
 [
   {
     "sensor_id": "S-001",
     "hydrant_id": "H-001",
-    "status": "normal",
-    "location": {
-      "latitude": 35.6762,
-      "longitude": 139.7674
-    },
-    "last_reading_at": "2026-08-11T10:30:15Z"
-  },
-  ...
+    "status": "watch",
+    "location": { "latitude": 35.6762, "longitude": 139.7674 },
+    "last_reading_at": "2026-08-11T01:30:15Z"
+  }
 ]
 ```
 
----
-
-### GET `/sensors?format=geojson`
-
-GeoJSON FeatureCollection 形式でセンサー位置を返す（Leaflet用）。
-
-**Response**
-
+**Response 200（format=geojson）** — `SensorFeatureCollection`（Leaflet 地図用）
 ```json
 {
   "type": "FeatureCollection",
@@ -204,119 +180,93 @@ GeoJSON FeatureCollection 形式でセンサー位置を返す（Leaflet用）�
       "type": "Feature",
       "properties": {
         "sensor_id": "S-001",
-        "status": "normal",
-        "severity_level": 0,
-        "last_reading_at": "2026-08-11T10:30:15Z"
+        "status": "watch",
+        "severity_level": 2,
+        "last_reading_at": "2026-08-11T01:30:15Z"
       },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [139.7674, 35.6762]
-      }
-    },
-    ...
-  ]
-}
-```
-
-**Coordinate Order**: GeoJSON 標準 `[経度, 緯度]`
-
----
-
-## Error Handling
-
-### 422 Unprocessable Entity
-
-入力検証エラーの詳細は FastAPI が自動生成：
-
-```json
-{
-  "detail": [
-    {
-      "type": "value_error",
-      "loc": ["body", "audio_base64"],
-      "msg": "audio_base64 は妥当な Base64 文字列である必要があります",
-      "input": "!!invalid!!",
-      "ctx": {"error": "..."}
+      "geometry": { "type": "Point", "coordinates": [139.7674, 35.6762] }
     }
   ]
 }
 ```
 
-### 404 Not Found
+**Coordinate Order**: GeoJSON 標準の `[経度, 緯度]`（Leaflet 側の逆順変換は FE-3 の責務）。
+`status` は最新 severity から導出: 0→normal / 1→watch / 2→warning / 3→critical / 未読込→unknown。
 
+---
+
+## 7. GET /api/v1/kpi/summary
+
+アラート実データから KPI サマリを集計して返す（BE-8・`docs/business-model.md` §3 の算定式）。
+固定値は返さない。常に試算値である旨を明示する。
+
+**Response 200** — `KpiSummary`（7 フィールド）
 ```json
 {
-  "detail": "テレメトリ T-nonexistent は見つかりません"
+  "total_sensors": 10,
+  "level1_count": 8,
+  "level2_count": 3,
+  "level3_count": 1,
+  "estimated_cost_saved_yen": 2048400,
+  "is_estimate": true,
+  "assumption_doc": "docs/business-model.md §3"
 }
 ```
 
-### 501 Not Implemented
+**Status Codes**
+- `200` — 空ストアでも 200 を返し、件数・コストは 0（`total_sensors` のみ実件数。500 にしない）
 
-```json
-{
-  "detail": "BE-5 未実装のため自動起票は利用できません"
-}
-```
+**注記**: `today_detections` は本スキーマに**存在しない**（D-3 で FE-7 以降の対応と明記）。
 
 ---
 
-## Data Contracts
+## エラーハンドリング
 
-### Schema: TelemetryRequest / TelemetryResponse
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `sensor_id` | string | センサー識別子 |
-| `hydrant_id` | string | 消火栓識別子 |
-| `recorded_at` | datetime | 録音日時（AwareDatetime） |
-| `location` | GeoLocation | 緯度経度 |
-| `sample_rate_hz` | int | サンプリング周波数 |
-| `duration_sec` | float | 録音長（秒） |
-| `audio_base64` | string | PCM16 モノラル音声（Base64） |
-| `battery_pct` | int | 電池残量（%、オプション） |
-| `telemetry_id` | string | 受信ID（レスポンスのみ） |
-| `status` | string | ステータス（"accepted"） |
-| `analysis` | AnalysisResult | FFT判定結果（BE-1では null） |
-
-### Schema: AlertSummary / AlertDetail
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `telemetry_id` | string | 一意の受信識別子 |
-| `sensor_id` | string | センサーID |
-| `hydrant_id` | string | 消火栓ID |
-| `severity_level` | int | 0〜3（0=正常） |
-| `leak_confidence` | float | 漏水確信度（0-100%） |
-| `detected_at` | datetime | 検知時刻 |
-| `location` | GeoLocation | センサー位置（詳細のみ） |
-| `analysis` | AnalysisResult | 解析結果（詳細のみ） |
-| `pipe_info` | PipeInfo | 配管情報（詳細のみ、null可） |
-
-### Schema: PipeInfo ★TYPE INCONSISTENCY
-
-| Field | Type | Current | Should Be |
-|-------|------|---------|-----------|
-| `pipe_id` | string | ✓ | ✓ |
-| `material` | **str** | ⚠️ | **PipeMaterial** |
-| `diameter_mm` | int | ✓ | ✓ |
-| `installed_year` | int | ✓ | ✓ |
-| `burial_depth_m` | float | ✓ | ✓ |
-| `age_years` | int | ✓ | ✓ |
+- **422**: FastAPI が自動生成するバリデーションエラー。`audio_base64` 不正等は明示メッセージ
+- **404**: `テレメトリ {id} は見つかりません`（存在しない ID はクライアント起因として 404。500 にしない）
+- **501**: `BE-5 未実装のため自動起票は利用できません`
 
 ---
 
-## Threading & Concurrency
+## 内部 API（フロント lib/api.ts）
 
-- FastAPI 同期ハンドラは ThreadPoolExecutor で実行
-- `Store._records` は `threading.Lock` で保護
-- 並行 GET/POST アクセスでも安全
+axios クライアント `apiClient`（baseURL: `NEXT_PUBLIC_API_BASE_URL` / default `http://localhost:8000`・timeout 10s）経由。
+すべて snake_case→camelCase 変換 + `ApiError` 変換を透過。`any` 型は不使用。
+
+| 関数 | 呼び出し先 | 戻り型 | 備考 |
+|------|-----------|--------|------|
+| `fetchSensors()` | `GET /api/v1/sensors` | `Promise<SensorInfo[]>` | |
+| `fetchSensorsGeoJson()` | `GET /api/v1/sensors?format=geojson` | `Promise<SensorFeatureCollection>` | 座標 [lng, lat] 保持 |
+| `fetchAlerts(params?)` | `GET /api/v1/alerts` | `Promise<AlertSummary[]>` | `level` / `limit` で絞り込み |
+| `fetchAlertDetail(telemetryId)` | `GET /api/v1/alerts/{id}` | `Promise<AlertDetail>` | `encodeURIComponent` 適用 |
+| `createWorkOrder(telemetryId)` | `POST /api/v1/alerts/{id}/work-order` | `Promise<WorkOrder>` | 現状 501 で失敗 |
+| `fetchKpiSummary()` | **未実装** | （FE-7 で追加予定） | **FE-7 の対象。現在 page.tsx がモックを表示** |
+
+### FE-7 で追加予定の契約（バックエンド側は実装済み）
+
+`KpiSummary`（camelCase 相当）: `totalSensors / level1Count / level2Count / level3Count / estimatedCostSavedYen / isEstimate / assumptionDoc`
+現状フロントの `KpiData`（`KpiSummary.tsx`）は `totalSensors / level3Count / level2Count / todayDetections / estimatedCostSavedYen`
+の 5 項目で、バックエンド契約と乖離している（`level1Count` 欠如・`todayDetections` は契約外）。FE-7 で整合させる。
 
 ---
 
-## Future Extensions (Out of Scope)
+## 内部 API（バックエンド store / services）
 
-- **BE-3**: FFT 解析実装時に `analysis` フィールド埋込
-- **BE-4**: 配管台帳 DBカネクタ化（現在 JSON）
-- **BE-5**: 工事発注 API 実装
-- **認証/権限**: CLAUDE.md §3 に従い本プロジェクト外
+### store.py
+- `InMemoryStore.add(record)` — 登録。満杯時は最古を破棄し索引から削除
+- `InMemoryStore.get(telemetry_id)` — ID 取得（無ければ None）
+- `InMemoryStore.list_alerts(level, limit)` — 深刻度降順・新着順で返す（ソート→フィルタ→limit）
+- `InMemoryStore.latest_sensor_states()` — センサー別最新レコードの浅いコピー
+- `InMemoryStore.clear()` — テスト用リセット
+- `get_store()` / `reset_store()` — モジュールレベルシングルトン（ハンドラ実行時取得・import 時捕捉は禁止）
+- `get_hydrants()` — `@lru_cache` で hydrants.json を 1 回読み込み
 
+### services/ledger.py
+- `get_pipes()` — `@lru_cache` で pipes.json を 1 回読み込み
+- `find_pipe_by_hydrant(hydrant_id)` — 消火栓 ID から所属配管を返す（無ければ None）
+- `find_nearest_pipe(lat, lng)` — 各路線の頂点との Haversine 最小距離で最近接配管を返す
+- `get_pipe_age(installed_year)` — `REFERENCE_YEAR(2026) - installed_year`
+
+### services/kpi.py
+- `expected_cost_saved(severity_level)` — 深刻度別 1 件あたり期待回避コスト（§3.1）
+- `calculate_kpi_summary()` — ストア全件走査でレベル別件数と推定削減コストを集計。`total_sensors` は hydrants.json 実件数

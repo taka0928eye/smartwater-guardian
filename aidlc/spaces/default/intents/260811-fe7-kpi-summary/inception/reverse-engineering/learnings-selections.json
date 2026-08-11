@@ -1,0 +1,19 @@
+{
+  "stage_slug": "reverse-engineering",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "プロジェクト種別が Brownfield の Reverse Engineering は pipeline モード（developer スキャン → architect 合成の2リンクチェーン）で実行し、contribution ファイルは作成しない。"
+    },
+    {
+      "candidate_id": "c2",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "codekb 既存ストアが CURRENT でも分析済みパスが本イニシアティブの対象外なら、reuse は選択肢に提示せず rescan vs focused のみ提示する（partial カバレッジのストア再利用はスコープ外知識の混入を招く）。"
+    }
+  ]
+}

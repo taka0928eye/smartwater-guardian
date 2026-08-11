@@ -27,10 +27,11 @@ router = APIRouter(prefix="/api/v1", tags=["sensors"])
 
 # 最新解析の severity → 監視状態の対応（最新レコード未読込は unknown）
 # 0=正常 / 1=微小漏水・要注視 / 2=進行性漏水・要点検 / 3=破裂・緊急対応
-STATUS_BY_SEVERITY: dict[int, str] = {0: "normal", 1: "watch", 2: "warning", 3: "critical"}
+SensorStatus = Literal["normal", "watch", "warning", "critical", "unknown"]
+STATUS_BY_SEVERITY: dict[int, SensorStatus] = {0: "normal", 1: "watch", 2: "warning", 3: "critical"}
 
 
-def _derive_status(record: StoredTelemetry | None) -> str:
+def _derive_status(record: StoredTelemetry | None) -> SensorStatus:
     """最新レコードから監視状態を導出する。未読込なら unknown。"""
     if record is None:
         return "unknown"

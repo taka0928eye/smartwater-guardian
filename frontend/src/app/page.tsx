@@ -1,10 +1,13 @@
 /**
- * FE-2/FE-3/FE-5: ダッシュボードルート（Server Component）。
+ * FE-2/FE-3/FE-5/FE-7: ダッシュボードルート（Server Component）。
  *
  * ヘッダー・KPIサマリ・センサー地図（FE-3）・アラート一覧/詳細ドロワー（FE-5）を配置する。
  * センサー地図のデータは BE-6 の GET /api/v1/sensors?format=geojson から取得し、
  * Client Component の DashboardClient へ渡す。バックエンド未応答時はフォールバック
  * （hydrants.json 由来のモック）で描画する。
+ *
+ * KPI サマリは FE-7 で DashboardClient 配下の useKpiPolling（5 秒ポーリング）が
+ * 描画するため、本ファイルは固定のモック KPI データを持たず実データ連携のみ（C-4）。
  *
  * データはリクエスト時に毎回取得する（静的生成だとビルド時の取得結果が焼き込まれ、
  * センサー状態の変化が反映されないため force-dynamic）。
@@ -12,23 +15,12 @@
  * アラートのポーリングや選択状態は DashboardClient が内部で担う。
  */
 import Header from "@/components/dashboard/Header";
-import KpiSummary from "@/components/dashboard/KpiSummary";
 import DashboardClient from "@/components/dashboard/DashboardClient";
 import { fetchSensorsGeoJson } from "@/lib/api";
-import type { KpiData } from "@/components/dashboard/KpiSummary";
 import type { SensorFeatureCollection } from "@/types/sensor";
 
 /** センサー状態は常に最新を返すため、リクエスト時に描画する。 */
 export const dynamic = "force-dynamic";
-
-/** FE-2 デモ用のモック KPI データ（UI-1 デモシナリオの数値）。 */
-const MOCK_KPI_DATA: KpiData = {
-  totalSensors: 1240,
-  level3Count: 1,
-  level2Count: 3,
-  todayDetections: 12,
-  estimatedCostSavedYen: 1_420_000,
-};
 
 /**
  * FE-3 フォールバック用のモック GeoJSON データ。
@@ -161,8 +153,8 @@ export default async function Home() {
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <Header />
       <main className="mx-auto max-w-7xl space-y-4 p-4 lg:p-6">
-        <KpiSummary kpiData={MOCK_KPI_DATA} />
-        {/* 地図（FE-3）・アラート一覧/詳細ドロワー（FE-5）は Client Component が束ねる */}
+        {/* KPI サマリ（FE-7）・地図（FE-3）・アラート一覧/詳細ドロワー（FE-5）は
+            Client Component がポーリング・選択状態を束ねて描画する */}
         <DashboardClient sensorFeatures={sensorFeatures} />
       </main>
     </div>

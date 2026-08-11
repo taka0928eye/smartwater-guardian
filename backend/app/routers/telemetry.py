@@ -13,7 +13,7 @@ BE-6 で「解析済みテレメトリの保持とアラートAPI参照」を実
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import numpy as np
@@ -159,7 +159,7 @@ def ingest_telemetry(payload: TelemetryRequest) -> TelemetryResponse:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"audio_base64 を解析できません: {exc}",
         ) from exc
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     telemetry_id = f"tlm_{uuid4().hex[:12]}"
 
     get_store().add(

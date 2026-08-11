@@ -1,260 +1,60 @@
 # SmartWater Guardian - テクノロジースタック
 
-## Backend Stack
+## バックエンド（backend/）
 
-### Framework & Server
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **FastAPI** | 0.104+ | Web framework (ASGI) |
-| **Uvicorn** | Latest | ASGI server (development: `uvicorn main:app --reload --port 8000`) |
-| **Python** | 3.11+ | Language |
+| カテゴリ | 技術 | バージョン | 用途 |
+|----------|------|------------|------|
+| 言語 | Python | 3.12（CI 実測）／3.11+（CLAUDE.md 記載） | アプリ言語 |
+| Web フレームワーク | FastAPI | 0.141.1 | ASGI API フレームワーク（同期 def + スレッドプール） |
+| データ検証 | Pydantic | 2.13.4（pydantic_core 2.46.4） | v2 strict / extra=forbid |
+| 数値解析 | NumPy | 2.5.2 | rfft / hanning / interp による FFT モック解析 |
+| 科学計算 | SciPy | 1.18.0 | **未使用**（BE-3 本実装で導入予定） |
+| HTTP クライアント | httpx | 0.28.1 | `HttpClientDep`（BE-5/Orcarouter 用・現状未使用） |
+| ASGI サーバー | uvicorn | 0.52.1 | 開発・デプロイ |
+| テスト | pytest | 9.1.1 | 単体・統合テスト（`python -m pytest`） |
+| カバレッジ | pytest-cov | CI 導入 | `--cov=app --cov-fail-under=80` |
+| 設定 | python-dotenv | 1.2.2 | `.env` 読込 |
+| リント | （無し） | - | ruff / mypy / pyproject.toml は未導入 |
 
-### Data Validation & Serialization
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Pydantic** | v2.x | Data validation, serialization (strict mode enforced) |
-| **typing** | Built-in | Type hints (from `__future__ import annotations`) |
+依存は `backend/requirements.txt` にピン固定（==）。
 
-### Signal Processing (BE-3)
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **NumPy** | Latest | FFT計算、配列操作 |
-| **SciPy** | Latest | 信号フィルタリング、周波数解析 |
+## フロントエンド（frontend/）
 
-### Testing & Quality
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **pytest** | Latest | Unit/integration test framework |
-| **pytest-cov** | Latest | Coverage report generation |
-| **Ruff** | Latest | Python linter (ESLint equivalent) |
+| カテゴリ | 技術 | バージョン | 用途 |
+|----------|------|------------|------|
+| フレームワーク | Next.js | 16.3.0（ピン） | App Router / Server・Client 分離 |
+| UI ライブラリ | React / react-dom | 19.2.8 | コンポーネント |
+| 言語 | TypeScript | ^5（strict） | 型安全 |
+| スタイリング | Tailwind CSS | ^4（@tailwindcss/postcss ^4） | Utility-first CSS |
+| 地図 | Leaflet | ^1.9.4 | 地図コア |
+| 地図 React 連携 | react-leaflet | ^5.0.0 | MapContainer / GeoJSON |
+| 地図型定義 | @types/leaflet | ^1.9.22 | TS 型 |
+| チャート | Recharts | ^3.10.1 | **import 未使用**（FE-4 スペクトル描画で利用予定） |
+| アイコン | lucide-react | ^1.31.0 | アイコン |
+| HTTP クライアント | axios | ^1.19.0 | API 呼び出し |
+| テスト | Vitest | ^4.1.10 | 単体テスト（`vitest run`） |
+| テストカバレッジ | @vitest/coverage-v8 | ^4.1.10 | 80% thresholds |
+| テストライブラリ | @testing-library/react | ^16.3.2 | コンポーネントテスト |
+| DOM | jsdom | ^30.0.1 | テスト環境 |
+| テストマッチャ | @testing-library/jest-dom | ^7.0.1 | 拡張アサーション |
+| テスト DOM | @testing-library/dom | ^10.4.1 | DOM クエリ |
+| リント | ESLint | ^9（flat config）＋ eslint-config-next 16.3.0 | CI ゲート（`npm run lint`） |
+| Node | Node.js | 22（CI） | ランタイム |
 
-### Dependency Management
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **pip** | Latest | Package manager |
-| **requirements.txt** | - | Dependency pinning (production) |
-| **pyproject.toml** | - | Build config, tool settings |
+## CI / CD
 
-### Development Tools
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Git** | Latest | Version control |
-| **GitHub Actions** | - | CI/CD pipeline |
+- **GitHub Actions** `.github/workflows/ci.yml`
+  - `backend-test`: Python 3.12 / pip install / ルート確認 / `check_telemetry.py` / `pytest --cov=app --cov-fail-under=80` / coverage.xml アップロード
+  - `frontend-test`: Node 22 / `npm ci` / `npm run lint` / `vitest run --coverage`（lines/functions/branches/statements 各 80%）/ `npm run build`
+- main push / PR で実行
 
----
+## 設計上の技術選定（代替案との比較）
 
-## Frontend Stack
-
-### Framework & Build
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Next.js** | Latest | React framework (App Router) |
-| **React** | 18+ | UI library |
-| **TypeScript** | Latest | Type-safe JavaScript |
-| **Node.js** | 18+ | Runtime |
-
-### UI & Visualization
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Tailwind CSS** | Latest | Utility-first CSS framework |
-| **Lucide React** | Latest | Icon library |
-| **Leaflet** | 1.9.4 | Map library (core) |
-| **react-leaflet** | 5.0.0 | React bindings for Leaflet |
-| **Recharts** | Latest | Chart library (FE-4 spectrum visualization) |
-
-### Testing & Quality
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **Vitest** | Latest | Unit testing (Vite-native) |
-| **ESLint** | Latest | JavaScript/TypeScript linter |
-
-### Development Tools
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| **npm** / **bun** | Latest | Package manager |
-| **Vite** | Latest | Build tool (Next.js内蔵) |
-
----
-
-## Deployment & Infrastructure
-
-### Development Environment
-- **Local**: Python venv (`backend/venv/`), npm/bun for frontend
-- **Database**: In-memory JSON (out-of-scope for production)
-
-### Production Considerations (Out of Scope)
-- Kubernetes / Docker (future)
-- PostgreSQL / Cloud DB (future)
-- Load balancer / API Gateway (future)
-- CDN for static assets (future)
-
----
-
-## Architecture-Specific Choices
-
-### Why Python + FastAPI?
-
-| Criterion | Choice | Reason |
-|-----------|--------|--------|
-| Backend Language | Python 3.11+ | NumPy/SciPy 信号処理の標準、開発速度 |
-| Framework | FastAPI | Type-safe (Pydantic), async-ready, automatic API docs (Swagger) |
-| ASGI Server | Uvicorn | FastAPI公式推奨、シンプル、development mode 対応 |
-
-### Why Next.js + React?
-
-| Criterion | Choice | Reason |
-|-----------|--------|--------|
-| Frontend Framework | Next.js | App Router、SSR対応、TypeScript統合 |
-| UI Library | React | Component-driven、Leaflet/Recharts 統合エコシステム |
-| Styling | Tailwind CSS | Utility-first、保守性、design consistency |
-| Map Library | Leaflet + react-leaflet | 軽量、GeoJSON native対応、消火栓位置・エリア表示に最適 |
-
-### Why Pydantic v2?
-
-| Feature | Benefit |
-|---------|---------|
-| `strict=True` | IoT センサーデータの型厳密化（誤解釈防止） |
-| `extra="forbid"` | 未知フィールド拒否（API破壊防止） |
-| Built-in validators | Base64、座標範囲などの入力チェック内蔵 |
-| OpenAPI integration | FastAPI が自動API docs生成（Swagger） |
-
----
-
-## Version Pinning Strategy
-
-### Backend (requirements.txt)
-```
-FastAPI==0.104.1
-pydantic==2.x.x
-numpy==1.26.0
-scipy==1.11.0
-pytest==7.x.x
-pytest-cov==4.x.x
-ruff==0.1.0
-```
-- **安定版**: マイナーバージョンまで固定
-- **セキュリティ**: CVE発見時は即パッチ
-
-### Frontend (package.json)
-```json
-{
-  "dependencies": {
-    "react": "^18.0.0",
-    "next": "latest",
-    "tailwindcss": "^3.x",
-    "leaflet": "1.9.4",
-    "react-leaflet": "5.0.0"
-  }
-}
-```
-- **Leaflet/react-leaflet**: 厳密版固定（互換性重要）
-- **他**: 上位互換性想定で `^` (caret)
-
----
-
-## Performance Characteristics
-
-### Backend
-| Metric | Target | Notes |
-|--------|--------|-------|
-| API Response | < 100ms | テレメトリ受信、アラート参照 |
-| FFT処理 | < 500ms | BE-3（10.5秒音声） |
-| メモリ | < 512MB | インメモリストア（デモ規模） |
-| Concurrency | 10+ parallel | ThreadPoolExecutor + store.Lock |
-
-### Frontend
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Initial Load | < 3s | Leaflet地図 + リアルタイムデータ |
-| Map Render | < 1s | GeoJSON 50+ features |
-| Interaction | < 200ms | ドロワー開閉、フィルタ |
-
----
-
-## Security Considerations
-
-### Input Validation (IoT Data)
-- Pydantic strict mode enforced
-- Base64 content validation
-- Coordinate range checks
-- Timezone-aware datetime parsing
-
-### API Security (Out of Scope)
-- ❌ Authentication/Authorization — CLAUDE.md §3
-- ❌ Rate limiting — Future
-- ❌ HTTPS enforcement — Future (development: HTTP only)
-- ❌ API key management — Future
-
-### Data Sensitivity
-- ⚠️ Sensor telemetry: Location + timestamp + analysis data
-  - Mitigation: Spatial/temporal aggregation in future privacy policies
-- ⚠️ Master data: Hydrant locations (semi-public infrastructure)
-
----
-
-## Build & Deployment Commands
-
-### Backend
-```bash
-# Development
-cd backend
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -r requirements.txt
-python -m pytest --cov=app --cov-report=term-missing  # Run tests
-python -m uvicorn main:app --reload --port 8000
-
-# Production (future)
-gunicorn -w 4 -b 0.0.0.0:8000 main:app
-```
-
-### Frontend
-```bash
-# Development
-cd frontend
-npm install  # or `bun install`
-npm run dev
-
-# Build
-npm run build
-npm run start
-
-# Testing
-npm run test
-```
-
----
-
-## Known Limitations & Caveats
-
-| Issue | Impact | Resolution |
-|-------|--------|-------------|
-| No persistent DB | Data loss on restart | MVP scope; use PostgreSQL in production |
-| Synchronous I/O | No async handlers | I/O wait minimal; acceptable for demo |
-| No authentication | Anyone can access APIs | Out-of-scope; gate behind identity service |
-| No rate limiting | Abuse potential | Out-of-scope; add API gateway in production |
-| CORS open | Security risk | Development only; restrict in production |
-| No HTTPS | Unencrypted transit | Development only; enforce in production |
-| Haversine formula | Approximation (~0.5%) | Acceptable for demo; use PostGIS for precision |
-
----
-
-## Future Technology Considerations
-
-### Scaling Improvements
-- **Async FastAPI handlers** — Move from sync to async (def → async def)
-- **Message queue** — Kafka for telemetry streaming
-- **Time-series DB** — InfluxDB for telemetry retention
-- **Cache layer** — Redis for store acceleration
-
-### Enhanced Analytics
-- **Kubernetes** — Container orchestration
-- **Prometheus** — Metrics collection
-- **Grafana** — Observability dashboards
-- **ELK Stack** — Log aggregation
-
-### Map Features
-- **Mapbox GL** — Advanced vector maps (Leaflet → Mapbox migration)
-- **PostGIS** — Spatial database (hydrant.json → PostgreSQL)
-- **Tile server** — Custom map tiles
-
+| 判断 | 選択 | 代替案 | 理由 |
+|------|------|--------|------|
+| API フレームワーク | FastAPI | Django / Flask | Pydantic v2 統合・自動 OpenAPI・非同期対応 |
+| 入力検証 | Pydantic v2 strict | 手動バリデーション | IoT 外部入力の型厳密化・未知フィールド拒否 |
+| 地図 | Leaflet + react-leaflet | Mapbox GL | 軽量・GeoJSON ネイティブ・デモ規模に十分 |
+| 可視化 | Recharts | Chart.js / D3 | 軽量 React 向き（現状 import 未使用） |
+| 状態管理 | ローカル useState + フック | Redux / Zustand | 単一画面・選択状態のみで十分（最小実装） |
+| 外部 LLM | Orcarouter API | 自前実装 | 補修部材選定・見積自動起票（BE-5 で利用予定） |

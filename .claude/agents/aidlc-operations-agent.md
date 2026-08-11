@@ -9,7 +9,7 @@ description: >
   Leads Observability Setup, Incident Response, and Feedback & Optimization stages.
   Supports Performance Validation.
 disallowedTools: Task
-model: sonnet
+model: inherit
 effort: medium
 ---
 
