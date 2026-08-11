@@ -11,7 +11,7 @@ from app.services.prompts import (
 
 
 @pytest.fixture
-def dummy_telemetry():
+def dummy_telemetry() -> dict[str, Any]:
     """テスト用テレメトリデータ."""
     return {
         "hydrant_id": "HYD-001",
@@ -24,7 +24,7 @@ def dummy_telemetry():
 
 
 @pytest.fixture
-def dummy_pipe_info():
+def dummy_pipe_info() -> dict[str, Any]:
     """テスト用配管データ."""
     return {
         "address": "東京都千代田区1-1",
@@ -39,8 +39,8 @@ def dummy_pipe_info():
 
 
 def test_build_user_prompt_contains_all_fields_except_spectrum(
-    dummy_telemetry, dummy_pipe_info
-):
+    dummy_telemetry: dict[str, Any], dummy_pipe_info: dict[str, Any]
+) -> None:
     """ユーザープロンプトのフィールド生成テスト."""
     prompt = build_user_prompt(dummy_telemetry, dummy_pipe_info)
     assert "HYD-001" in prompt
@@ -50,7 +50,7 @@ def test_build_user_prompt_contains_all_fields_except_spectrum(
     assert "概算" in prompt
 
 
-def test_schema_excludes_cost_fields():
+def test_schema_excludes_cost_fields() -> None:
     """スキーマから原価フィールドが除外されているかのテスト."""
     schema = get_clean_work_order_schema()
     props = schema["properties"]
@@ -61,7 +61,7 @@ def test_schema_excludes_cost_fields():
     assert "latency_ms" not in props
 
 
-def test_build_system_prompt_schema_integration():
+def test_build_system_prompt_schema_integration() -> None:
     """システムプロンプトの検証テスト."""
     sys_prompt = build_system_prompt()
     assert "概算" in sys_prompt
@@ -69,7 +69,7 @@ def test_build_system_prompt_schema_integration():
     assert "prompt_tokens" not in sys_prompt
 
 
-def test_extract_json_with_code_fence():
+def test_extract_json_with_code_fence() -> None:
     """コードフェンス付きJSON抽出テスト."""
     raw_response = (
         '```json\n{"parts": [], "total_estimate_yen": 50000, "work_steps": [], '
@@ -80,7 +80,7 @@ def test_extract_json_with_code_fence():
     assert data["total_estimate_yen"] == 50000
 
 
-def test_extract_json_without_code_fence():
+def test_extract_json_without_code_fence() -> None:
     """コードフェンスなしJSON抽出テスト."""
     raw_response = (
         '{"parts": [], "total_estimate_yen": 30000, "work_steps": [], '
@@ -91,13 +91,13 @@ def test_extract_json_without_code_fence():
     assert data["total_estimate_yen"] == 30000
 
 
-def test_extract_json_invalid_raises_error():
+def test_extract_json_invalid_raises_error() -> None:
     """不正なJSONでの例外スローテスト."""
     with pytest.raises(ValueError):
         extract_json_from_response("This is not JSON")
 
 
-def test_work_order_fallback_support():
+def test_work_order_fallback_support() -> None:
     """フォールバック生成のテスト."""
     order = WorkOrder(
         parts=[],
