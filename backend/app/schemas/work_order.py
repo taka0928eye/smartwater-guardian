@@ -1,6 +1,6 @@
 """ワークオーダースキーマ定義."""
 
-from typing import List, Literal, Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -17,9 +17,9 @@ class RepairPart(BaseModel):
 class WorkOrder(BaseModel):
     """ワークオーダーモデル."""
 
-    parts: List[RepairPart] = Field(..., description="推奨補修部材リスト")
+    parts: list[RepairPart] = Field(..., description="推奨補修部材リスト")
     total_estimate_yen: int = Field(..., description="概算見積合計（円）")
-    work_steps: List[str] = Field(..., description="作業手順リスト")
+    work_steps: list[str] = Field(..., description="作業手順リスト")
     required_workers: int = Field(..., description="推奨人員")
     estimated_duration_hours: float = Field(..., description="想定作業時間（時間）")
     urgency: Literal["low", "medium", "high", "critical"] = Field(..., description="緊急度")
