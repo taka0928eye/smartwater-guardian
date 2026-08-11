@@ -1,5 +1,6 @@
+"""プロンプト生成およびレスポンス解析サービス."""
+
 import json
-import re
 from typing import Any, Dict
 from app.schemas.work_order import WorkOrder
 
@@ -22,7 +23,7 @@ SYSTEM_PROMPT = """あなたは日本の水道事業体の補修設計担当エ�
 
 
 def get_clean_work_order_schema() -> Dict[str, Any]:
-    """WorkOrderモデルから原価5フィールドを除外したJSON Schemaを取得する"""
+    """WorkOrderモデルから原価5フィールドを除外したJSON Schemaを取得する."""
     schema = WorkOrder.model_json_schema()
     properties = schema.get("properties", {})
     for field in EXCLUDE_COST_FIELDS:
@@ -31,7 +32,7 @@ def get_clean_work_order_schema() -> Dict[str, Any]:
 
 
 def build_system_prompt() -> str:
-    """システムプロンプトを構築する"""
+    """システムプロンプトを構築する."""
     schema = get_clean_work_order_schema()
     return (
         f"{SYSTEM_PROMPT}\n"
@@ -41,7 +42,7 @@ def build_system_prompt() -> str:
 
 
 def build_user_prompt(telemetry_data: Dict[str, Any], pipe_info: Dict[str, Any]) -> str:
-    """ユーザープロンプトを構築する（スペクトル128点はコスト削減のため除外）"""
+    """ユーザープロンプトを構築する（スペクトル128点はコスト削減のため除外）."""
     clean_telemetry = {
         k: v for k, v in telemetry_data.items() if k not in ["spectrum", "raw_audio"]
     }
@@ -49,27 +50,33 @@ def build_user_prompt(telemetry_data: Dict[str, Any], pipe_info: Dict[str, Any])
     user_payload = {
         "telemetry_analysis": clean_telemetry,
         "pipe_inventory": pipe_info,
-        "note": "金額は概算であり正式見積ではありません。"
+        "note": "金額は概算であり正式見積ではありません。",
     }
 
-    return f"以下の解析結果と配管情報からワークオーダーを出力してください:\n{json.dumps(user_payload, ensure_ascii=False, indent=2)}"
+    return (
+        f"以下の解析結果と配管情報からワークオーダーを出力してください:\n"
+        f"{json.dumps(user_payload, ensure_ascii=False, indent=2)}"
+    )
 
 
 def extract_json_from_response(response_text: str) -> Dict[str, Any]:
-    """LLMの応答テキストからコードフェンスを除去してJSONを抽出する"""
+    """LLMの応答テキストからコードフェンスを除去してJSONを抽出する."""
     text = response_text.strip()
-    
-    match = re.search(r"```(?:json)?\s*({.*?})\s*```", text, re.DOTALL)
-    if match:
-        text = match.group(1)
-    else:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1 and start < end:
-            text = text[start : end + 1]
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and start < end:
+        text = text[start : end + 1]
 
     try:
-        data = json.loads(text)
-        return data
+        return json.loads(text)
     except Exception as e:
         raise ValueError(f"有効なJSON文字列をパースできませんでした: {e}")
