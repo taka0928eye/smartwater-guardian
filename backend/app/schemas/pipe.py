@@ -19,6 +19,11 @@ PipeMaterial = Literal["ductile_iron", "cast_iron", "pvc", "steel"]
 # 口径（mm）。東京都の配水本管・配水管で一般的な代表値に絞る。
 PipeDiameterMm = Literal[75, 100, 150, 200]
 
+# 布設年の許容範囲。東京都水道局の配水管整備が本格化した年代を下限とし、
+# 台帳データの整備時点を上限とする。
+MIN_INSTALL_YEAR = 1965
+MAX_INSTALL_YEAR = 2015
+
 
 class GeoJSONLineString(BaseModel):
     """GeoJSON の LineString ジオメトリ。座標は [経度, 緯度] の順。"""
@@ -51,7 +56,7 @@ class PipeRecord(BaseModel):
     pipe_id: str = Field(description="配管識別子（例: P-001）")
     material: PipeMaterial = Field(description="配管素材")
     diameter_mm: PipeDiameterMm = Field(description="口径（mm）")
-    installed_year: int = Field(ge=1965, le=2015, description="布設年")
+    installed_year: int = Field(ge=MIN_INSTALL_YEAR, le=MAX_INSTALL_YEAR, description="布設年")
     burial_depth_m: float = Field(gt=0.0, description="埋設深さ（m）")
     route: GeoJSONLineString = Field(description="路線ジオメトリ")
     hydrant_ids: list[str] = Field(min_length=1, description="路線に所属する消火栓ID列")

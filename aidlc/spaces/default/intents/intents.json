@@ -5,5 +5,12 @@
     "dirName": "260810-be4-ledger-reconciliatio",
     "scope": "be4-ledger-reconciliation",
     "status": "complete"
+  },
+  {
+    "uuid": "019fee5a-ba95-7bca-911a-7d32ef7b127a",
+    "slug": "alert-schema-cleanup",
+    "dirName": "260811-alert-schema-cleanup",
+    "scope": "bugfix",
+    "status": "complete"
   }
 ]

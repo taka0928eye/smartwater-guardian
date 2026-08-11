@@ -28,6 +28,7 @@
 - Minimal テスト戦略では統合・性能・セキュリティのテスト指示書はスキップする（produces リストは最大集合で戦略により絞られる）。 (learned 2026-08-11) <!-- cid:build-and-test:c1 -->
 - pytest は `venv/Scripts/pytest.exe` でなく `venv/Scripts/python.exe -m pytest` で実行する（pytest.exe は cwd を sys.path に挿入せず `app` を import できないため）。 (learned 2026-08-11) <!-- cid:build-and-test:c3 -->
 - Minimal 戦略で統合テスト指示書を生成しない判断は、TestClient のエンドポイントテスト（test_alerts.py）が統合境界を実質カバーしていることを根拠にする。 (learned 2026-08-11) <!-- cid:build-and-test:c4 -->
+- プロジェクトに mypy 等の静的型チェッカーが存在しない場合、型安全性の受入条件は Pydantic の型制約（Literal等）が実際に ValidationError を送出することを検証するランタイムテストで代替する。 (learned 2026-08-11) (learned 2026-08-11) <!-- cid:code-generation:asc-c4 -->
 ## Deployment
 
 <!-- Project-specific specialisation. -->
@@ -74,3 +75,6 @@
 - store.py は欠損を RuntimeError で包むが、受け入れ条件が FileNotFoundError / ValueError の明示指定の場合は、ledger.py のようにそのまま伝播・変換する。 (learned 2026-08-11) <!-- cid:code-generation:c3 -->
 - find_nearest_pipe は路線の LineString 頂点との Haversine 最小距離で判定する（路線全体の中心点方式より、消火栓位置に近い頂点を考慮でき直感的）。 (learned 2026-08-11) <!-- cid:code-generation:c4 -->
 - バックエンド Python のビルドは「依存導入の確認 + アプリ import スモークテスト + 検証スクリプト実行」で定義する（コンパイル工程がないため）。フロントエンドは変更対象外なら対象外と明記する。 (learned 2026-08-11) <!-- cid:build-and-test:c2 -->
+- unit-of-work が存在しない単一イテレーションのディレクティブでは、`{unit-name}` を intent slug に解決して記録パスを決定する（be4-ledger 案件の先例を踏襲）。 (learned 2026-08-11) (learned 2026-08-11) <!-- cid:code-generation:asc-c1 -->
+- codekb のスナップショットは reverse-engineering 時点で固定されるため古くなりうる。Code Generation で「重複解消」等の既存コード状態に依存するプラン項目は、実装前に grep 等で現状を再確認してから着手する。 (learned 2026-08-11) (learned 2026-08-11) <!-- cid:code-generation:asc-c2 -->
+- docstring/コメント陳腐化の修正依頼は、requirements.md の FR が明示する対象クラス・箇所のみに限定して実装し、同種の陳腐化が他に見つかった場合はスコープ外として承認ゲートの確認事項に明記する（無断で拡大も無視もしない）。 (learned 2026-08-11) (learned 2026-08-11) <!-- cid:code-generation:asc-c3 -->

@@ -15,7 +15,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
 
+from app.schemas.alert import PipeInfo
 from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
 from app.store import StoredTelemetry
 
@@ -261,6 +263,28 @@ class TestListSensors:
     def test_invalid_format_returns_422(self, client, store):
         response = client.get("/api/v1/sensors", params={"format": "xml"})
         assert response.status_code == 422
+
+
+class TestPipeInfoSchema:
+    """PipeInfo.material の型統一（FR-1）を検証する単体テスト。
+
+    material: str のままでは任意の文字列が通ってしまうが、PipeMaterial
+    （Literal["ductile_iron", "cast_iron", "pvc", "steel"]）への型統一後は
+    許容値以外を拒否する。エンドポイント経由の値レベル検証は
+    test_returns_detail_with_spectrum_and_pipe_info で既にカバー済みのため、
+    ここでは型統一そのものの効果（不正値の拒否）をスキーマ単体で検証する。
+    """
+
+    def test_material_outside_pipe_material_literal_raises_validation_error(self):
+        with pytest.raises(ValidationError):
+            PipeInfo(
+                pipe_id="P-999",
+                material="invalid_material",
+                diameter_mm=150,
+                installed_year=1998,
+                burial_depth_m=1.2,
+                age_years=28,
+            )
 
 
 class TestRouteRegistration:

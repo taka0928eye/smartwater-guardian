@@ -12,6 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.pipe import PipeMaterial
 from app.schemas.telemetry import (
     STRICT_INPUT_CONFIG,
     AnalysisResult,
@@ -34,16 +35,18 @@ class AlertSummary(BaseModel):
 
 
 class PipeInfo(BaseModel):
-    """配管台帳情報（BE-4 実装時の型を先に固定する）。
+    """配管台帳情報（BE-4: app/services/ledger.py が実装済み）。
 
-    BE-6 では常に ``None`` を返す。BE-4（app/services/ledger.py）が実装されたら
-    ここに配管情報が入る。
+    アラート対象の消火栓が配管台帳（app/data/pipes.json）に登録されていれば、
+    このモデルのフィールドに実データが入る。台帳に該当がない場合はこのモデルの
+    フィールドが null になるのではなく、``AlertDetail.pipe_info`` 自体が ``None``
+    になる。
     """
 
     model_config = STRICT_INPUT_CONFIG
 
     pipe_id: str
-    material: str
+    material: PipeMaterial
     diameter_mm: int = Field(gt=0)
     installed_year: int
     burial_depth_m: float

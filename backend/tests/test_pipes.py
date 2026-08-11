@@ -9,6 +9,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
+from app.schemas.pipe import MAX_INSTALL_YEAR, MIN_INSTALL_YEAR, PipeRecord
+
 PIPES_PATH = Path(__file__).resolve().parents[1] / "app" / "data" / "pipes.json"
 HYDRANTS_PATH = Path(__file__).resolve().parents[1] / "app" / "data" / "hydrants.json"
 
@@ -67,6 +72,38 @@ def test_route_is_line_string_with_valid_vertices():
             lng, lat = vertex
             assert -180.0 <= lng <= 180.0
             assert -90.0 <= lat <= 90.0
+
+
+def _valid_pipe_record_payload(installed_year: int) -> dict:
+    """installed_year 境界値検証用の最小 PipeRecord ペイロードを組み立てる。"""
+    return {
+        "pipe_id": "P-999",
+        "material": "ductile_iron",
+        "diameter_mm": 150,
+        "installed_year": installed_year,
+        "burial_depth_m": 1.2,
+        "route": {
+            "type": "LineString",
+            "coordinates": [[139.7444, 35.7019], [139.7450, 35.7025]],
+        },
+        "hydrant_ids": ["HYD-001"],
+    }
+
+
+def test_installed_year_boundary_rejects_below_min_accepts_min_and_max():
+    """PipeRecord.installed_year は MIN_INSTALL_YEAR 未満を拒否し、
+    MIN_INSTALL_YEAR / MAX_INSTALL_YEAR の境界値自体は受理する（Pydantic 検証境界）。
+
+    test_installed_year_within_range は生JSON（app/data/pipes.json の実データ）を
+    検証する別観点のテストであり、本テストは PipeRecord スキーマの境界値検証
+    （Field(ge=MIN_INSTALL_YEAR, le=MAX_INSTALL_YEAR)）そのものを対象にする。
+    """
+    with pytest.raises(ValidationError):
+        PipeRecord.model_validate(_valid_pipe_record_payload(MIN_INSTALL_YEAR - 1))
+
+    # 境界値そのものは受理される
+    PipeRecord.model_validate(_valid_pipe_record_payload(MIN_INSTALL_YEAR))
+    PipeRecord.model_validate(_valid_pipe_record_payload(MAX_INSTALL_YEAR))
 
 
 def test_hydrant_ids_reference_consistency():
