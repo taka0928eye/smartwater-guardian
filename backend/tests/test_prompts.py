@@ -1,5 +1,7 @@
 """プロンプト構築およびJSON抽出の単体テスト."""
 
+from typing import Any
+
 import pytest
 from app.schemas.work_order import WorkOrder
 from app.services.prompts import (
