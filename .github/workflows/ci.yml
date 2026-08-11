@@ -32,12 +32,12 @@ jobs:
           cd backend
           python -c "import main; print([r.path for r in main.app.routes if hasattr(r, 'path')])"
 
-      - name: Run Ruff Lint (Q6: C)
+      - name: Run Ruff Lint (Q6 - C)
         run: |
           cd backend
           ruff check app main.py scripts
 
-      - name: Run Mypy Type Check (Q6: C)
+      - name: Run Mypy Type Check (Q6 - C)
         run: |
           cd backend
           mypy app main.py --ignore-missing-imports
@@ -52,7 +52,7 @@ jobs:
           # 検証スクリプト実行
           python scripts/check_telemetry.py
 
-      - name: Run Pytest with Coverage (Q4: B)
+      - name: Run Pytest with Coverage (Q4 - B)
         run: |
           cd backend
           # 行 + branch 各 80%（Q4: B 確定）。requirements-dev.txt の pytest-cov を使用。
