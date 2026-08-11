@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 import { getSeverityMeta } from "@/lib/severity";
+import type { KpiSummary as KpiSummaryData } from "@/types/api";
 import KpiSummary, { formatManYen } from "../KpiSummary";
-import type { KpiSummaryData } from "../KpiSummary";
 
 /** BE-8 契約フィクスチャ（ADR-003: totalSensors 10 / L1:8 / L2:3 / L3:1 / ¥2,048,400）。 */
 const BASE_KPI: KpiSummaryData = {

@@ -11,10 +11,16 @@
 import type { ReactNode } from "react";
 
 import { getSeverityMeta } from "@/lib/severity";
-import type { KpiSummary } from "../../types/api";
+import type { KpiSummary } from "@/types/api";
 
-/** KPI サマリの表示層データ型（契約層 KpiSummary の別名。BE-8 契約と 1:1）。 */
-export type KpiSummaryData = KpiSummary;
+/** KPI カードの描画枚数。スケルトン（DashboardClient）と本カードグリッドで共有する。 */
+export const KPI_CARD_COUNT = 5;
+
+/** KPI カードグリッドの Tailwind クラス。スケルトンとカードグリッドで同一レイアウトを保つ
+ *  ため共有する。items-start は「試算値」注記で丈が伸びるコストカードに他カードが
+ *  引き伸ばされない（align-items:stretch を無効化する）ための指定。 */
+export const KPI_GRID_CLASS =
+  "grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-5";
 
 /** 円を万円表記へ変換する（例: 2,048,400 → "204.8万円"）。 */
 export function formatManYen(yen: number): string {
@@ -77,7 +83,7 @@ function EstimateNote() {
 }
 
 export interface KpiSummaryProps {
-  kpiData: KpiSummaryData;
+  kpiData: KpiSummary;
 }
 
 /** KPI サマリ（表示専用）。5 カードを降順（sensors → L3 → L2 → L1 → cost）で描画する。 */
@@ -87,7 +93,7 @@ export default function KpiSummary({ kpiData }: KpiSummaryProps) {
   const level1Meta = getSeverityMeta(1);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className={KPI_GRID_CLASS}>
       <KpiCard
         testId="kpi-card-sensors"
         label="監視センサー数"

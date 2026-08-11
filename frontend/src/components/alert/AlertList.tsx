@@ -8,7 +8,7 @@
  * 「正常も表示」トグルで切替える。Level 3 の行は行全体を強調する。
  * 行クリックで onSelect(alertId) を親へ通知する（地図との連動用）。
  */
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import SeverityBadge from "@/components/common/SeverityBadge";
 import { filterLevelZero, sortAlerts } from "@/lib/alertSort";
@@ -59,11 +59,9 @@ function rowClass(severityLevel: number, selected: boolean): string {
   return `${base} ${severity} ${state}`;
 }
 
-export default function AlertList({
-  alerts,
-  selectedAlertId,
-  onSelect,
-}: AlertListProps) {
+/** React.memo: props（alerts / selectedAlertId / onSelect）が不変な再描画
+ *  （例: KPI ポーリングによる親の再描画）ではスキップする。 */
+function AlertList({ alerts, selectedAlertId, onSelect }: AlertListProps) {
   const [showLevel0, setShowLevel0] = useState(false);
 
   // 深刻度降順 → 検知時刻降順（新着順）に並べ、Level 0 をトグルに応じて除外する。
@@ -135,3 +133,5 @@ export default function AlertList({
     </section>
   );
 }
+
+export default memo(AlertList);

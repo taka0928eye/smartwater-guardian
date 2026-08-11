@@ -11,6 +11,10 @@
  *
  * useEffect のクリーンアップで必ず clearInterval を呼び、アンマウント後の
  * setState は cancelled フラグで防ぐ（team-practices 規約 / FR-7）。
+ *
+ * 前回 in-flight の完了を待たず次回発火しうるため、リクエスト連番（requestSeq）で
+ * アウトオブオーダーを防ぐ。先発リクエストが後発より遅れて解決しても、
+ * 「最新の発行リクエストではない」応答は破棄し、新しい値を上書きしない。
  */
 import { useEffect, useState } from "react";
 
@@ -31,15 +35,17 @@ export function useKpiPolling(intervalMs: number): UseKpiPollingResult {
 
   useEffect(() => {
     let cancelled = false;
+    let requestSeq = 0;
 
     const load = async () => {
+      const seq = ++requestSeq;
       try {
         const data = await fetchKpiSummary();
-        if (cancelled) return;
+        if (cancelled || seq !== requestSeq) return;
         setKpiData(data);
         setIsLoading(false);
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || seq !== requestSeq) return;
         // 古い値を最新として見せない（FR-8 / T3）: 成功値を破棄して再スケルトン。
         setKpiData(null);
         setIsLoading(true);
@@ -50,8 +56,6 @@ export function useKpiPolling(intervalMs: number): UseKpiPollingResult {
     };
 
     void load();
-    // 前回 in-flight の完了を待たず次回発火する out-of-order は既存 useAlertPolling と
-    // 同型の既知制約（デモスコープで許容。将来はリクエスト連番で対策）。
     const id = setInterval(() => {
       void load();
     }, intervalMs);

@@ -271,6 +271,15 @@ describe("DashboardClient", () => {
     expect(screen.queryByTestId("kpi-skeleton")).not.toBeInTheDocument();
   });
 
+  it("KPI セクションに aria-live=\"polite\" を設定し、更新をスクリーンリーダーへ通知する", async () => {
+    mockedFetchKpiSummary.mockResolvedValue(KPI);
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    const section = screen.getByRole("region", { name: "KPI サマリ" });
+    expect(section).toHaveAttribute("aria-live", "polite");
+  });
+
   it("KPI: ポーリング失敗時は再スケルトン（stale 値非表示）", async () => {
     vi.useFakeTimers();
     mockedFetchKpiSummary

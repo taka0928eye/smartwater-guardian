@@ -14,11 +14,14 @@
  *
  * page.tsx（Server Component）から sensorFeatures（サーバー側取得済み）を props で受ける。
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import AlertDetailDrawer from "@/components/alert/AlertDetailDrawer";
 import AlertList from "@/components/alert/AlertList";
-import KpiSummary from "@/components/dashboard/KpiSummary";
+import KpiSummary, {
+  KPI_CARD_COUNT,
+  KPI_GRID_CLASS,
+} from "@/components/dashboard/KpiSummary";
 import { useAlertPolling } from "@/hooks/useAlertPolling";
 import { useKpiPolling } from "@/hooks/useKpiPolling";
 import SensorMap from "@/components/map/SensorMap";
@@ -44,30 +47,39 @@ export default function DashboardClient({
   const selectedAlert =
     alerts.find((alert) => alert.telemetryId === selectedAlertId) ?? null;
 
-  /** 地図マーカー（センサー）選択を、そのセンサーのアラート選択へ変換する。 */
-  const handleSelectMarker = (sensorId: string) => {
-    const alert = alerts.find((item) => item.sensorId === sensorId);
-    setSelectedAlertId(alert ? alert.telemetryId : null);
-  };
+  /** 地図マーカー（センサー）選択を、そのセンサーのアラート選択へ変換する。
+   *  useCallback で alerts 変化時のみ参照を更新し、KPI ポーリング等の無関係な
+   *  再描画では SensorMap（React.memo）が再描画されないようにする。 */
+  const handleSelectMarker = useCallback(
+    (sensorId: string) => {
+      const alert = alerts.find((item) => item.sensorId === sensorId);
+      setSelectedAlertId(alert ? alert.telemetryId : null);
+    },
+    [alerts],
+  );
 
   return (
     <div className="space-y-4">
       {/* KPI サマリ（FE-7・全面幅）。ランドマークは本コンポーネントが一元所有。
           スケルトン中も h2 と aria-labelledby を維持し、配下でスケルトン↔カードを切替える */}
-      <section aria-labelledby="kpi-summary-title" aria-busy={isLoading}>
+      <section
+        aria-labelledby="kpi-summary-title"
+        aria-busy={isLoading}
+        aria-live="polite"
+      >
         <h2
           id="kpi-summary-title"
           className="mb-2 text-sm font-semibold text-slate-500"
         >
           KPI サマリ
         </h2>
-        {isLoading || kpiData === null ? (
+        {kpiData === null ? (
           <div
             data-testid="kpi-skeleton"
             aria-hidden="true"
-            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5"
+            className={KPI_GRID_CLASS}
           >
-            {Array.from({ length: 5 }, (_item, index) => (
+            {Array.from({ length: KPI_CARD_COUNT }, (_item, index) => (
               <div
                 key={index}
                 className="h-24 animate-pulse rounded-xl border border-slate-200 bg-slate-100"

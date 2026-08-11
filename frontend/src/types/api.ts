@@ -117,11 +117,18 @@ export interface WorkOrder {
 /** GET /api/v1/kpi/summary のレスポンス（BE-8 契約・snake_case→camelCase 変換済み）。
  *  変換は src/lib/api.ts の unwrap で 1 回だけ行う。 */
 export interface KpiSummary {
-  totalSensors: number; // total_sensors
-  level1Count: number; // level1_count
-  level2Count: number; // level2_count
-  level3Count: number; // level3_count
-  estimatedCostSavedYen: number; // estimated_cost_saved_yen
-  isEstimate: boolean; // is_estimate
-  assumptionDoc: string; // assumption_doc
+  /** 監視センサー総数（snake_case: total_sensors）。 */
+  totalSensors: number;
+  /** Level 1（微小漏水）検知件数（snake_case: level1_count）。 */
+  level1Count: number;
+  /** Level 2（進行性漏水）検知件数（snake_case: level2_count）。 */
+  level2Count: number;
+  /** Level 3（管路破裂）検知件数（snake_case: level3_count）。 */
+  level3Count: number;
+  /** 推定削減コスト（円。snake_case: estimated_cost_saved_yen）。 */
+  estimatedCostSavedYen: number;
+  /** 試算値かどうか（snake_case: is_estimate）。 */
+  isEstimate: boolean;
+  /** 試算根拠ドキュメントのパス（snake_case: assumption_doc）。 */
+  assumptionDoc: string;
 }

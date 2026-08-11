@@ -159,6 +159,47 @@ describe("useKpiPolling", () => {
     expect(result.current.isLoading).toBe(true);
   });
 
+  it("先発（古い）レスポンスが後発（新しい）レスポンスより遅延して解決しても、新しい値を上書きしない（アウトオブオーダーガード）", async () => {
+    vi.useFakeTimers();
+    let resolveFirst: (value: KpiSummary) => void = () => {};
+    let resolveSecond: (value: KpiSummary) => void = () => {};
+
+    mockedFetchKpiSummary
+      .mockImplementationOnce(
+        () =>
+          new Promise<KpiSummary>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<KpiSummary>((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+
+    const { result } = renderHook(() => useKpiPolling(5000));
+    await act(async () => {}); // 1回目リクエスト in-flight
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    await act(async () => {}); // 2回目リクエスト in-flight（1回目もまだ未解決）
+
+    // 後発（新しい）が先に解決する
+    await act(async () => {
+      resolveSecond(KPI_UPDATED);
+    });
+    expect(result.current.kpiData).toEqual(KPI_UPDATED);
+
+    // 先発（古い）が遅れて解決しても、新しい値を上書きしない
+    await act(async () => {
+      resolveFirst(KPI);
+    });
+    expect(result.current.kpiData).toEqual(KPI_UPDATED);
+    expect(result.current.isLoading).toBe(false);
+  });
+
   it("アンマウント後に in-flight が失敗しても setState しない（cancelled ガード）", async () => {
     let rejectFn: (error: Error) => void = () => {};
     mockedFetchKpiSummary.mockImplementation(
