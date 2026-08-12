@@ -1,5 +1,6 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
+from datetime import datetime, timezone
 import math
 from typing import Any
 
@@ -11,7 +12,8 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.store import get_store
+from app.schemas.telemetry import AnalysisResult, GeoLocation
+from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -78,12 +80,12 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    if hasattr(store, "get_all_alerts"):
+    if hasattr(store, "get_all"):
+        all_alerts = store.get_all()
+    elif hasattr(store, "get_all_alerts"):
         all_alerts = store.get_all_alerts()
     elif hasattr(store, "alerts"):
         all_alerts = store.alerts
-    elif hasattr(store, "get_all"):
-        all_alerts = store.get_all()
     else:
         all_alerts = getattr(store, "_alerts", [])
 
@@ -182,24 +184,25 @@ async def simulate_disaster(
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        alert_item = {
-            "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
-            "sensor_id": f"SEN-DISASTER-{i+1:03d}",
-            "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
-            "severity_level": 3,
-            "leak_confidence": 95.0,
-            "location": {
-                "latitude": base_lat + offset_lat,
-                "longitude": base_lng + offset_lng,
-            },
-        }
+        telemetry_item = StoredTelemetry(
+            telemetry_id=f"TEL-DISASTER-{i+1:03d}",
+            sensor_id=f"SEN-DISASTER-{i+1:03d}",
+            hydrant_id=f"HYD-DISASTER-{i+1:03d}",
+            severity_level=3,
+            leak_confidence=95.0,
+            location=GeoLocation(
+                latitude=base_lat + offset_lat,
+                longitude=base_lng + offset_lng,
+            ),
+            analysis=AnalysisResult(
+                leak_confidence=95.0,
+                dominant_freq_hz=800,
+                band_energy_ratio=4.5,
+            ),
+            detected_at=datetime.now(timezone.utc),
+        )
 
-        if hasattr(store, "add_alert"):
-            store.add_alert(alert_item)
-        elif hasattr(store, "alerts") and isinstance(store.alerts, list):
-            store.alerts.append(alert_item)
-        elif hasattr(store, "add"):
-            store.add(alert_item)
+        store.add(telemetry_item)
 
     return DisasterSimulateResponse(
         inserted_count=count,
