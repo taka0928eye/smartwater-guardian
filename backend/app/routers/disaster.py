@@ -81,13 +81,34 @@ async def get_disaster_summary(
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
+    
+    # 全データを安全に横断収集
+    all_items = []
     if hasattr(store, "get_all"):
-        all_alerts = store.get_all()
-    else:
-        all_alerts = getattr(store, "_alerts", [])
+        all_items.extend(store.get_all())
+    if hasattr(store, "get_all_alerts"):
+        all_items.extend(store.get_all_alerts())
+    if hasattr(store, "telemetry_records"):
+        all_items.extend(getattr(store, "telemetry_records", []))
+    if hasattr(store, "_telemetry"):
+        all_items.extend(getattr(store, "_telemetry", []))
+    if hasattr(store, "_alerts"):
+        all_items.extend(getattr(store, "_alerts", []))
+
+    # 重複排除
+    unique_items = []
+    seen_ids = set()
+    for item in all_items:
+        item_id = getattr(item, "telemetry_id", None) or (item.get("telemetry_id") if isinstance(item, dict) else None)
+        if item_id:
+            if item_id not in seen_ids:
+                seen_ids.add(item_id)
+                unique_items.append(item)
+        else:
+            unique_items.append(item)
 
     level3_alerts = []
-    for a in all_alerts:
+    for a in unique_items:
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
@@ -97,7 +118,6 @@ async def get_disaster_summary(
             if sev is None and isinstance(a.get("analysis"), dict):
                 sev = a["analysis"].get("severity_level")
 
-        # 数値・文字列両方の 3 を判定対象にする
         if str(sev) == "3":
             level3_alerts.append(a)
 
@@ -134,10 +154,10 @@ async def get_disaster_summary(
                 cluster_id=f"CLS-{idx:03d}",
                 center_lat=round(center[0], 6),
                 center_lng=round(center[1], 6),
-                affected_sensor_ids=[getattr(i, "sensor_id", "SEN-001") for i in group],
+                affected_sensor_ids=[getattr(i, "sensor_id", f"SEN-{idx}") for i in group],
                 affected_pipe_ids=[f"PIPE-{idx}"],
                 estimated_households=h,
-                priority_valve_hydrant_id=getattr(group[0], "hydrant_id", "HYD-001"),
+                priority_valve_hydrant_id=getattr(group[0], "hydrant_id", f"HYD-{idx}"),
                 geometry=create_circle_polygon(center[1], center[0], radius_m=threshold_meters),
             )
         )
@@ -159,9 +179,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
         for i in range(count):
             item = StoredTelemetry(
-                telemetry_id=f"TEL-{i}",
-                sensor_id=f"SEN-{i}",
-                hydrant_id=f"HYD-{i}",
+                telemetry_id=f"TEL-DISASTER-{i+1:03d}",
+                sensor_id=f"SEN-DISASTER-{i+1:03d}",
+                hydrant_id=f"HYD-DISASTER-{i+1:03d}",
                 recorded_at=now,
                 received_at=now,
                 location=GeoLocation(
@@ -175,7 +195,15 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
-            store.add(item)
+            # Storeのあらゆる保持リストに全方位追加
+            if hasattr(store, "add"):
+                store.add(item)
+            if hasattr(store, "telemetry_records") and isinstance(getattr(store, "telemetry_records"), list):
+                getattr(store, "telemetry_records").append(item)
+            if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
+                getattr(store, "_telemetry").append(item)
+            if hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
+                getattr(store, "_alerts").append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
