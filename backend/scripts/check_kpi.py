@@ -21,9 +21,7 @@ check_alerts.py と同じ流儀（PASS/FAIL 逐次表示、終了コード 0/1�
 from __future__ import annotations
 
 import base64
-import io
 import sys
-import wave
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,16 +32,18 @@ BASE_URL = "http://localhost:8000"
 TELEMETRY_ENDPOINT = f"{BASE_URL}/api/v1/telemetry"
 KPI_ENDPOINT = f"{BASE_URL}/api/v1/kpi/summary"
 
-SAMPLE_RATE_HZ = 16_000
+SAMPLE_RATE_HZ = 8_000
 DURATION_SEC = 1.0
 TONE_FREQ_HZ = 900.0  # 漏水帯域(500〜1500Hz)内のテスト用トーン
+OUT_OF_BAND_FREQ_HZ = 2_500.0
+WAVEFORM_AMPLITUDE = 0.2
 
-# モック解析の仮閾値に依存する振幅（check_alerts.py と同手法）で severity を決める
+# 現行BE-3のDSP帯域比に対応する決定的な入力でseverityを作る
 SEVERITY_SAMPLES = [
-    # (センサーID, 消火栓ID, 振幅, 期待severity, 1件あたり期待回避コスト)
-    ("SNS-101", "HYD-001", 0.8, 3, 150_000),     # Level 3: C_response_saved
-    ("SNS-102", "HYD-002", 0.15, 2, 308_000),    # Level 2: p2×(C_burst−C_repair2)
-    ("SNS-103", "HYD-003", 0.05, 1, 121_800),    # Level 1: p1×(C_burst−C_repair1)
+    # (センサーID, 消火栓ID, 目標帯域比, 期待severity, 1件あたり期待回避コスト)
+    ("SNS-101", "HYD-001", 0.75, 3, 150_000),
+    ("SNS-102", "HYD-002", 0.45, 2, 308_000),
+    ("SNS-103", "HYD-003", 0.15, 1, 121_800),
 ]
 
 class CheckFailure(Exception):
@@ -55,25 +55,23 @@ def expect(condition: bool, message: str) -> None:
         raise CheckFailure(message)
 
 
-def build_audio_base64(amplitude: float) -> str:
-    """指定振幅の 900Hz 正弦波を PCM16 モノラル WAV にして Base64 で返す。"""
+def build_audio_base64(target_band_ratio: float) -> str:
+    """目標帯域比の決定的な2音をPCM16LE mono rawとしてBase64で返す。"""
     sample_count = int(SAMPLE_RATE_HZ * DURATION_SEC)
     t = np.arange(sample_count, dtype=np.float64) / SAMPLE_RATE_HZ
-    waveform = amplitude * np.sin(2.0 * np.pi * TONE_FREQ_HZ * t)
+    waveform = WAVEFORM_AMPLITUDE * (
+        np.sqrt(target_band_ratio) * np.sin(2.0 * np.pi * TONE_FREQ_HZ * t)
+        + np.sqrt(1.0 - target_band_ratio)
+        * np.sin(2.0 * np.pi * OUT_OF_BAND_FREQ_HZ * t)
+    )
     clipped = np.clip(waveform, -1.0, 1.0)
-    pcm16 = (clipped * np.iinfo(np.int16).max).astype(np.int16)
-
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)  # PCM16 = 2 bytes
-        wav.setframerate(SAMPLE_RATE_HZ)
-        wav.writeframes(pcm16.tobytes())
-
-    return base64.b64encode(buffer.getvalue()).decode("ascii")
+    pcm16 = (clipped * np.iinfo(np.int16).max).astype("<i2")
+    return base64.b64encode(pcm16.tobytes()).decode("ascii")
 
 
-def build_payload(sensor_id: str, hydrant_id: str, amplitude: float) -> dict:
+def build_payload(
+    sensor_id: str, hydrant_id: str, target_band_ratio: float
+) -> dict:
     return {
         "sensor_id": sensor_id,
         "hydrant_id": hydrant_id,
@@ -81,7 +79,7 @@ def build_payload(sensor_id: str, hydrant_id: str, amplitude: float) -> dict:
         "location": {"latitude": 35.7022, "longitude": 139.7448},
         "sample_rate_hz": SAMPLE_RATE_HZ,
         "duration_sec": DURATION_SEC,
-        "audio_base64": build_audio_base64(amplitude),
+        "audio_base64": build_audio_base64(target_band_ratio),
         "battery_pct": 87,
     }
 
@@ -128,10 +126,16 @@ def case_2_deterministic_add() -> None:
     baseline = get_kpi_summary().json()
 
     # 3件を登録する前に、それぞれの severity が期待どおり解析されることを確認する
-    for sensor_id, hydrant_id, amplitude, expected_sev, _cost in SEVERITY_SAMPLES:
+    for (
+        sensor_id,
+        hydrant_id,
+        target_band_ratio,
+        expected_sev,
+        _cost,
+    ) in SEVERITY_SAMPLES:
         response = requests.post(
             TELEMETRY_ENDPOINT,
-            json=build_payload(sensor_id, hydrant_id, amplitude),
+            json=build_payload(sensor_id, hydrant_id, target_band_ratio),
             timeout=10,
         )
         expect(
