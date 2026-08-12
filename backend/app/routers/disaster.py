@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# プロセス内共有用
+# シミュレーション投入データ保持用
 _GLOBAL_SIMULATED_ALERTS: list[Any] = []
 
 
@@ -92,8 +92,16 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    # シミュレーション投入されたデータのみを対象にする
-    all_items = list(_GLOBAL_SIMULATED_ALERTS)
+    store = get_store()
+
+    all_items = []
+    if hasattr(store, "get_all"):
+        all_items.extend(store.get_all())
+    elif hasattr(store, "get_all_alerts"):
+        all_items.extend(store.get_all_alerts())
+
+    # シミュレーションデータも追加
+    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
 
     unique_items = []
     seen_ids = set()
@@ -106,8 +114,18 @@ async def get_disaster_summary(
         else:
             unique_items.append(item)
 
+    # シミュレーションデータ(TEL-DISASTER-)が存在する場合はそちらを優先、
+    # そうでない場合は DISASTER 関連のアラートのみを抽出する
+    has_simulated = any(
+        "TEL-DISASTER" in (_get_item_id(i) or "") for i in unique_items
+    )
+
     level3_alerts = []
     for a in unique_items:
+        item_id = _get_item_id(a) or ""
+        if has_simulated and "TEL-DISASTER" not in item_id:
+            continue
+
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
