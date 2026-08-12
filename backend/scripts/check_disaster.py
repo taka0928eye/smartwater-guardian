@@ -49,6 +49,7 @@ if __name__ == "__main__":
     except httpx.ConnectError:
         print("※ 開発サーバー未起動のため、FastAPI TestClient によるダイレクト検証を実施します。")
         from fastapi.testclient import TestClient
+
         from main import app
 
         client = TestClient(app)

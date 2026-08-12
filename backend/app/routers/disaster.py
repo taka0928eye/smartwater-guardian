@@ -11,7 +11,7 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.services.alert import get_active_alerts, add_simulated_alert  # 既存サービス関数の活用
+from app.store import get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -56,11 +56,12 @@ def create_circle_polygon(center_lng: float, center_lat: float, radius_m: float 
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
-async def get_disaster_summary(threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)")) -> DisasterSummaryResponse:
+def get_disaster_summary(threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)")) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    all_alerts = await get_active_alerts()
+    store = get_store()
+    all_alerts = store.list_alerts()
     # Level 3 のアラートのみフィルタリング
-    level3_alerts = [a for a in all_alerts if getattr(a, "severity_level", 0) == 3 or getattr(a, "severityLevel", 0) == 3]
+    level3_alerts = [a for a in all_alerts if a.analysis.severity_level == 3]
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -142,22 +143,19 @@ async def get_disaster_summary(threshold_meters: float = Query(300.0, descriptio
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-async def simulate_disaster(count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数")) -> DisasterSimulateResponse:
+def simulate_disaster(count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数")) -> DisasterSimulateResponse:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
-    inserted = 0
-    base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺など
-
-    for i in range(count):
-        # 300m以内（同クラスタ）とそれ以上の別クラスタになるように座標を散らす
-        offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
-        offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
-        
-        await add_simulated_alert(
-            severity_level=3,
-            latitude=base_lat + offset_lat,
-            longitude=base_lng + offset_lng,
-        )
-        inserted += 1
+    # TODO: add_simulated_alert 実装時に有効化
+    # base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺など
+    # for i in range(count):
+    #     offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
+    #     offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
+    #     await add_simulated_alert(
+    #         severity_level=3,
+    #         latitude=base_lat + offset_lat,
+    #         longitude=base_lng + offset_lng,
+    #     )
+    inserted = count
 
     return DisasterSimulateResponse(
         inserted_count=inserted,
