@@ -2,21 +2,16 @@
 
 /**
  * FE-5: アラート詳細ドロワー。
- *
- * 選択されたアラートの解析結果（漏水確信度・卓越周波数・帯域エネルギー比）と
- * 配管情報（配管台帳）を表示する。詳細は GET /api/v1/alerts/{telemetryId}（BE-6）から
- * 取得し、取得中・失敗時もドロワー自体は表示を維持する。
- *
- * children は FE-4（Recharts による音響波形・スペクトル表示）を差し込むための
- * スロットとして用意する。FE-4 と並行作業できるように props 契約のみ先に固定する。
+ * FE-6: AI自動起票ボタンおよび WorkOrderModal との結合を追加。
  */
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles, Loader2 } from "lucide-react";
 
 import SeverityBadge from "@/components/common/SeverityBadge";
-import { fetchAlertDetail } from "@/lib/api";
-import type { AlertDetail, AlertSummary } from "@/types/api";
+import { WorkOrderModal } from "@/components/workorder/WorkOrderModal";
+import { fetchAlertDetail, createWorkOrder } from "@/lib/api";
+import type { AlertDetail, AlertSummary, WorkOrder } from "@/types/api";
 
 export interface AlertDetailDrawerProps {
   /** 選択されたアラートの一覧行（ヘッダー表示用）。 */
@@ -61,14 +56,16 @@ export default function AlertDetailDrawer({
   onClose,
   children,
 }: AlertDetailDrawerProps) {
-  // 選択アラートが変わるときは親が key={telemetryId} で再マウントするため、
-  // 初期状態を「読み込み中」にできる（effect 内での同期 setState を避ける）。
   const [detail, setDetail] = useState<AlertDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 詳細を取得する。アンマウント後に状態を更新しないよう cancelled フラグで保護する。
-  // setState は非同期コールバック内でのみ呼ぶ（set-state-in-effect 規則に従う）。
+  // FE-6: AI自動起票状態
+  const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [isWorkOrderModalOpen, setIsWorkOrderModalOpen] = useState(false);
+  const [createOrderError, setCreateOrderError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     fetchAlertDetail(alert.telemetryId)
@@ -86,131 +83,186 @@ export default function AlertDetailDrawer({
     };
   }, [alert.telemetryId]);
 
+  // FE-6: 自動起票API呼び出しハンドラ
+  const handleCreateWorkOrder = async () => {
+    setIsCreatingOrder(true);
+    setCreateOrderError(null);
+    try {
+      // POST /alerts/{id}/work-order を実行
+      const data = await createWorkOrder(alert.telemetryId);
+      setWorkOrder(data);
+      setIsWorkOrderModalOpen(true);
+    } catch {
+      setCreateOrderError("自動起票に失敗しました。再試行してください。");
+    } finally {
+      setIsCreatingOrder(false);
+    }
+  };
+
   return (
-    <div
-      data-testid="alert-detail-drawer"
-      role="dialog"
-      aria-modal="true"
-      aria-label="アラート詳細"
-      className="fixed inset-0 z-50 flex justify-end"
-    >
-      {/* 背面オーバーレイ。クリックで閉じる */}
-      <button
-        type="button"
-        aria-label="ドロワーを閉じる"
-        data-testid="drawer-backdrop"
-        onClick={onClose}
-        className="absolute inset-0 bg-slate-900/40"
-      />
-      <aside className="relative h-full w-full max-w-md overflow-y-auto bg-white p-5 shadow-xl">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-500">アラート詳細</h2>
-          <button
-            type="button"
-            aria-label="閉じる"
-            data-testid="drawer-close"
-            onClick={onClose}
-            className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="mt-3 flex items-center gap-2">
-          <SeverityBadge level={alert.severityLevel} />
-          <span className="text-sm font-semibold text-slate-800">
-            {alert.hydrantId}
-          </span>
-        </div>
-        <dl className="mt-4 space-y-2 text-sm">
-          <DetailRow label="センサーID" value={alert.sensorId} />
-          <DetailRow label="検知時刻" value={formatDateTime(alert.detectedAt)} />
-          <DetailRow label="漏水確信度" value={`${alert.leakConfidence}%`} />
-        </dl>
-
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-500">解析結果を読み込み中…</p>
-        ) : error ? (
-          <p
-            data-testid="detail-error"
-            className="mt-4 text-sm text-amber-600"
-          >
-            {error}
-          </p>
-        ) : detail ? (
-          <>
-            <section
-              aria-label="解析結果"
-              className="mt-5 rounded-lg border border-slate-200 p-3"
+    <>
+      <div
+        data-testid="alert-detail-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label="アラート詳細"
+        className="fixed inset-0 z-50 flex justify-end"
+      >
+        {/* 背面オーバーレイ。クリックで閉じる */}
+        <button
+          type="button"
+          aria-label="ドロワーを閉じる"
+          data-testid="drawer-backdrop"
+          onClick={onClose}
+          className="absolute inset-0 bg-slate-900/40"
+        />
+        <aside className="relative h-full w-full max-w-md overflow-y-auto bg-white p-5 shadow-xl">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-500">アラート詳細</h2>
+            <button
+              type="button"
+              aria-label="閉じる"
+              data-testid="drawer-close"
+              onClick={onClose}
+              className="rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
             >
-              <h3 className="text-xs font-semibold text-slate-500">
-                解析結果
-              </h3>
-              {detail.analysis ? (
-                <dl className="mt-2 space-y-1.5 text-sm">
-                  <DetailRow
-                    label="漏水確信度"
-                    value={`${detail.analysis.leakConfidence}%`}
-                  />
-                  <DetailRow
-                    label="卓越周波数"
-                    value={`${detail.analysis.dominantFreqHz} Hz`}
-                  />
-                  <DetailRow
-                    label="帯域エネルギー比"
-                    value={detail.analysis.bandEnergyRatio.toString()}
-                  />
-                </dl>
-              ) : (
-                <p className="mt-2 text-sm text-slate-500">
-                  解析結果はありません
-                </p>
-              )}
-            </section>
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-            <section
-              aria-label="配管情報"
-              className="mt-3 rounded-lg border border-slate-200 p-3"
+          <div className="mt-3 flex items-center gap-2">
+            <SeverityBadge level={alert.severityLevel} />
+            <span className="text-sm font-semibold text-slate-800">
+              {alert.hydrantId}
+            </span>
+          </div>
+          <dl className="mt-4 space-y-2 text-sm">
+            <DetailRow label="センサーID" value={alert.sensorId} />
+            <DetailRow label="検知時刻" value={formatDateTime(alert.detectedAt)} />
+            <DetailRow label="漏水確信度" value={`${alert.leakConfidence}%`} />
+          </dl>
+
+          {/* FE-6: AI自動起票アクションエリア */}
+          <div className="mt-5 rounded-lg bg-slate-50 p-3 border border-slate-200">
+            <button
+              type="button"
+              onClick={handleCreateWorkOrder}
+              disabled={isCreatingOrder}
+              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium text-sm rounded-md shadow-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <h3 className="text-xs font-semibold text-slate-500">
-                配管情報
-              </h3>
-              {detail.pipeInfo ? (
-                <dl className="mt-2 space-y-1.5 text-sm">
-                  <DetailRow label="管ID" value={detail.pipeInfo.pipeId} />
-                  <DetailRow label="材質" value={detail.pipeInfo.material} />
-                  <DetailRow
-                    label="口径"
-                    value={`${detail.pipeInfo.diameterMm} mm`}
-                  />
-                  <DetailRow
-                    label="埋設深"
-                    value={`${detail.pipeInfo.burialDepthM} m`}
-                  />
-                  <DetailRow
-                    label="経過年数"
-                    value={`${detail.pipeInfo.ageYears} 年`}
-                  />
-                </dl>
+              {isCreatingOrder ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>AI起票処理中 (解析・指示書生成)...</span>
+                </>
               ) : (
-                <p className="mt-2 text-sm text-slate-500">
-                  配管台帳情報は未登録です
-                </p>
+                <>
+                  <Sparkles className="h-4 w-4 text-yellow-300 fill-yellow-300" />
+                  <span>AI自動起票 (作業指示書を作成)</span>
+                </>
               )}
-            </section>
+            </button>
 
-            {/* FE-4 のチャート差込スロット */}
-            {children ? (
+            {createOrderError && (
+              <p className="mt-2 text-xs text-red-600 font-medium">
+                {createOrderError}
+              </p>
+            )}
+          </div>
+
+          {loading ? (
+            <p className="mt-4 text-sm text-slate-500">解析結果を読み込み中…</p>
+          ) : error ? (
+            <p
+              data-testid="detail-error"
+              className="mt-4 text-sm text-amber-600"
+            >
+              {error}
+            </p>
+          ) : detail ? (
+            <>
               <section
-                aria-label="スペクトルチャート"
-                className="mt-3"
+                aria-label="解析結果"
+                className="mt-5 rounded-lg border border-slate-200 p-3"
               >
-                {children}
+                <h3 className="text-xs font-semibold text-slate-500">
+                  解析結果
+                </h3>
+                {detail.analysis ? (
+                  <dl className="mt-2 space-y-1.5 text-sm">
+                    <DetailRow
+                      label="漏水確信度"
+                      value={`${detail.analysis.leakConfidence}%`}
+                    />
+                    <DetailRow
+                      label="卓越周波数"
+                      value={`${detail.analysis.dominantFreqHz} Hz`}
+                    />
+                    <DetailRow
+                      label="帯域エネルギー比"
+                      value={detail.analysis.bandEnergyRatio.toString()}
+                    />
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    解析結果はありません
+                  </p>
+                )}
               </section>
-            ) : null}
-          </>
-        ) : null}
-      </aside>
-    </div>
+
+              <section
+                aria-label="配管情報"
+                className="mt-3 rounded-lg border border-slate-200 p-3"
+              >
+                <h3 className="text-xs font-semibold text-slate-500">
+                  配管情報
+                </h3>
+                {detail.pipeInfo ? (
+                  <dl className="mt-2 space-y-1.5 text-sm">
+                    <DetailRow label="管ID" value={detail.pipeInfo.pipeId} />
+                    <DetailRow label="材質" value={detail.pipeInfo.material} />
+                    <DetailRow
+                      label="口径"
+                      value={`${detail.pipeInfo.diameterMm} mm`}
+                    />
+                    <DetailRow
+                      label="埋設深"
+                      value={`${detail.pipeInfo.burialDepthM} m`}
+                    />
+                    <DetailRow
+                      label="経過年数"
+                      value={`${detail.pipeInfo.ageYears} 年`}
+                    />
+                  </dl>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    配管台帳情報は未登録です
+                  </p>
+                )}
+              </section>
+
+              {/* FE-4 のチャート差込スロット */}
+              {children ? (
+                <section
+                  aria-label="スペクトルチャート"
+                  className="mt-3"
+                >
+                  {children}
+                </section>
+              ) : null}
+            </>
+          ) : null}
+        </aside>
+      </div>
+
+      {/* FE-6: 自動起票モーダル */}
+      {workOrder && (
+        <WorkOrderModal
+          isOpen={isWorkOrderModalOpen}
+          onClose={() => setIsWorkOrderModalOpen(false)}
+          workOrder={workOrder}
+        />
+      )}
+    </>
   );
 }
