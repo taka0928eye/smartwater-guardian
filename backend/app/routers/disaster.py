@@ -100,7 +100,7 @@ async def get_disaster_summary(
     elif hasattr(store, "get_all_alerts"):
         all_items.extend(store.get_all_alerts())
 
-    # シミュレーションデータも追加
+    # グローバルシミュレーションデータも統合
     all_items.extend(_GLOBAL_SIMULATED_ALERTS)
 
     unique_items = []
@@ -114,28 +114,21 @@ async def get_disaster_summary(
         else:
             unique_items.append(item)
 
-    # シミュレーションデータ(TEL-DISASTER-)が存在する場合はそちらを優先、
-    # そうでない場合は DISASTER 関連のアラートのみを抽出する
-    has_simulated = any(
-        "TEL-DISASTER" in (_get_item_id(i) or "") for i in unique_items
-    )
-
     level3_alerts = []
     for a in unique_items:
-        item_id = _get_item_id(a) or ""
-        if has_simulated and "TEL-DISASTER" not in item_id:
-            continue
-
+        # 直下の severity_level、または analysis.severity_level を確認
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
             sev = getattr(analysis, "severity_level", None)
+
         if sev is None and isinstance(a, dict):
             sev = a.get("severity_level") or a.get("severityLevel")
             if sev is None and isinstance(a.get("analysis"), dict):
                 sev = a["analysis"].get("severity_level")
 
-        if str(sev) == "3":
+        # 明示的に数値・文字列の 3 のみを Level 3 アラートとして認定
+        if sev == 3 or str(sev) == "3":
             level3_alerts.append(a)
 
     if not level3_alerts:
