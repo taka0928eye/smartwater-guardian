@@ -75,14 +75,22 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
+def _get_item_id(item: Any) -> str | None:
+    """アイテムから telemetry_id を安全に取得。"""
+    if isinstance(item, dict):
+        val = item.get("telemetry_id")
+        return str(val) if val is not None else None
+    val_attr = getattr(item, "telemetry_id", None)
+    return str(val_attr) if val_attr is not None else None
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
-    
-    # 全データを安全に横断収集
+
     all_items = []
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
@@ -95,11 +103,10 @@ async def get_disaster_summary(
     if hasattr(store, "_alerts"):
         all_items.extend(getattr(store, "_alerts", []))
 
-    # 重複排除
     unique_items = []
     seen_ids = set()
     for item in all_items:
-        item_id = getattr(item, "telemetry_id", None) or (item.get("telemetry_id") if isinstance(item, dict) else None)
+        item_id = _get_item_id(item)
         if item_id:
             if item_id not in seen_ids:
                 seen_ids.add(item_id)
@@ -195,15 +202,21 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
-            # Storeのあらゆる保持リストに全方位追加
+
             if hasattr(store, "add"):
                 store.add(item)
-            if hasattr(store, "telemetry_records") and isinstance(getattr(store, "telemetry_records"), list):
-                getattr(store, "telemetry_records").append(item)
-            if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
-                getattr(store, "_telemetry").append(item)
-            if hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
-                getattr(store, "_alerts").append(item)
+
+            rec = getattr(store, "telemetry_records", None)
+            if isinstance(rec, list):
+                rec.append(item)
+
+            t_list = getattr(store, "_telemetry", None)
+            if isinstance(t_list, list):
+                t_list.append(item)
+
+            a_list = getattr(store, "_alerts", None)
+            if isinstance(a_list, list):
+                a_list.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
