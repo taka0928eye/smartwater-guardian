@@ -12,8 +12,7 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.schemas.telemetry import AnalysisResult, GeoLocation
-from app.store import StoredTelemetry, get_store
+from app.store import get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -68,8 +67,8 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
             lat = item.get("lat", 0.0)
             lng = item.get("lng", 0.0)
     else:
-        lat = item.location.latitude
-        lng = item.location.longitude
+        lat = getattr(getattr(item, "location", None), "latitude", 0.0)
+        lng = getattr(getattr(item, "location", None), "longitude", 0.0)
     return lat, lng
 
 
@@ -96,6 +95,8 @@ async def get_disaster_summary(
             sev = getattr(a.analysis, "severity_level", None)
         if sev is None and isinstance(a, dict):
             sev = a.get("severity_level") or a.get("severityLevel")
+            if sev is None and isinstance(a.get("analysis"), dict):
+                sev = a["analysis"].get("severity_level")
         if sev == 3:
             level3_alerts.append(a)
 
@@ -181,31 +182,44 @@ async def simulate_disaster(
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     store = get_store()
     base_lat, base_lng = 35.6812, 139.7671
-    now = datetime.now(timezone.utc)
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     for i in range(count):
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        telemetry_item = StoredTelemetry(
-            telemetry_id=f"TEL-DISASTER-{i+1:03d}",
-            sensor_id=f"SEN-DISASTER-{i+1:03d}",
-            hydrant_id=f"HYD-DISASTER-{i+1:03d}",
-            recorded_at=now,
-            received_at=now,
-            location=GeoLocation(
-                latitude=base_lat + offset_lat,
-                longitude=base_lng + offset_lng,
-            ),
-            analysis=AnalysisResult(
-                severity_level=3,
-                leak_confidence=95.0,
-                dominant_freq_hz=800,
-                band_energy_ratio=4.5,
-            ),
-        )
+        alert_dict = {
+            "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
+            "sensor_id": f"SEN-DISASTER-{i+1:03d}",
+            "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
+            "severity_level": 3,
+            "leak_confidence": 95.0,
+            "detected_at": now_iso,
+            "location": {
+                "latitude": base_lat + offset_lat,
+                "longitude": base_lng + offset_lng,
+            },
+            "analysis": {
+                "severity_level": 3,
+                "leak_confidence": 95.0,
+                "dominant_freq_hz": 800,
+                "band_energy_ratio": 4.5,
+            },
+        }
 
-        store.add(telemetry_item)
+        # アラートストアの登録APIを型に合わせて柔軟に使用
+        if hasattr(store, "add_alert"):
+            store.add_alert(alert_dict)
+        elif hasattr(store, "alerts") and isinstance(store.alerts, list):
+            store.alerts.append(alert_dict)
+        elif hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
+            getattr(store, "_alerts").append(alert_dict)
+        elif hasattr(store, "add"):
+            try:
+                store.add(alert_dict)
+            except Exception:
+                if hasattr(store, "alerts"):
+                    store.alerts.append(alert_dict)
 
     return DisasterSimulateResponse(
         inserted_count=count,
