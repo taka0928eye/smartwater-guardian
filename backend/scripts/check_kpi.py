@@ -196,8 +196,14 @@ def case_3_est_levels_isolated() -> None:
 
 CASES = [
     ("KPI: GET /kpi/summary が 200 + 契約7フィールド", case_1_kpi_contract),
-    ("算定: severity1/2/3 を1件ずつ登録 → 差分が公式どおり", case_2_deterministic_add),
-    ("定数: 単体コストが §3.3 と一致（121,800 / 308,000 / 150,000 / 0）", case_3_est_levels_isolated),
+    (
+        "算定: severity1/2/3 を1件ずつ登録 → 差分が公式どおり",
+        case_2_deterministic_add,
+    ),
+    (
+        "定数: 単体コストが §3.3 と一致（121,800 / 308,000 / 150,000 / 0）",
+        case_3_est_levels_isolated,
+    ),
 ]
 
 
@@ -205,8 +211,13 @@ def main() -> int:
     try:
         requests.get(BASE_URL, timeout=5).raise_for_status()
     except requests.RequestException as exc:
-        print(f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr)
-        print("        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000", file=sys.stderr)
+        print(
+            f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr
+        )
+        print(
+            "        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000",
+            file=sys.stderr,
+        )
         return 2
 
     failures = 0

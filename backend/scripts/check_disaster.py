@@ -25,7 +25,9 @@ async def test_disaster_flow():
         res_sum = await client.get("/api/v1/disaster/summary")
         assert res_sum.status_code == 200, f"Summary API Error: {res_sum.status_code}"
         sum_data = res_sum.json()
-        print(f"[✓] サマリー取得成功: クラスタ数={sum_data['total_clusters']}, 想定断水世帯数={sum_data['total_affected_households']}")
+        clusters = sum_data['total_clusters']
+        households = sum_data['total_affected_households']
+        print(f"[✓] サマリー取得成功: クラスタ数={clusters}, 想定断水世帯数={households}")
 
         assert sum_data["total_clusters"] > 0, "クラスタが検出されていません"
 

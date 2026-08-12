@@ -25,7 +25,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.audio import (
+from app.services.audio import (  # noqa: E402
     DURATION_SEC,
     FEATURE_NAMES,
     FEATURE_SCHEMA_VERSION,

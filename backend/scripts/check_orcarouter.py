@@ -1,4 +1,7 @@
-"""check_orcarouter.py: Orcarouter LLM 自動起票およびフォールバック（ORCAROUTER_ENABLED=false）の検証スクリプト。"""
+"""check_orcarouter.py: Orcarouter LLM 自動起票およびフォールバック検証スクリプト。
+
+ORCAROUTER_ENABLED=false 時の動作も検証する。
+"""
 
 import asyncio
 import os

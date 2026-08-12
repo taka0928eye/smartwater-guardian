@@ -73,11 +73,21 @@ def case_1_valid_payload() -> None:
     expect(response.status_code == 200, f"期待 200 / 実際 {response.status_code}: {response.text}")
 
     body = response.json()
-    expect(body["status"] == "accepted", f"status が accepted ではない: {body['status']}")
-    expect(body["analysis"] is not None, f"BE-3 では analysis に解析結果が入るはず: {body['analysis']}")
-    expect(body["analysis"]["severity_level"] in (0, 1, 2, 3), f"severity_level が 0〜3 ではない: {body['analysis']['severity_level']}")
-    expect(len(body["analysis"]["spectrum"]) == 128, f"spectrum が 128 点ではない: {len(body['analysis']['spectrum'])}")
-    expect(body["sensor_id"] == "SNS-001", f"sensor_id がエコーされていない: {body['sensor_id']}")
+    status = body["status"]
+    expect(status == "accepted", f"status が accepted ではない: {status}")
+    analysis = body["analysis"]
+    expect(analysis is not None, f"BE-3 では analysis に解析結果が入るはず: {analysis}")
+    severity = analysis["severity_level"]
+    expect(
+        severity in (0, 1, 2, 3),
+        f"severity_level が 0〜3 ではない: {severity}",
+    )
+    spectrum_len = len(analysis["spectrum"])
+    expect(
+        spectrum_len == 128, f"spectrum が 128 点ではない: {spectrum_len}"
+    )
+    sensor_id = body["sensor_id"]
+    expect(sensor_id == "SNS-001", f"sensor_id がエコーされていない: {sensor_id}")
     expect(bool(body["telemetry_id"]), "telemetry_id が空")
     expect(bool(body["received_at"]), "received_at が空")
 
@@ -136,8 +146,13 @@ def main() -> int:
     try:
         requests.get(BASE_URL, timeout=5).raise_for_status()
     except requests.RequestException as exc:
-        print(f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr)
-        print("        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000", file=sys.stderr)
+        print(
+            f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr
+        )
+        print(
+            "        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000",
+            file=sys.stderr,
+        )
         return 2
 
     failures = 0

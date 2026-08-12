@@ -165,14 +165,21 @@ def case_5_detail() -> None:
         len(body["analysis"]["spectrum"]) == 128,
         f"spectrum が 128 点ではない: {len(body['analysis']['spectrum'])}",
     )
-    expect(body["pipe_info"] is None, f"pipe_info は BE-4 未実装のため null のはず: {body['pipe_info']}")
+    pipe_info = body["pipe_info"]
+    expect(
+        pipe_info is None, f"pipe_info は BE-4 未実装のため null のはず: {pipe_info}"
+    )
     expect("location" in body, "AlertDetail に location が無い")
 
 
 def case_6_unknown_id_404() -> None:
     """存在しない ID の詳細は 404（500 でない）。"""
     response = requests.get(f"{ALERTS_ENDPOINT}/tlm_not_exist", timeout=10)
-    expect(response.status_code == 404, f"不明 ID 期待 404 / 実際 {response.status_code}: {response.text}")
+    status_code = response.status_code
+    expect(
+        status_code == 404,
+        f"不明 ID 期待 404 / 実際 {status_code}: {response.text}",
+    )
 
 
 def case_7_sensors() -> None:
@@ -209,8 +216,13 @@ def case_8_geojson() -> None:
         f"?format=geojson 期待 200 / 実際 {response.status_code}: {response.text}",
     )
     body = response.json()
-    expect(body["type"] == "FeatureCollection", f"type が FeatureCollection ではない: {body['type']}")
-    expect(len(body["features"]) == 10, f"features は10件のはず: {len(body['features'])}")
+    body_type = body["type"]
+    expect(
+        body_type == "FeatureCollection",
+        f"type が FeatureCollection ではない: {body_type}",
+    )
+    features_len = len(body["features"])
+    expect(features_len == 10, f"features は10件のはず: {features_len}")
 
     for feature in body["features"]:
         lon, lat = feature["geometry"]["coordinates"]
@@ -255,8 +267,13 @@ def main() -> int:
     try:
         requests.get(BASE_URL, timeout=5).raise_for_status()
     except requests.RequestException as exc:
-        print(f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr)
-        print("        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000", file=sys.stderr)
+        print(
+            f"[FATAL] サーバーへ接続できません ({BASE_URL}): {exc}", file=sys.stderr
+        )
+        print(
+            "        backend/venv/Scripts/uvicorn.exe main:app --reload --port 8000",
+            file=sys.stderr,
+        )
         return 2
 
     failures = 0

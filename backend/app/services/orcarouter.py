@@ -93,7 +93,10 @@ def clear_work_order_cache() -> None:
 
 def _get_model() -> str:
     """ORCAROUTER_MODEL を呼び出し時に読み込む。未設定なら既定値。"""
-    return os.environ.get("ORCAROUTER_MODEL", DEFAULT_ORCAROUTER_MODEL).strip() or DEFAULT_ORCAROUTER_MODEL
+    return (
+        os.environ.get("ORCAROUTER_MODEL", DEFAULT_ORCAROUTER_MODEL).strip()
+        or DEFAULT_ORCAROUTER_MODEL
+    )
 
 
 # --- 補修部材マスタ（フォールバック用） ---
@@ -164,7 +167,9 @@ def _severity_to_urgency(severity_level: int) -> UrgencyLevel:
     return mapping.get(severity_level, "low")
 
 
-def _build_notification_text(alert: AlertDetail, total_estimate_yen: int, urgency: UrgencyLevel) -> str:
+def _build_notification_text(
+    alert: AlertDetail, total_estimate_yen: int, urgency: UrgencyLevel
+) -> str:
     """フォールバック用の通知文面（日本語）を組み立てる。"""
     return (
         f"【漏水検知】消火栓 {alert.hydrant_id}（テレメトリ {alert.telemetry_id}）で補修が必要と"
@@ -400,7 +405,10 @@ async def _generate_work_order(
         "model": model,
         "messages": [
             {"role": "system", "content": build_system_prompt()},
-            {"role": "user", "content": build_user_prompt(_to_telemetry_data(alert), _to_pipe_info(pipe))},
+            {
+                "role": "user",
+                "content": build_user_prompt(_to_telemetry_data(alert), _to_pipe_info(pipe)),
+            },
         ],
     }
 
@@ -411,7 +419,8 @@ async def _generate_work_order(
     if response is None:
         return _fallback(telemetry_id, alert, pipe, model, latency_ms, "リトライ後も失敗")
     if response.status_code >= 400:
-        return _fallback(telemetry_id, alert, pipe, model, latency_ms, f"HTTP {response.status_code}")
+        status_code = response.status_code
+        return _fallback(telemetry_id, alert, pipe, model, latency_ms, f"HTTP {status_code}")
 
     # 2xx 成功パス
     try:
