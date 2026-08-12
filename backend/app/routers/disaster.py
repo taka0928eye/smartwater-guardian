@@ -1,7 +1,7 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
-from datetime import datetime, timezone
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -208,3 +208,4 @@ async def simulate_disaster(
         inserted_count=count,
         message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました",
     )
+
