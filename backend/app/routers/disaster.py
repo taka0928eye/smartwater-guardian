@@ -55,6 +55,22 @@ def create_circle_polygon(
     return GeoJSONPolygon(type="Polygon", coordinates=[coords])
 
 
+def _extract_lat_lng(item: Any) -> tuple[float, float]:
+    """アイテムから緯度・経度を安全に抽出するヘルパー。"""
+    if isinstance(item, dict):
+        loc = item.get("location", {})
+        if isinstance(loc, dict):
+            lat = loc.get("latitude", 0.0)
+            lng = loc.get("longitude", 0.0)
+        else:
+            lat = item.get("lat", 0.0)
+            lng = item.get("lng", 0.0)
+    else:
+        lat = item.location.latitude
+        lng = item.location.longitude
+    return lat, lng
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -62,7 +78,6 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    # store 内のアラートデータ（dictまたはオブジェクト）を取得
     if hasattr(store, "get_all_alerts"):
         all_alerts = store.get_all_alerts()
     elif hasattr(store, "alerts"):
@@ -90,25 +105,12 @@ async def get_disaster_summary(
     # 貪欲法クラスタリング
     clusters_raw: list[list[Any]] = []
     for alert in level3_alerts:
-        if isinstance(alert, dict):
-            loc = alert.get("location", {})
-            lat = loc.get("latitude", 0.0) if isinstance(loc, dict) else alert.get("lat", 0.0)
-            lng = loc.get("longitude", 0.0) if isinstance(loc, dict) else alert.get("lng", 0.0)
-        else:
-            lat = alert.location.latitude
-            lng = alert.location.longitude
+        lat, lng = _extract_lat_lng(alert)
 
         assigned = False
         for cluster in clusters_raw:
             for item in cluster:
-                if isinstance(item, dict):
-                    loc_i = item.get("location", {})
-                    item_lat = loc_i.get("latitude", 0.0) if isinstance(loc_i, dict) else item.get("lat", 0.0)
-                    item_lng = loc_i.get("longitude", 0.0) if isinstance(loc_i, dict) else item.get("lng", 0.0)
-                else:
-                    item_lat = item.location.latitude
-                    item_lng = item.location.longitude
-
+                item_lat, item_lng = _extract_lat_lng(item)
                 dist = haversine_distance(lat, lng, item_lat, item_lng)
                 if dist <= threshold_meters:
                     cluster.append(alert)
@@ -128,15 +130,14 @@ async def get_disaster_summary(
 
         lats, lngs, sensor_ids, hydrant_ids = [], [], [], []
         for item in group:
+            item_lat, item_lng = _extract_lat_lng(item)
+            lats.append(item_lat)
+            lngs.append(item_lng)
+
             if isinstance(item, dict):
-                loc_g = item.get("location", {})
-                lats.append(loc_g.get("latitude", 0.0) if isinstance(loc_g, dict) else item.get("lat", 0.0))
-                lngs.append(loc_g.get("longitude", 0.0) if isinstance(loc_g, dict) else item.get("lng", 0.0))
                 sensor_ids.append(item.get("sensor_id", f"SEN-{idx}"))
                 hydrant_ids.append(item.get("hydrant_id", f"HYD-{idx}"))
             else:
-                lats.append(item.location.latitude)
-                lngs.append(item.location.longitude)
                 sensor_ids.append(getattr(item, "sensor_id", f"SEN-{idx}"))
                 hydrant_ids.append(getattr(item, "hydrant_id", f"HYD-{idx}"))
 
