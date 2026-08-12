@@ -8,7 +8,7 @@ FeatureCollection を返す。座標は GeoJSON 標準の [経度, 緯度] 順
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Union
 
 from fastapi import APIRouter, Query
 
@@ -67,7 +67,7 @@ def _to_sensor_feature(
 @router.get("/sensors", summary="センサー一覧（JSON / GeoJSON）")
 def list_sensors(
     format: Literal["json", "geojson"] = Query(default="json", description="応答形式"),
-):
+) -> Union[list[SensorInfo], SensorFeatureCollection]:
     """消火栓マスタを台帳に、センサーごとの最新状態を返す。
 
     応答形式は format で切り替わるため response_model は指定しない

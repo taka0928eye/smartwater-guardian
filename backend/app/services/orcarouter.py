@@ -30,7 +30,7 @@ import os
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -128,9 +128,10 @@ def _load_repair_parts() -> dict[str, Any]:
     例外は初回呼び出し時に送出される。
     """
     try:
-        data = json.loads(REPAIR_PARTS_PATH.read_text(encoding="utf-8"))
+        raw_data = json.loads(REPAIR_PARTS_PATH.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"repair_parts.json を読み込めません: {REPAIR_PARTS_PATH}") from exc
+    data = cast(dict[str, Any], raw_data)
     entries = data.get("entries")
     default_entry = data.get("default")
     if not isinstance(entries, dict):
@@ -150,15 +151,16 @@ def _load_repair_parts() -> dict[str, Any]:
 def _lookup_repair_parts(pipe: PipeRecord | None) -> dict[str, Any]:
     """pipe の材質×口径に対応する補修部材エントリを返す。該当なしは default。"""
     master = _load_repair_parts()
+    default_entry = cast(dict[str, Any], master["default"])
     if pipe is None:
-        return master["default"]
-    material_entries = master["entries"].get(pipe.material, {})
+        return default_entry
+    material_entries = cast(dict[str, Any], master["entries"]).get(pipe.material, {})
     if not isinstance(material_entries, dict):
-        return master["default"]
+        return default_entry
     entry = material_entries.get(str(pipe.diameter_mm))
     if not isinstance(entry, dict):
-        return master["default"]
-    return entry
+        return default_entry
+    return cast(dict[str, Any], entry)
 
 
 def _severity_to_urgency(severity_level: int) -> UrgencyLevel:

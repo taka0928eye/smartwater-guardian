@@ -56,5 +56,5 @@ async def handle_generic_exception(request: Request, exc: Exception) -> JSONResp
 
 
 @app.get("/")
-def read_root():
+def read_root() -> dict[str, str]:
     return {"message": "SmartWater Guardian API Ready"}

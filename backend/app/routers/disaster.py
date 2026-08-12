@@ -177,7 +177,7 @@ def simulate_disaster(
         # Level 3（管路破裂）のアナリシス結果を生成
         analysis = AnalysisResult(
             leak_confidence=95.0,  # AI スコア（0-100）
-            severity_level=3,  # type: ignore[arg-type]
+            severity_level=3,
             dominant_freq_hz=950.0,  # 卓越周波数 (Hz)
             band_energy_ratio=0.85,  # エネルギー比（0-1.0）
             spectrum=[],  # スペクトルポイント（デモ用に空）

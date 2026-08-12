@@ -1,7 +1,7 @@
 """プロンプト生成およびレスポンス解析サービス."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from app.schemas.work_order import WorkOrder
 
@@ -84,4 +84,4 @@ def extract_json_from_response(response_text: str) -> dict[str, Any]:
     except Exception as e:
         raise ValueError(f"有効なJSON文字列をパースできませんでした: {e}") from e
 
-    return res
+    return cast(dict[str, Any], res)
