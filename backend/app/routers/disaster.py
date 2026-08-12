@@ -81,11 +81,18 @@ async def get_disaster_summary(
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
-    all_alerts = getattr(store, "alerts", [])
     if hasattr(store, "get_all"):
         all_alerts = store.get_all()
+    else:
+        all_alerts = getattr(store, "_alerts", [])
 
-    level3_alerts = [a for a in all_alerts if getattr(a, "severity_level", 0) == 3]
+    level3_alerts = []
+    for a in all_alerts:
+        sev = getattr(a, "severity_level", None)
+        if sev is None and hasattr(a, "analysis"):
+            sev = getattr(a.analysis, "severity_level", None)
+        if sev == 3:
+            level3_alerts.append(a)
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -161,10 +168,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
-            if hasattr(store, "add"):
-                store.add(item)
-            else:
-                store.alerts.append(item)
+            store.add(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
