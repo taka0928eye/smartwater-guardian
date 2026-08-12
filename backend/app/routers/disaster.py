@@ -1,8 +1,6 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
 import math
-import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -13,10 +11,11 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.schemas.telemetry import AnalysisResult, GeoLocation
-from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
+
+# メモリ内シミュレーション用アラートデータ保持用ストア
+_simulated_alerts: list[dict[str, Any]] = []
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -36,16 +35,12 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 
 
 def create_circle_polygon(
-    center_lng: float,
-    center_lat: float,
-    radius_m: float = 300.0,
-    num_points: int = 16,
+    center_lng: float, center_lat: float, radius_m: float = 300.0, num_points: int = 16
 ) -> GeoJSONPolygon:
     """重心から半径 radius_m メートルの多角形近似 GeoJSON Polygon を生成。"""
     coords = []
     lat_rad = math.radians(center_lat)
 
-    # 1度あたりの距離(約)
     meters_per_lat = 111111.0
     meters_per_lng = 111111.0 * math.cos(lat_rad)
 
@@ -64,18 +59,11 @@ def create_circle_polygon(
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
-def get_disaster_summary(
-    threshold_meters: float = Query(
-        300.0, description="クラスタリング距離閾値(m)"
-    ),
+async def get_disaster_summary(
+    threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    store = get_store()
-    all_alerts = store.list_alerts()
-    # Level 3 のアラートのみフィルタリング
-    level3_alerts = [a for a in all_alerts if a.analysis.severity_level == 3]
-
-    if not level3_alerts:
+    if not _simulated_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
@@ -83,16 +71,15 @@ def get_disaster_summary(
         )
 
     # 貪欲法クラスタリング
-    clusters_raw: list[list[Any]] = []
-    for alert in level3_alerts:
-        lat = alert.location.latitude
-        lng = alert.location.longitude
+    clusters_raw: list[list[dict[str, Any]]] = []
+    for alert in _simulated_alerts:
+        lat = alert["lat"]
+        lng = alert["lng"]
 
         assigned = False
         for cluster in clusters_raw:
-            # クラスタ内の各要素との距離を検証
             for item in cluster:
-                dist = haversine_distance(lat, lng, item.location.latitude, item.location.longitude)
+                dist = haversine_distance(lat, lng, item["lat"], item["lng"])
                 if dist <= threshold_meters:
                     cluster.append(alert)
                     assigned = True
@@ -109,30 +96,19 @@ def get_disaster_summary(
     for idx, group in enumerate(clusters_raw, start=1):
         cluster_id = f"CLS-{idx:03d}"
 
-        lats = [item.location.latitude for item in group]
-        lngs = [item.location.longitude for item in group]
+        lats = [item["lat"] for item in group]
+        lngs = [item["lng"] for item in group]
         center_lat = sum(lats) / len(lats)
         center_lng = sum(lngs) / len(lngs)
 
-        sensor_ids = list({item.sensor_id for item in group if hasattr(item, "sensor_id")})
+        sensor_ids = [item["sensor_id"] for item in group]
+        hydrant_ids = [item["hydrant_id"] for item in group]
+        unique_pipe_ids = [f"PIPE-SYS-{idx}"]
 
-        # 影響配管・優先バルブ（消火栓）の選定
-        pipe_ids = []
-        hydrant_ids = []
-        for item in group:
-            if hasattr(item, "pipe_info") and item.pipe_info:
-                pipe_ids.append(item.pipe_info.pipe_id)
-            if hasattr(item, "hydrant_id"):
-                hydrant_ids.append(item.hydrant_id)
-
-        unique_pipe_ids = list(set(pipe_ids)) if pipe_ids else [f"PIPE-SYS-{idx}"]
-        priority_hydrant = hydrant_ids[0] if hydrant_ids else f"HYD-PRIORITY-{idx}"
-
-        # 口径/件数から試算した仮世帯数
         households = len(group) * 120 + len(unique_pipe_ids) * 50
         total_households += households
 
-        polygon = create_circle_polygon(center_lng, center_lat, radius_m=300.0)
+        polygon = create_circle_polygon(center_lng, center_lat, radius_m=threshold_meters)
 
         result_clusters.append(
             DisasterCluster(
@@ -142,7 +118,7 @@ def get_disaster_summary(
                 affected_sensor_ids=sensor_ids,
                 affected_pipe_ids=unique_pipe_ids,
                 estimated_households=households,
-                priority_valve_hydrant_id=priority_hydrant,
+                priority_valve_hydrant_id=hydrant_ids[0],
                 geometry=polygon,
             )
         )
@@ -155,52 +131,32 @@ def get_disaster_summary(
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-def simulate_disaster(
-    count: int = Query(
-        6, ge=1, le=20, description="生成するLevel 3アラート件数"
-    ),
+async def simulate_disaster(
+    count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数"),
 ) -> DisasterSimulateResponse:
-    """デモ用に一括で Level 3 アラートをシミュレーション投入する（震災時の被害マッピング用）。"""
-    store = get_store()
-    base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺
+    """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
+    global _simulated_alerts
+    _simulated_alerts.clear()
+
+    base_lat, base_lng = 35.6812, 139.7671
 
     for i in range(count):
-        # グリッド状にアラートを分布させる（3x列）
+        # 300m以内（同クラスタ）とそれ以上の別クラスタになるよう分散
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        # シミュレーション用アラートを構築
-        telemetry_id = f"sim-{uuid.uuid4().hex[:8]}"
-        sensor_id = f"SENSOR-SIM-{i+1:03d}"
-        hydrant_id = f"HYDRANT-SIM-{i+1:03d}"
-
-        # Level 3（管路破裂）のアナリシス結果を生成
-        analysis = AnalysisResult(
-            leak_confidence=95.0,  # AI スコア（0-100）
-            severity_level=3,
-            dominant_freq_hz=950.0,  # 卓越周波数 (Hz)
-            band_energy_ratio=0.85,  # エネルギー比（0-1.0）
-            spectrum=[],  # スペクトルポイント（デモ用に空）
+        _simulated_alerts.append(
+            {
+                "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
+                "sensor_id": f"SEN-DISASTER-{i+1:03d}",
+                "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
+                "lat": base_lat + offset_lat,
+                "lng": base_lng + offset_lng,
+                "severity_level": 3,
+            }
         )
 
-        record = StoredTelemetry(
-            telemetry_id=telemetry_id,
-            sensor_id=sensor_id,
-            hydrant_id=hydrant_id,
-            recorded_at=datetime.now(timezone.utc),
-            received_at=datetime.now(timezone.utc),
-            location=GeoLocation(
-                latitude=base_lat + offset_lat,
-                longitude=base_lng + offset_lng,
-            ),
-            analysis=analysis,
-        )
-
-        store.add(record)
-
-    base_msg = "震災モードシミュレーション: Level 3 アラートを"
-    location_msg = "件一括追加しました（東京駅周辺）"
     return DisasterSimulateResponse(
         inserted_count=count,
-        message=f"{base_msg} {count} {location_msg}",
+        message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました",
     )
