@@ -1,8 +1,9 @@
 """アラート・センサー参照APIのレスポンススキーマ（Pydantic v2）。
 
 BE-6 用。``AnalysisResult`` 等は ``app.schemas.telemetry`` を再利用する（再定義しない）。
-``pipe_info`` は BE-4（疑似GIS配管台帳）実装までは常に ``None`` を返す（フロントの
-クラッシュ防止のため null を許容する設計）。
+配管台帳情報 (``pipe_info``) は、該当消火栓が配管台帳 (``app/data/pipes.json``) に
+登録されていれば実データが入る。台帳に該当が存在しない場合は ``pipe_info`` 自体が
+``None`` となる。
 """
 
 from __future__ import annotations
@@ -58,7 +59,10 @@ class AlertDetail(AlertSummary):
 
     location: GeoLocation
     analysis: AnalysisResult
-    pipe_info: PipeInfo | None = Field(default=None, description="BE-4 実装までは null")
+    pipe_info: PipeInfo | None = Field(
+        default=None,
+        description="配管台帳情報（該当消火栓が台帳に登録されていれば実データ、未登録時は None）",
+    )
 
 
 class SensorInfo(BaseModel):
