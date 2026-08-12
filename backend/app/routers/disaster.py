@@ -92,6 +92,8 @@ async def get_disaster_summary(
     level3_alerts = []
     for a in all_alerts:
         sev = getattr(a, "severity_level", None)
+        if sev is None and hasattr(a, "analysis"):
+            sev = getattr(a.analysis, "severity_level", None)
         if sev is None and isinstance(a, dict):
             sev = a.get("severity_level") or a.get("severityLevel")
         if sev == 3:
@@ -188,18 +190,17 @@ async def simulate_disaster(
             telemetry_id=f"TEL-DISASTER-{i+1:03d}",
             sensor_id=f"SEN-DISASTER-{i+1:03d}",
             hydrant_id=f"HYD-DISASTER-{i+1:03d}",
-            severity_level=3,
-            leak_confidence=95.0,
+            timestamp=datetime.now(timezone.utc).isoformat(),
             location=GeoLocation(
                 latitude=base_lat + offset_lat,
                 longitude=base_lng + offset_lng,
             ),
             analysis=AnalysisResult(
+                severity_level=3,
                 leak_confidence=95.0,
                 dominant_freq_hz=800,
                 band_energy_ratio=4.5,
             ),
-            detected_at=datetime.now(timezone.utc),
         )
 
         store.add(telemetry_item)
@@ -208,4 +209,3 @@ async def simulate_disaster(
         inserted_count=count,
         message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました",
     )
-
