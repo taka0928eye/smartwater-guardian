@@ -11,16 +11,14 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
+from app.store import alerts_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
-
-# メモリ内シミュレーション用アラートデータ保持用ストア
-_simulated_alerts: list[dict[str, Any]] = []
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
-    R = 6371000.0  # 地球の半径(m)
+    R = 6371000.0
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     delta_phi = math.radians(lat2 - lat1)
@@ -53,7 +51,6 @@ def create_circle_polygon(
         lat = center_lat + (dy / meters_per_lat)
         coords.append([round(lng, 6), round(lat, 6)])
 
-    # 始点と終点を一致させる
     coords.append(coords[0])
     return GeoJSONPolygon(type="Polygon", coordinates=[coords])
 
@@ -63,7 +60,17 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    if not _simulated_alerts:
+    # alerts_store から全アラートを取得し Level 3 のみを対象にする
+    all_alerts = alerts_store.get_all()
+    level3_alerts = []
+    for a in all_alerts:
+        sev = getattr(a, "severity_level", None)
+        if sev is None and isinstance(a, dict):
+            sev = a.get("severity_level") or a.get("severityLevel")
+        if sev == 3:
+            level3_alerts.append(a)
+
+    if not level3_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
@@ -71,15 +78,26 @@ async def get_disaster_summary(
         )
 
     # 貪欲法クラスタリング
-    clusters_raw: list[list[dict[str, Any]]] = []
-    for alert in _simulated_alerts:
-        lat = alert["lat"]
-        lng = alert["lng"]
+    clusters_raw: list[list[Any]] = []
+    for alert in level3_alerts:
+        if isinstance(alert, dict):
+            lat = alert.get("location", {}).get("latitude", 0.0) if isinstance(alert.get("location"), dict) else alert.get("lat", 0.0)
+            lng = alert.get("location", {}).get("longitude", 0.0) if isinstance(alert.get("location"), dict) else alert.get("lng", 0.0)
+        else:
+            lat = alert.location.latitude
+            lng = alert.location.longitude
 
         assigned = False
         for cluster in clusters_raw:
             for item in cluster:
-                dist = haversine_distance(lat, lng, item["lat"], item["lng"])
+                if isinstance(item, dict):
+                    item_lat = item.get("location", {}).get("latitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lat", 0.0)
+                    item_lng = item.get("location", {}).get("longitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lng", 0.0)
+                else:
+                    item_lat = item.location.latitude
+                    item_lng = item.location.longitude
+
+                dist = haversine_distance(lat, lng, item_lat, item_lng)
                 if dist <= threshold_meters:
                     cluster.append(alert)
                     assigned = True
@@ -96,15 +114,23 @@ async def get_disaster_summary(
     for idx, group in enumerate(clusters_raw, start=1):
         cluster_id = f"CLS-{idx:03d}"
 
-        lats = [item["lat"] for item in group]
-        lngs = [item["lng"] for item in group]
+        lats, lngs, sensor_ids, hydrant_ids = [], [], [], []
+        for item in group:
+            if isinstance(item, dict):
+                lats.append(item.get("location", {}).get("latitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lat", 0.0))
+                lngs.append(item.get("location", {}).get("longitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lng", 0.0))
+                sensor_ids.append(item.get("sensor_id", f"SEN-{idx}"))
+                hydrant_ids.append(item.get("hydrant_id", f"HYD-{idx}"))
+            else:
+                lats.append(item.location.latitude)
+                lngs.append(item.location.longitude)
+                sensor_ids.append(getattr(item, "sensor_id", f"SEN-{idx}"))
+                hydrant_ids.append(getattr(item, "hydrant_id", f"HYD-{idx}"))
+
         center_lat = sum(lats) / len(lats)
         center_lng = sum(lngs) / len(lngs)
 
-        sensor_ids = [item["sensor_id"] for item in group]
-        hydrant_ids = [item["hydrant_id"] for item in group]
         unique_pipe_ids = [f"PIPE-SYS-{idx}"]
-
         households = len(group) * 120 + len(unique_pipe_ids) * 50
         total_households += households
 
@@ -115,10 +141,10 @@ async def get_disaster_summary(
                 cluster_id=cluster_id,
                 center_lat=round(center_lat, 6),
                 center_lng=round(center_lng, 6),
-                affected_sensor_ids=sensor_ids,
+                affected_sensor_ids=list(set(sensor_ids)),
                 affected_pipe_ids=unique_pipe_ids,
                 estimated_households=households,
-                priority_valve_hydrant_id=hydrant_ids[0],
+                priority_valve_hydrant_id=hydrant_ids[0] if hydrant_ids else f"HYD-{idx}",
                 geometry=polygon,
             )
         )
@@ -135,26 +161,25 @@ async def simulate_disaster(
     count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数"),
 ) -> DisasterSimulateResponse:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
-    global _simulated_alerts
-    _simulated_alerts.clear()
-
     base_lat, base_lng = 35.6812, 139.7671
 
     for i in range(count):
-        # 300m以内（同クラスタ）とそれ以上の別クラスタになるよう分散
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        _simulated_alerts.append(
-            {
-                "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
-                "sensor_id": f"SEN-DISASTER-{i+1:03d}",
-                "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
-                "lat": base_lat + offset_lat,
-                "lng": base_lng + offset_lng,
-                "severity_level": 3,
-            }
-        )
+        alert_item = {
+            "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
+            "sensor_id": f"SEN-DISASTER-{i+1:03d}",
+            "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
+            "severity_level": 3,
+            "leak_confidence": 95.0,
+            "location": {
+                "latitude": base_lat + offset_lat,
+                "longitude": base_lng + offset_lng,
+            },
+        }
+        # 既存ストアへ追加
+        alerts_store.add(alert_item)
 
     return DisasterSimulateResponse(
         inserted_count=count,
