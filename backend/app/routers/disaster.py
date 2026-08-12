@@ -96,7 +96,7 @@ async def get_disaster_summary(
             sev = a.get("severity_level") or a.get("severityLevel")
             if sev is None and isinstance(a.get("analysis"), dict):
                 sev = a["analysis"].get("severity_level")
-        
+
         # 数値・文字列両方の 3 を判定対象にする
         if str(sev) == "3":
             level3_alerts.append(a)
