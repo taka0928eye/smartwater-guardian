@@ -1,6 +1,8 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
 import math
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -11,7 +13,8 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.store import get_store
+from app.schemas.telemetry import AnalysisResult, GeoLocation, SeverityLevel
+from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -144,20 +147,45 @@ def get_disaster_summary(threshold_meters: float = Query(300.0, description="ク
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
 def simulate_disaster(count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数")) -> DisasterSimulateResponse:
-    """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
-    # TODO: add_simulated_alert 実装時に有効化
-    # base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺など
-    # for i in range(count):
-    #     offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
-    #     offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
-    #     await add_simulated_alert(
-    #         severity_level=3,
-    #         latitude=base_lat + offset_lat,
-    #         longitude=base_lng + offset_lng,
-    #     )
-    inserted = count
+    """デモ用に一括で Level 3 アラートをシミュレーション投入する（震災時の被害マッピング用）。"""
+    store = get_store()
+    base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺
+
+    for i in range(count):
+        # グリッド状にアラートを分布させる（3x列）
+        offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
+        offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
+
+        # シミュレーション用アラートを構築
+        telemetry_id = f"sim-{uuid.uuid4().hex[:8]}"
+        sensor_id = f"SENSOR-SIM-{i+1:03d}"
+        hydrant_id = f"HYDRANT-SIM-{i+1:03d}"
+
+        # Level 3（管路破裂）のアナリシス結果を生成
+        analysis = AnalysisResult(
+            leak_confidence=95.0,  # AI スコア（0-100）
+            severity_level=3,  # type: ignore[arg-type]
+            dominant_freq_hz=950.0,  # 卓越周波数 (Hz)
+            band_energy_ratio=0.85,  # エネルギー比（0-1.0）
+            spectrum=[],  # スペクトルポイント（デモ用に空）
+        )
+
+        record = StoredTelemetry(
+            telemetry_id=telemetry_id,
+            sensor_id=sensor_id,
+            hydrant_id=hydrant_id,
+            recorded_at=datetime.now(timezone.utc),
+            received_at=datetime.now(timezone.utc),
+            location=GeoLocation(
+                latitude=base_lat + offset_lat,
+                longitude=base_lng + offset_lng,
+            ),
+            analysis=analysis,
+        )
+
+        store.add(record)
 
     return DisasterSimulateResponse(
-        inserted_count=inserted,
-        message=f"震災モードシミュレーション: Level 3 アラートを {inserted} 件一括追加しました",
+        inserted_count=count,
+        message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました（東京駅周辺）",
     )

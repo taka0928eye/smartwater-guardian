@@ -58,6 +58,12 @@ jobs:
           # 前工程で起動したサーバーをそのまま利用
           python scripts/check_kpi.py
 
+      - name: Run Disaster Mode Verification Script (BE-7)
+        run: |
+          cd backend
+          # 前工程で起動したサーバーをそのまま利用
+          python scripts/check_disaster.py
+
       - name: Run Pytest with Coverage (Q4 - B)
         run: |
           cd backend
