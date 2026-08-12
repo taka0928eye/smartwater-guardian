@@ -1,7 +1,6 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
 import math
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -190,7 +189,6 @@ async def simulate_disaster(
             telemetry_id=f"TEL-DISASTER-{i+1:03d}",
             sensor_id=f"SEN-DISASTER-{i+1:03d}",
             hydrant_id=f"HYD-DISASTER-{i+1:03d}",
-            timestamp=datetime.now(timezone.utc).isoformat(),
             location=GeoLocation(
                 latitude=base_lat + offset_lat,
                 longitude=base_lng + offset_lng,
