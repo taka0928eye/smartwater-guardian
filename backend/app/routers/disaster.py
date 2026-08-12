@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# プロセス内共有・フォールバック用バックアップストア
+# プロセス内共有・シミュレーション投入データ用
 _GLOBAL_SIMULATED_ALERTS: list[Any] = []
 
 
@@ -95,8 +95,6 @@ async def get_disaster_summary(
     store = get_store()
 
     all_items = []
-    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
-
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
     if hasattr(store, "get_all_alerts"):
@@ -107,6 +105,8 @@ async def get_disaster_summary(
         all_items.extend(getattr(store, "_telemetry", []))
     if hasattr(store, "_alerts"):
         all_items.extend(getattr(store, "_alerts", []))
+
+    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
 
     unique_items = []
     seen_ids = set()
@@ -208,7 +208,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
-            # グローバルリストへ確実に保持
             _GLOBAL_SIMULATED_ALERTS.append(item)
 
             if hasattr(store, "add"):
