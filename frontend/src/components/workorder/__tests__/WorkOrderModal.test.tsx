@@ -77,3 +77,4 @@ describe('WorkOrderModal Component', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 });
+
