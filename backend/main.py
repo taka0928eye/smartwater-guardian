@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import alerts, kpi, sensors, telemetry
+from app.routers import alerts, disaster, kpi, sensors, telemetry
 
 app = FastAPI(title="SmartWater Guardian API")
 
@@ -17,6 +17,7 @@ app.include_router(telemetry.router)
 app.include_router(alerts.router)
 app.include_router(sensors.router)
 app.include_router(kpi.router)
+app.include_router(disaster.router)
 
 
 @app.get("/")
