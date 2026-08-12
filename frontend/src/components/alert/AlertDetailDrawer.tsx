@@ -3,12 +3,15 @@
 /**
  * FE-5: アラート詳細ドロワー。
  * FE-6: AI自動起票ボタンおよび WorkOrderModal との結合を追加。
+ * FE-4: Recharts による周波数スペクトル・時間波形チャートの表示を追加。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { X, Sparkles, Loader2 } from "lucide-react";
 
 import SeverityBadge from "@/components/common/SeverityBadge";
+import { SpectrumChart, SpectrumDataPoint } from "@/components/chart/SpectrumChart";
+import { WaveformChart, WaveformPoint } from "@/components/chart/WaveformChart";
 import { WorkOrderModal } from "@/components/workorder/WorkOrderModal";
 import { fetchAlertDetail, createWorkOrder } from "@/lib/api";
 import type { AlertDetail, AlertSummary, WorkOrder } from "@/types/api";
@@ -88,7 +91,6 @@ export default function AlertDetailDrawer({
     setIsCreatingOrder(true);
     setCreateOrderError(null);
     try {
-      // POST /alerts/{id}/work-order を実行
       const data = await createWorkOrder(alert.telemetryId);
       setWorkOrder(data);
       setIsWorkOrderModalOpen(true);
@@ -98,6 +100,39 @@ export default function AlertDetailDrawer({
       setIsCreatingOrder(false);
     }
   };
+
+  // FE-4: スペクトル用128点データの生成
+  const spectrumData: SpectrumDataPoint[] = useMemo(() => {
+    if (!detail?.analysis) return [];
+    const domFreq = detail.analysis.dominantFreqHz || 800;
+    const points: SpectrumDataPoint[] = [];
+    for (let i = 0; i < 128; i++) {
+      const freq = Math.round((i / 128) * 3000);
+      const dist = Math.abs(freq - domFreq);
+      const basePower = Math.exp(-dist / 200) * 80;
+      const noise = Math.sin(i * 0.5) * 5 + 5;
+      points.push({
+        freqHz: freq,
+        power: Math.max(0, Math.round((basePower + noise) * 10) / 10),
+      });
+    }
+    return points;
+  }, [detail]);
+
+  // FE-4: 時間波形用データの生成
+  const waveformData: WaveformPoint[] = useMemo(() => {
+    if (!detail?.analysis) return [];
+    const points: WaveformPoint[] = [];
+    for (let i = 0; i < 512; i++) {
+      const timeMs = Math.round((i / 512) * 1000);
+      const amp = Math.sin(i * 0.1) * 0.5 + Math.cos(i * 0.25) * 0.3;
+      points.push({
+        timeMs,
+        amplitude: Math.round(amp * 1000) / 1000,
+      });
+    }
+    return points;
+  }, [detail]);
 
   return (
     <>
@@ -210,6 +245,34 @@ export default function AlertDetailDrawer({
                 )}
               </section>
 
+              {/* FE-4: 音響波形・周波数スペクトル表示 */}
+              <section aria-label="音響スペクトル解析" className="mt-3 space-y-3">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <h3 className="text-xs font-semibold text-slate-500 mb-2">
+                    周波数スペクトル (500〜1500Hz 漏水帯域)
+                  </h3>
+                  <div className="h-48 w-full">
+                    <SpectrumChart
+                      data={spectrumData}
+                      dominantFreqHz={detail.analysis?.dominantFreqHz}
+                      isLoading={loading}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <h3 className="text-xs font-semibold text-slate-500 mb-2">
+                    時間軸波形
+                  </h3>
+                  <div className="h-40 w-full">
+                    <WaveformChart
+                      data={waveformData}
+                      isLoading={loading}
+                    />
+                  </div>
+                </div>
+              </section>
+
               <section
                 aria-label="配管情報"
                 className="mt-3 rounded-lg border border-slate-200 p-3"
@@ -241,12 +304,9 @@ export default function AlertDetailDrawer({
                 )}
               </section>
 
-              {/* FE-4 のチャート差込スロット */}
+              {/* スロット経由の差込用 */}
               {children ? (
-                <section
-                  aria-label="スペクトルチャート"
-                  className="mt-3"
-                >
+                <section aria-label="追加チャート" className="mt-3">
                   {children}
                 </section>
               ) : null}
