@@ -28,11 +28,11 @@ async def test_disaster_flow():
         print(f"[✓] サマリー取得成功: クラスタ数={sum_data['total_clusters']}, 想定断水世帯数={sum_data['total_affected_households']}")
 
         assert sum_data["total_clusters"] > 0, "クラスタが検出されていません"
-        
+
         first_cluster = sum_data["clusters"][0]
         assert "cluster_id" in first_cluster
         assert "priority_valve_hydrant_id" in first_cluster
-        
+
         # Polygon の検証 (GeoJSON 規格: 始点と終点が一致)
         coords = first_cluster["geometry"]["coordinates"][0]
         assert len(coords) >= 4, "Polygon の頂点数が不足しています"
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         client = TestClient(app)
         res_sim = client.post("/api/v1/disaster/simulate?count=6")
         assert res_sim.status_code == 200
-        
+
         res_sum = client.get("/api/v1/disaster/summary")
         assert res_sum.status_code == 200
         data = res_sum.json()

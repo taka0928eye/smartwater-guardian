@@ -13,7 +13,7 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.schemas.telemetry import AnalysisResult, GeoLocation, SeverityLevel
+from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
@@ -35,11 +35,16 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return R * c
 
 
-def create_circle_polygon(center_lng: float, center_lat: float, radius_m: float = 300.0, num_points: int = 16) -> GeoJSONPolygon:
+def create_circle_polygon(
+    center_lng: float,
+    center_lat: float,
+    radius_m: float = 300.0,
+    num_points: int = 16,
+) -> GeoJSONPolygon:
     """重心から半径 radius_m メートルの多角形近似 GeoJSON Polygon を生成。"""
     coords = []
     lat_rad = math.radians(center_lat)
-    
+
     # 1度あたりの距離(約)
     meters_per_lat = 111111.0
     meters_per_lng = 111111.0 * math.cos(lat_rad)
@@ -59,7 +64,11 @@ def create_circle_polygon(center_lng: float, center_lat: float, radius_m: float 
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
-def get_disaster_summary(threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)")) -> DisasterSummaryResponse:
+def get_disaster_summary(
+    threshold_meters: float = Query(
+        300.0, description="クラスタリング距離閾値(m)"
+    ),
+) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
     all_alerts = store.list_alerts()
@@ -78,7 +87,7 @@ def get_disaster_summary(threshold_meters: float = Query(300.0, description="ク
     for alert in level3_alerts:
         lat = alert.location.latitude
         lng = alert.location.longitude
-        
+
         assigned = False
         for cluster in clusters_raw:
             # クラスタ内の各要素との距離を検証
@@ -90,7 +99,7 @@ def get_disaster_summary(threshold_meters: float = Query(300.0, description="ク
                     break
             if assigned:
                 break
-        
+
         if not assigned:
             clusters_raw.append([alert])
 
@@ -99,14 +108,14 @@ def get_disaster_summary(threshold_meters: float = Query(300.0, description="ク
 
     for idx, group in enumerate(clusters_raw, start=1):
         cluster_id = f"CLS-{idx:03d}"
-        
+
         lats = [item.location.latitude for item in group]
         lngs = [item.location.longitude for item in group]
         center_lat = sum(lats) / len(lats)
         center_lng = sum(lngs) / len(lngs)
 
         sensor_ids = list({item.sensor_id for item in group if hasattr(item, "sensor_id")})
-        
+
         # 影響配管・優先バルブ（消火栓）の選定
         pipe_ids = []
         hydrant_ids = []
@@ -146,7 +155,11 @@ def get_disaster_summary(threshold_meters: float = Query(300.0, description="ク
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-def simulate_disaster(count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数")) -> DisasterSimulateResponse:
+def simulate_disaster(
+    count: int = Query(
+        6, ge=1, le=20, description="生成するLevel 3アラート件数"
+    ),
+) -> DisasterSimulateResponse:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する（震災時の被害マッピング用）。"""
     store = get_store()
     base_lat, base_lng = 35.6812, 139.7671  # 東京駅周辺
@@ -185,7 +198,9 @@ def simulate_disaster(count: int = Query(6, ge=1, le=20, description="生成す�
 
         store.add(record)
 
+    base_msg = "震災モードシミュレーション: Level 3 アラートを"
+    location_msg = "件一括追加しました（東京駅周辺）"
     return DisasterSimulateResponse(
         inserted_count=count,
-        message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました（東京駅周辺）",
+        message=f"{base_msg} {count} {location_msg}",
     )

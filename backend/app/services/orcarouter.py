@@ -6,7 +6,7 @@ Orcarouter 経由で LLM を呼び、補修部材選定・概算見積・作業�
 
 設計方針
 - 環境変数は import 時ではなく**呼び出し時**に ``os.environ`` から読む（テスト分離を保つ）。
-- API キー未設定 / ``ORCAROUTER_ENABLED=false`` は HTTP 呼び出しなしでフォールバック（500 にしない）。
+- API キー未設定 / ``ORCAROUTER_ENABLED=false`` は HTTP 呼び出しなしでフォールバック。
 - リトライ分類: タイムアウト・ネットワーク・5xx は1回リトライ → 再失敗でフォールバック。
   4xx・パース失敗はリトライせず即フォールバック（理由ログ出力）。
 - FR-6: ``llm_cost.calculate_and_enrich_cost()`` に usage / 実モデル名 / latency_ms を委譲し、

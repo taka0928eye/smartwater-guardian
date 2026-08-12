@@ -20,6 +20,8 @@ class GeoJSONPolygon(BaseModel):
 class DisasterCluster(BaseModel):
     """被災エリアクラスタ。"""
 
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     cluster_id: str = Field(..., description="クラスタ識別子")
     center_lat: float = Field(..., description="重心地の緯度")
     center_lng: float = Field(..., description="重心地の経度")
@@ -33,6 +35,8 @@ class DisasterCluster(BaseModel):
 class DisasterSummaryResponse(BaseModel):
     """GET /api/v1/disaster/summary のレスポンス。"""
 
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     total_clusters: int = Field(..., description="検出されたクラスタ総数")
     total_affected_households: int = Field(..., description="総想定断水世帯数")
     clusters: list[DisasterCluster] = Field(default_factory=list, description="クラスタ一覧")
@@ -40,6 +44,8 @@ class DisasterSummaryResponse(BaseModel):
 
 class DisasterSimulateResponse(BaseModel):
     """POST /api/v1/disaster/simulate のレスポンス。"""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
 
     inserted_count: int = Field(..., description="投入された Level 3 アラート件数")
     message: str = Field(..., description="ステータスメッセージ")

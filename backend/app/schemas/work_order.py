@@ -2,11 +2,15 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+STRICT_CONFIG = ConfigDict(strict=True, extra="forbid")
 
 
 class RepairPart(BaseModel):
     """補修部材モデル."""
+
+    model_config = STRICT_CONFIG
 
     name: str = Field(..., description="補修部材名称")
     spec: str = Field(..., description="規格・サイズ")
@@ -17,6 +21,8 @@ class RepairPart(BaseModel):
 
 class WorkOrder(BaseModel):
     """ワークオーダーモデル."""
+
+    model_config = STRICT_CONFIG
 
     parts: list[RepairPart] = Field(..., description="推奨補修部材リスト")
     total_estimate_yen: int = Field(..., description="概算見積合計（円）")
