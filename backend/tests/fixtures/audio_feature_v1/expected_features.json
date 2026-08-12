@@ -1,0 +1,45 @@
+{
+  "feature_schema_version": "audio_features_v1",
+  "sample_rate_hz": 8000,
+  "sample_count": 8000,
+  "duration_sec": 1.0,
+  "input_sha256": "3adf83cbdbf8d45c2a72b0c78762d3eecb93c426c52da73e394c480095bcc85a",
+  "feature_vector_sha256": "5616ad8e7fc30eb763102d01a637291b2077182045120efd76de455d6abdddf9",
+  "generated_with": {
+    "python": "3.14.6",
+    "numpy": "2.5.2",
+    "scipy": "1.18.0"
+  },
+  "feature_names": [
+    "band_ratio_500_1500",
+    "band_ratio_100_250",
+    "band_ratio_250_500",
+    "band_ratio_500_750",
+    "band_ratio_750_1000",
+    "band_ratio_1000_1250",
+    "band_ratio_1250_1500",
+    "band_ratio_1500_2000",
+    "band_ratio_2000_3000",
+    "rms",
+    "spectral_centroid",
+    "spectral_flatness",
+    "spectral_entropy",
+    "kurtosis"
+  ],
+  "expected_features": [
+    0.7092030747930692,
+    0.24000383315374374,
+    0.000604590160878846,
+    0.0005580900413210191,
+    0.7073801094411306,
+    0.0006143257842136086,
+    0.0006505495264039111,
+    0.04535193524818835,
+    0.0023749179423911307,
+    0.10073466209499207,
+    787.745171310179,
+    0.009085095306297477,
+    0.26994279186823444,
+    -0.8430798980665277
+  ]
+}

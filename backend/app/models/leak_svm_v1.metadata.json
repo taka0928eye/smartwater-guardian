@@ -1,0 +1,111 @@
+{
+  "artifact_filename": "leak_svm_v1.joblib",
+  "artifact_sha256": "fd7d5b500b7cfe1e5abd31d5edd3b46b4ddcc01a547fc7a4d37362233631218d",
+  "artifact_schema_version": 1,
+  "feature_schema_version": "audio_features_v1",
+  "feature_names": [
+    "band_ratio_500_1500",
+    "band_ratio_100_250",
+    "band_ratio_250_500",
+    "band_ratio_500_750",
+    "band_ratio_750_1000",
+    "band_ratio_1000_1250",
+    "band_ratio_1250_1500",
+    "band_ratio_1500_2000",
+    "band_ratio_2000_3000",
+    "rms",
+    "spectral_centroid",
+    "spectral_flatness",
+    "spectral_entropy",
+    "kurtosis"
+  ],
+  "sample_rate_hz": 8000,
+  "sample_count": 8000,
+  "duration_sec": 1.0,
+  "n_features_in": 14,
+  "classes": [
+    0,
+    1
+  ],
+  "pipeline_steps": [
+    "scale",
+    "model"
+  ],
+  "preprocessing": {
+    "normalization_divisor": 32768.0,
+    "high_pass": {
+      "order": 4,
+      "cutoff_hz": 100.0,
+      "output": "sos",
+      "filter": "sosfiltfilt"
+    },
+    "welch": {
+      "window": "hann",
+      "nperseg": 1024
+    },
+    "integration": "numpy.trapezoid",
+    "kurtosis": {
+      "fisher": true,
+      "bias": false
+    }
+  },
+  "versions": {
+    "python": "3.14.6",
+    "numpy": "2.5.2",
+    "scipy": "1.18.0",
+    "scikit_learn": "1.9.0",
+    "joblib": "1.5.3"
+  },
+  "svc": {
+    "kernel": "rbf",
+    "C": 1.0,
+    "gamma": "scale",
+    "effective_gamma": 0.07142857142857142,
+    "class_weight": "balanced",
+    "tol": 0.001,
+    "shrinking": true,
+    "n_support": [
+      15,
+      19
+    ],
+    "support_vectors_shape": [
+      34,
+      14
+    ]
+  },
+  "standard_scaler": {
+    "n_features_in": 14,
+    "n_samples_seen": 71,
+    "fitted_state_sha256": "f5287668b0cd9c3a764de3a347c8e25affe90f12e9dfcb8e6f47bdc6f49d6048"
+  },
+  "dataset": {
+    "doi": "10.5281/zenodo.18631450",
+    "record_id": 18631450,
+    "archive_sha256": {
+      "leak acoustic data.rar": "3d42060b8a5b2feb19c4ffc7a77c2f0325779f8634a26468572aee473842dc55",
+      "no leak acoustic data.rar": "5bb0f298fdd171dcb199ac9b22d85bdb57c94a7daec31e71a4af66946843405f"
+    },
+    "training_samples": 71,
+    "class_counts": {
+      "0": 37,
+      "1": 34
+    },
+    "condition_groups": [
+      "NA|NA|noise logger",
+      "NA|zone 2|noise logger",
+      "ductile iron|zone 1|noise logger",
+      "pe|zone 1|noise logger",
+      "pvc|zone 1|noise logger",
+      "steel|zone 1|noise logger"
+    ],
+    "excluded_condition_groups": [
+      "ductile iron|NA|noise logger",
+      "ductile iron|zone 2|noise logger",
+      "pe|NA|noise logger",
+      "pe|zone 2|noise logger"
+    ],
+    "small_leak_candidate_count": 13,
+    "small_leak_candidates_used_for_training_or_tuning": false,
+    "manual_e2e_files_used_for_training_or_tuning": false
+  }
+}

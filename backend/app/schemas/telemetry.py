@@ -1,9 +1,4 @@
-"""センサテレメトリの入出力スキーマ（Pydantic v2）。
-
-BE-1 の段階では ``TelemetryResponse.analysis`` は常に ``None`` を返す。
-BE-3（``app/services/audio.py``）が ``AnalysisResult`` を埋めるようになっても、
-このレスポンス契約自体は変更しない。
-"""
+"""センサテレメトリとBE-3音響解析結果の入出力スキーマ（Pydantic v2）。"""
 
 from __future__ import annotations
 
@@ -45,7 +40,10 @@ class TelemetryRequest(BaseModel):
     location: GeoLocation
     sample_rate_hz: int = Field(gt=0, le=192_000, description="サンプリング周波数")
     duration_sec: float = Field(gt=0.0, le=60.0, description="録音長（秒）")
-    audio_base64: str = Field(min_length=1, description="PCM16 モノラル音声の Base64")
+    audio_base64: str = Field(
+        min_length=1,
+        description="PCM16LE mono raw bytesのBase64（WAVコンテナを含まない）",
+    )
     battery_pct: int | None = Field(default=None, ge=0, le=100, description="電池残量")
 
     @field_validator("audio_base64")
@@ -69,14 +67,15 @@ class SpectrumPoint(BaseModel):
 
 
 class AnalysisResult(BaseModel):
-    """FFT解析（BE-3 / ``app/services/audio.py``）の判定結果。
-
-    BE-1 では生成しない。BE-3 がこの枠を埋める。
-    """
+    """SVM + DSP解析（BE-3 / ``app/services/audio.py``）の判定結果。"""
 
     model_config = ConfigDict(strict=True)
 
-    leak_confidence: float = Field(ge=0.0, le=100.0, description="漏水確信度（%）")
+    leak_confidence: float = Field(
+        ge=0.0,
+        le=100.0,
+        description="AI Leak Score（表示用の未校正スコア）",
+    )
     severity_level: SeverityLevel = Field(description="深刻度 Level 0〜3")
     dominant_freq_hz: float = Field(ge=0.0, description="卓越周波数")
     band_energy_ratio: float = Field(ge=0.0, le=1.0, description="漏水帯域のエネルギー比")
@@ -84,10 +83,7 @@ class AnalysisResult(BaseModel):
 
 
 class TelemetryResponse(BaseModel):
-    """テレメトリ受信結果。
-
-    ``analysis`` は BE-3 実装までは常に ``None``。
-    """
+    """BE-3音響解析を含むテレメトリ受信結果。"""
 
     model_config = ConfigDict(strict=True)
 
