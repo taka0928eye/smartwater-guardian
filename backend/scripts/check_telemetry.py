@@ -1,6 +1,6 @@
-"""BE-1 + BE-6 検証スクリプト: POST /api/v1/telemetry の正常系・異常系を確認する。
+"""BE-1 + BE-3 検証スクリプト: POST /api/v1/telemetry の正常系・異常系を確認する。
 
-BE-6 でモック解析が入ったため、正常系の ``analysis`` は null ではなく解析結果が返る。
+正常系ではBE-3 production pipelineによる ``analysis`` が返る。
 
 前提: 別ターミナルでサーバーが起動していること。
 
@@ -16,40 +16,29 @@ httpx は未導入のため、導入済みの requests を使う。
 from __future__ import annotations
 
 import base64
-import io
 import sys
-import wave
 from datetime import UTC, datetime
+from pathlib import Path
 
-import numpy as np
 import requests
 
 BASE_URL = "http://localhost:8000"
 ENDPOINT = f"{BASE_URL}/api/v1/telemetry"
 
-SAMPLE_RATE_HZ = 16_000
-DURATION_SEC = 2.0
-TONE_FREQ_HZ = 900.0  # 漏水帯域(500〜1500Hz)内のテスト用トーン
+SAMPLE_RATE_HZ = 8_000
+DURATION_SEC = 1.0
+GOLDEN_PCM_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "tests"
+    / "fixtures"
+    / "audio_feature_v1"
+    / "golden_pcm16le.raw"
+)
 
 
 def build_sample_audio_base64() -> str:
-    """900Hz の正弦波を PCM16 モノラル WAV にして Base64 で返す。"""
-    sample_count = int(SAMPLE_RATE_HZ * DURATION_SEC)
-    t = np.arange(sample_count, dtype=np.float64) / SAMPLE_RATE_HZ
-    waveform = 0.5 * np.sin(2.0 * np.pi * TONE_FREQ_HZ * t)
-
-    # int16 へ変換する前にクリッピングしてオーバーフローを防ぐ。
-    clipped = np.clip(waveform, -1.0, 1.0)
-    pcm16 = (clipped * np.iinfo(np.int16).max).astype(np.int16)
-
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)  # PCM16 = 2 bytes
-        wav.setframerate(SAMPLE_RATE_HZ)
-        wav.writeframes(pcm16.tobytes())
-
-    return base64.b64encode(buffer.getvalue()).decode("ascii")
+    """PoC parity用の固定PCM16LE mono raw bytesをBase64で返す。"""
+    return base64.b64encode(GOLDEN_PCM_PATH.read_bytes()).decode("ascii")
 
 
 def build_valid_payload() -> dict:
@@ -85,9 +74,8 @@ def case_1_valid_payload() -> None:
 
     body = response.json()
     expect(body["status"] == "accepted", f"status が accepted ではない: {body['status']}")
-    # BE-6: モック解析により analysis に解析結果が入る（BE-1 の null ではない）
-    expect(body["analysis"] is not None, f"BE-6 では analysis に解析結果が入るはず: {body['analysis']}")
-    expect(body["analysis"]["severity_level"] in (1, 2, 3), f"severity_level が 1〜3 ではない: {body['analysis']['severity_level']}")
+    expect(body["analysis"] is not None, f"BE-3 では analysis に解析結果が入るはず: {body['analysis']}")
+    expect(body["analysis"]["severity_level"] in (0, 1, 2, 3), f"severity_level が 0〜3 ではない: {body['analysis']['severity_level']}")
     expect(len(body["analysis"]["spectrum"]) == 128, f"spectrum が 128 点ではない: {len(body['analysis']['spectrum'])}")
     expect(body["sensor_id"] == "SNS-001", f"sensor_id がエコーされていない: {body['sensor_id']}")
     expect(bool(body["telemetry_id"]), "telemetry_id が空")
@@ -135,7 +123,7 @@ def case_6_naive_datetime() -> None:
 
 
 CASES = [
-    ("正常系: 妥当なペイロードで 200 / analysis=mock結果", case_1_valid_payload),
+    ("正常系: 妥当なペイロードで 200 / analysis=BE-3結果", case_1_valid_payload),
     ("異常系: sample_rate_hz が文字列 → 422", case_2_type_mismatch),
     ("異常系: audio_base64 が不正 → 422", case_3_invalid_base64),
     ("異常系: latitude が範囲外 → 422", case_4_latitude_out_of_range),

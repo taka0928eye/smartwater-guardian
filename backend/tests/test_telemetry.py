@@ -1,8 +1,7 @@
-"""BE-1: POST /api/v1/telemetry のテスト + BE-6: モック解析のテスト。
+"""BE-1: POST /api/v1/telemetry + BE-3: production解析のテスト。
 
 pytest + FastAPI TestClient を使用し、サーバー起動なしで検証する。
-Issue #2（BE-1）の受け入れ条件に加え、BE-6 で追加したモック解析
-（telemetry.py の ``_analyze_audio_mock``）の単体テストも含む。
+Issue #2（BE-1）の受け入れ条件と、BE-3のMVP音声入力契約を検証する。
 
 実行方法（backend ディレクトリで）:
 
@@ -12,20 +11,13 @@ Issue #2（BE-1）の受け入れ条件に加え、BE-6 で追加したモック
 from __future__ import annotations
 
 import base64
-import io
-import wave
 from datetime import datetime, timezone
 
 import numpy as np
 import pytest
 
-# テスト用の妥当な Base64 音声（全ゼロの PCM16）。
-# PCM16 の内容そのものの妥当性は BE-3（services/audio.py）のスコープで、
-# BE-1 では「Base64 文字列として解読できるか」のみを見る。
-VALID_AUDIO_B64 = base64.b64encode(b"\x00" * 256).decode("ascii")
-
-SAMPLE_RATE_HZ = 16_000
-DURATION_SEC = 2.0
+SAMPLE_RATE_HZ = 8_000
+DURATION_SEC = 1.0
 
 
 def build_tone_base64(
@@ -34,7 +26,7 @@ def build_tone_base64(
     sample_rate_hz: int = SAMPLE_RATE_HZ,
     duration_sec: float = 1.0,
 ) -> str:
-    """指定周波数の正弦波を PCM16 モノラル WAV にして Base64 で返す。
+    """指定周波数のPCM16LE mono raw bytesをBase64で返す。
 
     漏水帯域（500〜1500Hz）内のトーンを合成する（check_telemetry.py と同手法）。
     """
@@ -44,14 +36,10 @@ def build_tone_base64(
     clipped = np.clip(waveform, -1.0, 1.0)
     pcm16 = (clipped * np.iinfo(np.int16).max).astype(np.int16)
 
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav:
-        wav.setnchannels(1)
-        wav.setsampwidth(2)  # PCM16 = 2 bytes
-        wav.setframerate(sample_rate_hz)
-        wav.writeframes(pcm16.tobytes())
+    return base64.b64encode(pcm16.astype("<i2").tobytes()).decode("ascii")
 
-    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+VALID_AUDIO_B64 = build_tone_base64()
 
 
 def valid_payload() -> dict:
@@ -98,9 +86,9 @@ class TestValidPayload:
 
         body = response.json()
         assert body["status"] == "accepted"
-        # BE-6 ではモック解析により analysis に解析結果が入る（BE-1 の null ではない）
+        # BE-3のproduction pipelineによりanalysisへ解析結果が入る。
         assert body["analysis"] is not None
-        assert body["analysis"]["severity_level"] in (1, 2, 3)
+        assert body["analysis"]["severity_level"] in (0, 1, 2, 3)
         assert len(body["analysis"]["spectrum"]) == 128  # FE-4 描画用の固定点数
         assert body["sensor_id"] == "SNS-001"
         assert body["telemetry_id"].startswith("tlm_")
@@ -222,57 +210,29 @@ class TestRouteRegistration:
         assert "swagger" in response.text.lower()
 
 
-class TestMockAnalysis:
-    """BE-6: telemetry.py のモック解析（``_analyze_audio_mock``）の単体テスト。
+class TestProductionAnalysis:
+    """BE-3 serviceが既存AnalysisResult契約を満たすことを確認する。"""
 
-    BE-3（services/audio.py）が本実装を追加するまでの仮実装の検証。
-    """
+    def test_tone_returns_complete_analysis(self):
+        from app.services.audio import analyze_audio
 
-    def test_tone_in_leak_band(self):
-        from app.routers.telemetry import _analyze_audio_mock
-
-        result = _analyze_audio_mock(
-            build_tone_base64(freq_hz=900.0, amplitude=0.8), SAMPLE_RATE_HZ
+        result = analyze_audio(
+            build_tone_base64(freq_hz=900.0, amplitude=0.8),
+            sample_rate_hz=SAMPLE_RATE_HZ,
+            duration_sec=DURATION_SEC,
         )
-        assert result.severity_level in (1, 2, 3)
-        assert result.severity_level >= 2  # 漏水帯域の高振幅トーンは高い深刻度
-        assert result.band_energy_ratio > 0.5  # 漏水帯域(500-1500Hz)に卓越
-        assert 700 <= result.dominant_freq_hz <= 1100  # 900Hz 付近にピーク
-        assert len(result.spectrum) == 128  # FE-4 描画用ダウンサンプル数
-        assert all(p.freq_hz >= 0.0 for p in result.spectrum)
-
-    def test_mid_amplitude_tone_is_severity_2(self):
-        from app.routers.telemetry import _analyze_audio_mock
-
-        # 中程度振幅（rms ≈ 0.106）の漏水帯域トーン → severity 2（要点検）になる
-        result = _analyze_audio_mock(
-            build_tone_base64(freq_hz=900.0, amplitude=0.15), SAMPLE_RATE_HZ
-        )
-        assert result.severity_level == 2
+        assert result.severity_level in (0, 1, 2, 3)
         assert result.band_energy_ratio > 0.5
-
-    def test_low_amplitude_tone_is_severity_1(self):
-        from app.routers.telemetry import _analyze_audio_mock
-
-        # 帯域内にピークはあるが極小振幅（rms ≈ 0.035 < 0.08）→ severity 1（経過観察）
-        result = _analyze_audio_mock(
-            build_tone_base64(freq_hz=900.0, amplitude=0.05), SAMPLE_RATE_HZ
-        )
-        assert result.severity_level == 1
-        assert result.band_energy_ratio > 0.5  # ピーク自体は帯域内にある
-
-    def test_all_zero_audio_does_not_crash(self):
-        from app.routers.telemetry import _analyze_audio_mock
-
-        # 全ゼロの 256B（128サンプル）でもクラッシュせず、severity 1 を返す
-        result = _analyze_audio_mock(VALID_AUDIO_B64, SAMPLE_RATE_HZ)
-        assert result.severity_level == 1
-        assert result.leak_confidence == 0.0
+        assert 700 <= result.dominant_freq_hz <= 1100
         assert len(result.spectrum) == 128
 
-    def test_empty_audio_raises_value_error(self):
-        from app.routers.telemetry import _analyze_audio_mock
+    def test_all_zero_audio_is_rejected(self):
+        from app.services.audio import AudioValidationError, analyze_audio
 
-        empty_b64 = base64.b64encode(b"").decode("ascii")
-        with pytest.raises(ValueError):
-            _analyze_audio_mock(empty_b64, SAMPLE_RATE_HZ)
+        zeros = base64.b64encode(b"\x00" * 16_000).decode("ascii")
+        with pytest.raises(AudioValidationError):
+            analyze_audio(
+                zeros,
+                sample_rate_hz=SAMPLE_RATE_HZ,
+                duration_sec=DURATION_SEC,
+            )
