@@ -89,9 +89,16 @@ async def get_disaster_summary(
     level3_alerts = []
     for a in all_alerts:
         sev = getattr(a, "severity_level", None)
-        if sev is None and hasattr(a, "analysis"):
-            sev = getattr(a.analysis, "severity_level", None)
-        if sev == 3:
+        analysis = getattr(a, "analysis", None)
+        if sev is None and analysis is not None:
+            sev = getattr(analysis, "severity_level", None)
+        if sev is None and isinstance(a, dict):
+            sev = a.get("severity_level") or a.get("severityLevel")
+            if sev is None and isinstance(a.get("analysis"), dict):
+                sev = a["analysis"].get("severity_level")
+        
+        # 数値・文字列両方の 3 を判定対象にする
+        if str(sev) == "3":
             level3_alerts.append(a)
 
     if not level3_alerts:
