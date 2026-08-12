@@ -19,9 +19,6 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# シミュレーション投入データ保持用
-_GLOBAL_SIMULATED_ALERTS: list[Any] = []
-
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -78,15 +75,6 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
-def _get_item_id(item: Any) -> str | None:
-    """アイテムから telemetry_id を安全に取得。"""
-    if isinstance(item, dict):
-        val = item.get("telemetry_id")
-        return str(val) if val is not None else None
-    val_attr = getattr(item, "telemetry_id", None)
-    return str(val_attr) if val_attr is not None else None
-
-
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -94,29 +82,14 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    all_items = []
+    # store から動的に全アイテムを取得 (store が空にリセットされていれば 0 件になる)
     if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
-    elif hasattr(store, "get_all_alerts"):
-        all_items.extend(store.get_all_alerts())
-
-    # グローバルシミュレーションデータも統合
-    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
-
-    unique_items = []
-    seen_ids = set()
-    for item in all_items:
-        item_id = _get_item_id(item)
-        if item_id:
-            if item_id not in seen_ids:
-                seen_ids.add(item_id)
-                unique_items.append(item)
-        else:
-            unique_items.append(item)
+        all_items = store.get_all()
+    else:
+        all_items = getattr(store, "_telemetry", []) or getattr(store, "_alerts", [])
 
     level3_alerts = []
-    for a in unique_items:
-        # 直下の severity_level、または analysis.severity_level を確認
+    for a in all_items:
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
@@ -127,8 +100,7 @@ async def get_disaster_summary(
             if sev is None and isinstance(a.get("analysis"), dict):
                 sev = a["analysis"].get("severity_level")
 
-        # 明示的に数値・文字列の 3 のみを Level 3 アラートとして認定
-        if sev == 3 or str(sev) == "3":
+        if str(sev) == "3":
             level3_alerts.append(a)
 
     if not level3_alerts:
@@ -205,8 +177,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
-
-            _GLOBAL_SIMULATED_ALERTS.append(item)
 
             if hasattr(store, "add"):
                 store.add(item)
