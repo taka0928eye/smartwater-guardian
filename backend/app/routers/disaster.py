@@ -19,6 +19,9 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
+# プロセス内共有・フォールバック用バックアップストア
+_GLOBAL_SIMULATED_ALERTS: list[Any] = []
+
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -92,6 +95,8 @@ async def get_disaster_summary(
     store = get_store()
 
     all_items = []
+    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
+
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
     if hasattr(store, "get_all_alerts"):
@@ -202,6 +207,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
+
+            # グローバルリストへ確実に保持
+            _GLOBAL_SIMULATED_ALERTS.append(item)
 
             if hasattr(store, "add"):
                 store.add(item)
