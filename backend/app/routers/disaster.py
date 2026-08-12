@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# プロセス内共有・シミュレーション投入データ用
+# プロセス内共有用
 _GLOBAL_SIMULATED_ALERTS: list[Any] = []
 
 
@@ -92,21 +92,8 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    store = get_store()
-
-    all_items = []
-    if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
-    if hasattr(store, "get_all_alerts"):
-        all_items.extend(store.get_all_alerts())
-    if hasattr(store, "telemetry_records"):
-        all_items.extend(getattr(store, "telemetry_records", []))
-    if hasattr(store, "_telemetry"):
-        all_items.extend(getattr(store, "_telemetry", []))
-    if hasattr(store, "_alerts"):
-        all_items.extend(getattr(store, "_alerts", []))
-
-    all_items.extend(_GLOBAL_SIMULATED_ALERTS)
+    # シミュレーション投入されたデータのみを対象にする
+    all_items = list(_GLOBAL_SIMULATED_ALERTS)
 
     unique_items = []
     seen_ids = set()
@@ -212,18 +199,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            rec = getattr(store, "telemetry_records", None)
-            if isinstance(rec, list):
-                rec.append(item)
-
-            t_list = getattr(store, "_telemetry", None)
-            if isinstance(t_list, list):
-                t_list.append(item)
-
-            a_list = getattr(store, "_alerts", None)
-            if isinstance(a_list, list):
-                a_list.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
