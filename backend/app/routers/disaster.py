@@ -11,7 +11,7 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.store import alerts_store
+from app.store import get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -60,8 +60,18 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    # alerts_store から全アラートを取得し Level 3 のみを対象にする
-    all_alerts = alerts_store.get_all()
+    store = get_store()
+
+    # store 内のアラートデータ（dictまたはオブジェクト）を取得
+    if hasattr(store, "get_all_alerts"):
+        all_alerts = store.get_all_alerts()
+    elif hasattr(store, "alerts"):
+        all_alerts = store.alerts
+    elif hasattr(store, "get_all"):
+        all_alerts = store.get_all()
+    else:
+        all_alerts = getattr(store, "_alerts", [])
+
     level3_alerts = []
     for a in all_alerts:
         sev = getattr(a, "severity_level", None)
@@ -81,8 +91,9 @@ async def get_disaster_summary(
     clusters_raw: list[list[Any]] = []
     for alert in level3_alerts:
         if isinstance(alert, dict):
-            lat = alert.get("location", {}).get("latitude", 0.0) if isinstance(alert.get("location"), dict) else alert.get("lat", 0.0)
-            lng = alert.get("location", {}).get("longitude", 0.0) if isinstance(alert.get("location"), dict) else alert.get("lng", 0.0)
+            loc = alert.get("location", {})
+            lat = loc.get("latitude", 0.0) if isinstance(loc, dict) else alert.get("lat", 0.0)
+            lng = loc.get("longitude", 0.0) if isinstance(loc, dict) else alert.get("lng", 0.0)
         else:
             lat = alert.location.latitude
             lng = alert.location.longitude
@@ -91,8 +102,9 @@ async def get_disaster_summary(
         for cluster in clusters_raw:
             for item in cluster:
                 if isinstance(item, dict):
-                    item_lat = item.get("location", {}).get("latitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lat", 0.0)
-                    item_lng = item.get("location", {}).get("longitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lng", 0.0)
+                    loc_i = item.get("location", {})
+                    item_lat = loc_i.get("latitude", 0.0) if isinstance(loc_i, dict) else item.get("lat", 0.0)
+                    item_lng = loc_i.get("longitude", 0.0) if isinstance(loc_i, dict) else item.get("lng", 0.0)
                 else:
                     item_lat = item.location.latitude
                     item_lng = item.location.longitude
@@ -117,8 +129,9 @@ async def get_disaster_summary(
         lats, lngs, sensor_ids, hydrant_ids = [], [], [], []
         for item in group:
             if isinstance(item, dict):
-                lats.append(item.get("location", {}).get("latitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lat", 0.0))
-                lngs.append(item.get("location", {}).get("longitude", 0.0) if isinstance(item.get("location"), dict) else item.get("lng", 0.0))
+                loc_g = item.get("location", {})
+                lats.append(loc_g.get("latitude", 0.0) if isinstance(loc_g, dict) else item.get("lat", 0.0))
+                lngs.append(loc_g.get("longitude", 0.0) if isinstance(loc_g, dict) else item.get("lng", 0.0))
                 sensor_ids.append(item.get("sensor_id", f"SEN-{idx}"))
                 hydrant_ids.append(item.get("hydrant_id", f"HYD-{idx}"))
             else:
@@ -161,6 +174,7 @@ async def simulate_disaster(
     count: int = Query(6, ge=1, le=20, description="生成するLevel 3アラート件数"),
 ) -> DisasterSimulateResponse:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
+    store = get_store()
     base_lat, base_lng = 35.6812, 139.7671
 
     for i in range(count):
@@ -178,8 +192,13 @@ async def simulate_disaster(
                 "longitude": base_lng + offset_lng,
             },
         }
-        # 既存ストアへ追加
-        alerts_store.add(alert_item)
+
+        if hasattr(store, "add_alert"):
+            store.add_alert(alert_item)
+        elif hasattr(store, "alerts") and isinstance(store.alerts, list):
+            store.alerts.append(alert_item)
+        elif hasattr(store, "add"):
+            store.add(alert_item)
 
     return DisasterSimulateResponse(
         inserted_count=count,
