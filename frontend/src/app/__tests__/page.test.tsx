@@ -68,10 +68,11 @@ describe("Home (page.tsx)", () => {
     await act(async () => {
       render(await Home());
     });
-    // DashboardClient の fetchAlerts（ポーリング初回）を flush する
+    // DashboardClient の fetchAlerts と useSensorPolling（ポーリング初回）を flush する
     await act(async () => {});
 
-    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    // page.tsx（server-side SSR）で1回、useSensorPolling（client-side）で1回、計2回呼ぶ
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId("sensor-map").textContent).toBe("count=1");
   });
 

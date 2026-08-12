@@ -1,0 +1,29 @@
+{
+  "stage_slug": "feasibility",
+  "selections": [
+    {
+      "candidate_id": "c1",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "ステージ本文の対象ファイルが Issue 記載の4ファイルに限定されていても、受入条件（`source == \"fallback\"` 等）を満たすための不足成果物（`data/repair_parts.json` 等）は、Q 回答に従い対象ファイルへ追加して BE-5 内で内包する。後続 Issue（OR-3 等）マージ時に委譲・強化へ切替可能な境界を保つ。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "前提となる上流成果物（OR-2 / OR-4 等）の実装状況は、Issue ステータスだけでなく、ユーザー指摘とリポジトリ実態（対象ファイルの存在確認）を突き合わせて確定する。前提修正後は、関連する全成果物（feasibility-assessment / constraint-register / raid-log）と質問ファイルを更新し、再度確認を得る。",
+      "source": "orchestrator"
+    },
+    {
+      "candidate_id": "c5",
+      "type": "learning",
+      "scope": "project",
+      "heading": "Corrections",
+      "text": "上流で実装済みのサービス（`services/llm_cost.py` の `calculate_and_enrich_cost` 等）が受入条件を満たしている場合、重複実装（内包）ではなく既存サービスを再利用する。内包対象の是非は、実装状況の前提修正後に再評価して確定する。",
+      "source": "orchestrator"
+    }
+  ]
+}

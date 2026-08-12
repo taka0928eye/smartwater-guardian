@@ -112,7 +112,16 @@ export interface WorkOrder {
   urgency: Urgency;
   notificationText: string;
   source: WorkOrderSource;
+
+  // FR-6 原価フィールド（オプショナル）
+  promptTokens?: number;
+  completionTokens?: number;
+  costYen?: number;
+  model?: string;
+  latencyMs?: number;
+  isEstimated?: boolean;
 }
+
 
 /** GET /api/v1/kpi/summary のレスポンス（BE-8 契約・snake_case→camelCase 変換済み）。
  *  変換は src/lib/api.ts の unwrap で 1 回だけ行う。 */

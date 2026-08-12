@@ -1,0 +1,33 @@
+{
+  "stage_slug": "code-generation",
+  "selections": [
+    {
+      "candidate_id": "c4",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "LLM レスポンス統合境界の入力（usage 等）はサービス側で検証してから llm_cost 等へ委譲する。行カバレッジ 100% でも委譲先の未テスト分岐（int() 変換等）が 500 に化けうる。Pydantic 契約の主張は実態（lax / extra ignore 等）と一致させること。"
+    },
+    {
+      "candidate_id": "c11",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "フォールバック WorkOrder はワークオーダーキャッシュに保存しない（一時的障害が telemetry_id に永続化して LLM 出力を実演できないのを防ぐ）。受入条件の「2回目以降はキャッシュ」は LLM 成功生成に適用する。"
+    },
+    {
+      "candidate_id": "c12",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "キャッシュの並行安全性は生成処理全体を asyncio.Lock で直列化するシンプル構成を優先（get / 検証 / set の精密なクリティカル区間より）。デモスコープの単一ワーカーで許容する。"
+    },
+    {
+      "candidate_id": "c3",
+      "type": "learning",
+      "scope": "project",
+      "heading": "## Corrections",
+      "text": "ワークオーダーキャッシュは store.py でなく services/orcarouter.py 内のモジュール dict に内包する（スコープ外ファイル不変更・最小実装）。OR-3 マージ時にストア保存へ委譲可能。"
+    }
+  ]
+}

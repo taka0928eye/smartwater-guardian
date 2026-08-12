@@ -10,6 +10,7 @@
  */
 import type { ReactNode } from "react";
 
+import BusinessModelDocLink from "@/components/dashboard/BusinessModelDocLink";
 import { getSeverityMeta } from "@/lib/severity";
 import type { KpiSummary } from "@/types/api";
 
@@ -72,12 +73,16 @@ function KpiCard({
 }
 
 /** コストカードの 2 段注記（見出し「試算値」+ 本文「前提: docs/business-model.md」）。
- *  固定リテラルは承認済み表示文言（FE-7 FR-6・application-design:c6）。 */
+ *  「docs/business-model.md」は BusinessModelDocLink でリンクボタン化し、クリックで
+ *  内容（docs/business-model.md 本文）をモーダル表示する（FE-7）。見出しは承認済み
+ *  表示文言（FR-6・application-design:c6）。 */
 function EstimateNote() {
   return (
     <div className="mt-2 border-t border-slate-200 pt-2">
       <p className="text-xs font-semibold text-slate-500">試算値</p>
-      <p className="mt-0.5 text-xs text-slate-400">前提: docs/business-model.md</p>
+      <p className="mt-0.5 text-xs text-slate-400">
+        前提: <BusinessModelDocLink />
+      </p>
     </div>
   );
 }
