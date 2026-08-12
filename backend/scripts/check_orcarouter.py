@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import httpx
+
 from app.schemas.alert import AlertAnalysis, AlertDetail, Location
 from app.schemas.pipe import PipeRecord
 from app.services.orcarouter import create_work_order
