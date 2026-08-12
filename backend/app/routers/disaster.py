@@ -1,6 +1,7 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -180,6 +181,7 @@ async def simulate_disaster(
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     store = get_store()
     base_lat, base_lng = 35.6812, 139.7671
+    now = datetime.now(timezone.utc)
 
     for i in range(count):
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
@@ -189,6 +191,8 @@ async def simulate_disaster(
             telemetry_id=f"TEL-DISASTER-{i+1:03d}",
             sensor_id=f"SEN-DISASTER-{i+1:03d}",
             hydrant_id=f"HYD-DISASTER-{i+1:03d}",
+            recorded_at=now,
+            received_at=now,
             location=GeoLocation(
                 latitude=base_lat + offset_lat,
                 longitude=base_lng + offset_lng,
