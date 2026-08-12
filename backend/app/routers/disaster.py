@@ -12,7 +12,8 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.store import get_store
+from app.schemas.telemetry import AnalysisResult, GeoLocation
+from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -182,44 +183,32 @@ async def simulate_disaster(
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     store = get_store()
     base_lat, base_lng = 35.6812, 139.7671
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
 
     for i in range(count):
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        alert_dict = {
-            "telemetry_id": f"TEL-DISASTER-{i+1:03d}",
-            "sensor_id": f"SEN-DISASTER-{i+1:03d}",
-            "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
-            "severity_level": 3,
-            "leak_confidence": 95.0,
-            "detected_at": now_iso,
-            "location": {
-                "latitude": base_lat + offset_lat,
-                "longitude": base_lng + offset_lng,
-            },
-            "analysis": {
-                "severity_level": 3,
-                "leak_confidence": 95.0,
-                "dominant_freq_hz": 800,
-                "band_energy_ratio": 4.5,
-            },
-        }
+        telemetry_item = StoredTelemetry(
+            telemetry_id=f"TEL-DISASTER-{i+1:03d}",
+            sensor_id=f"SEN-DISASTER-{i+1:03d}",
+            hydrant_id=f"HYD-DISASTER-{i+1:03d}",
+            recorded_at=now,
+            received_at=now,
+            raw_data=[],
+            location=GeoLocation(
+                latitude=base_lat + offset_lat,
+                longitude=base_lng + offset_lng,
+            ),
+            analysis=AnalysisResult(
+                severity_level=3,
+                leak_confidence=95.0,
+                dominant_freq_hz=800,
+                band_energy_ratio=4.5,
+            ),
+        )
 
-        # アラートストアの登録APIを型に合わせて柔軟に使用
-        if hasattr(store, "add_alert"):
-            store.add_alert(alert_dict)
-        elif hasattr(store, "alerts") and isinstance(store.alerts, list):
-            store.alerts.append(alert_dict)
-        elif hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
-            getattr(store, "_alerts").append(alert_dict)
-        elif hasattr(store, "add"):
-            try:
-                store.add(alert_dict)
-            except Exception:
-                if hasattr(store, "alerts"):
-                    store.alerts.append(alert_dict)
+        store.add(telemetry_item)
 
     return DisasterSimulateResponse(
         inserted_count=count,
