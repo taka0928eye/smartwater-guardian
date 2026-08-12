@@ -9,10 +9,10 @@ from pathlib import Path
 # backend ディレクトリを sys.path に追加
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import httpx
-from app.schemas.alert import AlertAnalysis, AlertDetail, Location
-from app.schemas.pipe import PipeRecord
-from app.services.orcarouter import create_work_order
+import httpx  # noqa: E402
+from app.schemas.alert import AlertAnalysis, AlertDetail, Location  # noqa: E402
+from app.schemas.pipe import PipeRecord  # noqa: E402
+from app.services.orcarouter import create_work_order  # noqa: E402
 
 
 async def test_fallback():
