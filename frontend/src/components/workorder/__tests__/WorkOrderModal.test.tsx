@@ -2,16 +2,16 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkOrderModal } from '../WorkOrderModal';
+import type { WorkOrder } from '../../../types/api';
 
 describe('WorkOrderModal Component', () => {
-  const mockWorkOrder: any = {
+  const mockWorkOrder: WorkOrder = {
     workOrderId: 'WO-2026-001',
     alertId: 'ALT-001',
     createdAt: '2026-08-12T10:00:00Z',
     parts: [
       {
         name: '補修ソケット 50A',
-        partName: '補修ソケット 50A',
         spec: '塩ビ管用',
         quantity: 1,
         unitPriceYen: 3500,
@@ -48,7 +48,7 @@ describe('WorkOrderModal Component', () => {
   });
 
   it('source == "fallback" のとき 規定ルール/フォールバック 系のバッジが表示されること', () => {
-    const fallbackOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
+    const fallbackOrder: WorkOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
     render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder} />);
     const badge = screen.getByText((_, element) => /規定|ルール|フォールバック|fallback/i.test(element?.textContent || ''));
     expect(badge).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe('WorkOrderModal Component', () => {
   });
 
   it('source == "fallback" のとき脚註に「LLM未使用」が表示されること', () => {
-    const fallbackOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
+    const fallbackOrder: WorkOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
     render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder} />);
     expect(screen.getByText((_, element) => {
       const text = element?.textContent || '';
@@ -77,4 +77,3 @@ describe('WorkOrderModal Component', () => {
     expect(handleClose).toHaveBeenCalled();
   });
 });
-
