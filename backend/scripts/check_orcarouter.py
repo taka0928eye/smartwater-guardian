@@ -3,7 +3,7 @@
 import asyncio
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 # backend ディレクトリを sys.path に追加
@@ -25,7 +25,7 @@ async def test_fallback():
         hydrant_id="HYD-001",
         severity_level=2,
         leak_confidence=85,
-        detected_at=datetime.now(timezone.utc),
+        detected_at=datetime.now(UTC),
         location=Location(latitude=35.6812, longitude=139.7671),
         analysis=AlertAnalysis(
             leak_confidence=85,
