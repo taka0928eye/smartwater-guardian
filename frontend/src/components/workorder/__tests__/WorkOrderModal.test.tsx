@@ -5,7 +5,7 @@ import { WorkOrderModal } from '../WorkOrderModal';
 import type { WorkOrder } from '../../../types/api';
 
 describe('WorkOrderModal Component', () => {
-  const mockWorkOrder: WorkOrder = {
+  const mockWorkOrder = {
     workOrderId: 'WO-2026-001',
     alertId: 'ALT-001',
     createdAt: '2026-08-12T10:00:00Z',
@@ -34,7 +34,7 @@ describe('WorkOrderModal Component', () => {
   };
 
   it('モーダルの基本情報（タイトル・見積合計・緊急度）が描画されること', () => {
-    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder} />);
+    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder as unknown as WorkOrder} />);
 
     expect(screen.getByText(/作業指示書/)).toBeInTheDocument();
     expect(screen.getByText(/15,000/)).toBeInTheDocument();
@@ -42,32 +42,31 @@ describe('WorkOrderModal Component', () => {
   });
 
   it('source == "llm" のときバッジエリアが描画されること', () => {
-    const { container } = render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder} />);
-    // モーダル内に要素（spanやdivなど）が描画されていることを確認
+    const { container } = render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder as unknown as WorkOrder} />);
     const badgeOrSpan = container.querySelectorAll('span, div');
     expect(badgeOrSpan.length).toBeGreaterThan(0);
   });
 
   it('source == "fallback" のとき 規定ルール/フォールバック 系のバッジが表示されること', () => {
-    const fallbackOrder: WorkOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
-    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder} />);
+    const fallbackOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
+    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder as unknown as WorkOrder} />);
     expect(screen.getByText(/規定|ルール|フォールバック|fallback/i)).toBeInTheDocument();
   });
 
   it('source == "llm" のとき脚註に原価が表示されること (FR-6)', () => {
-    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder} />);
+    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder as unknown as WorkOrder} />);
     expect(screen.getByText(/0\.15/)).toBeInTheDocument();
   });
 
   it('source == "fallback" のとき脚註に「LLM未使用」が表示されること', () => {
-    const fallbackOrder: WorkOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
-    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder} />);
+    const fallbackOrder = { ...mockWorkOrder, source: 'fallback', costYen: 0 };
+    render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={fallbackOrder as unknown as WorkOrder} />);
     expect(screen.getByText(/LLM未使用|規定ルール/)).toBeInTheDocument();
   });
 
   it('閉じるボタンやオーバーレイクリックで onClose が呼ばれること', () => {
     const handleClose = vi.fn();
-    render(<WorkOrderModal isOpen={true} onClose={handleClose} workOrder={mockWorkOrder} />);
+    render(<WorkOrderModal isOpen={true} onClose={handleClose} workOrder={mockWorkOrder as unknown as WorkOrder} />);
 
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[0]);
