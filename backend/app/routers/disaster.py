@@ -189,7 +189,7 @@ async def simulate_disaster(
         offset_lat = (i // 3) * 0.005 + (i % 3) * 0.001
         offset_lng = (i // 3) * 0.005 + (i % 3) * 0.001
 
-        telemetry_item = StoredTelemetry(  # type: ignore[call-arg]
+        telemetry_item = StoredTelemetry(
             telemetry_id=f"TEL-DISASTER-{i+1:03d}",
             sensor_id=f"SEN-DISASTER-{i+1:03d}",
             hydrant_id=f"HYD-DISASTER-{i+1:03d}",
