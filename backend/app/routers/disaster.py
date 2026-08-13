@@ -60,9 +60,9 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     if isinstance(item, dict):
         loc = item.get("location", {})
         if isinstance(loc, dict):
-            return float(loc.get("latitude", 0.0) or loc.get("lat", 0.0)), float(
-                loc.get("longitude", 0.0) or loc.get("lng", 0.0)
-            )
+            lat = loc.get("latitude", 0.0) or loc.get("lat", 0.0)
+            lng = loc.get("longitude", 0.0) or loc.get("lng", 0.0)
+            return float(lat), float(lng)
         return float(item.get("lat", 0.0)), float(item.get("lng", 0.0))
     loc = getattr(item, "location", None)
     lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
@@ -71,34 +71,48 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
 
 
 def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうか安全かつ強力に判定。"""
-    # 判定対象候補の値を収集
-    vals = []
+    """アイテムが Level 3 アラートかどうかを全パターンで判定。"""
+    if item is None:
+        return False
+
+    # 1. 辞書形式の探索
     if isinstance(item, dict):
-        vals.append(item.get("severity_level"))
-        vals.append(item.get("severityLevel"))
-        vals.append(item.get("severity"))
+        # 直下のキー
+        for k in ["severity_level", "severityLevel", "severity"]:
+            if str(item.get(k, "")).strip() in ("3", "3.0"):
+                return True
+        # analysis ネスト
         analysis = item.get("analysis")
         if isinstance(analysis, dict):
-            vals.append(analysis.get("severity_level"))
-            vals.append(analysis.get("severityLevel"))
-            vals.append(analysis.get("severity"))
-    else:
-        vals.append(getattr(item, "severity_level", None))
-        vals.append(getattr(item, "severityLevel", None))
-        vals.append(getattr(item, "severity", None))
-        analysis = getattr(item, "analysis", None)
-        if analysis is not None:
-            if isinstance(analysis, dict):
-                vals.append(analysis.get("severity_level"))
-                vals.append(analysis.get("severityLevel"))
-            else:
-                vals.append(getattr(analysis, "severity_level", None))
-                vals.append(getattr(analysis, "severityLevel", None))
+            for k in ["severity_level", "severityLevel", "severity"]:
+                if str(analysis.get(k, "")).strip() in ("3", "3.0"):
+                    return True
+        # data ネスト
+        data = item.get("data")
+        if isinstance(data, dict):
+            for k in ["severity_level", "severityLevel", "severity"]:
+                if str(data.get(k, "")).strip() in ("3", "3.0"):
+                    return True
+        return False
 
-    for v in vals:
-        if v is not None and str(v).strip() in ("3", "3.0"):
+    # 2. オブジェクト形式の探索
+    for k in ["severity_level", "severityLevel", "severity"]:
+        val = getattr(item, k, None)
+        if val is not None and str(val).strip() in ("3", "3.0"):
             return True
+
+    analysis = getattr(item, "analysis", None)
+    if analysis is not None:
+        if isinstance(analysis, dict):
+            for k in ["severity_level", "severityLevel", "severity"]:
+                if str(analysis.get(k, "")).strip() in ("3", "3.0"):
+                    return True
+        else:
+            for k in ["severity_level", "severityLevel", "severity"]:
+                val = getattr(analysis, k, None)
+                if val is not None and str(val).strip() in ("3", "3.0"):
+                    return True
+
     return False
 
 
@@ -110,10 +124,31 @@ async def get_disaster_summary(
     store = get_store()
 
     all_items: list[Any] = []
+
+    # 1. store から全データ取得
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
+    if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
+        all_items.extend(getattr(store, "_telemetry"))
+    if hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
+        all_items.extend(getattr(store, "_alerts"))
 
-    level3_alerts = [item for item in all_items if _is_level3(item)]
+    # 重複除去（telemetry_id またはオブジェクトID）
+    unique_items = []
+    seen = set()
+    for item in all_items:
+        t_id = None
+        if isinstance(item, dict):
+            t_id = item.get("telemetry_id") or item.get("id")
+        else:
+            t_id = getattr(item, "telemetry_id", getattr(item, "id", None))
+
+        key = t_id if t_id else id(item)
+        if key not in seen:
+            seen.add(key)
+            unique_items.append(item)
+
+    level3_alerts = [item for item in unique_items if _is_level3(item)]
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -148,10 +183,17 @@ async def get_disaster_summary(
                 cluster_id=f"CLS-{idx:03d}",
                 center_lat=round(center[0], 6),
                 center_lng=round(center[1], 6),
-                affected_sensor_ids=[getattr(i, "sensor_id", f"SEN-{idx}") for i in group],
+                affected_sensor_ids=[
+                    getattr(i, "sensor_id", i.get("sensor_id", f"SEN-{idx}") if isinstance(i, dict) else f"SEN-{idx}")
+                    for i in group
+                ],
                 affected_pipe_ids=[f"PIPE-{idx}"],
                 estimated_households=h,
-                priority_valve_hydrant_id=getattr(group[0], "hydrant_id", f"HYD-{idx}"),
+                priority_valve_hydrant_id=getattr(
+                    group[0],
+                    "hydrant_id",
+                    group[0].get("hydrant_id", f"HYD-{idx}") if isinstance(group[0], dict) else f"HYD-{idx}",
+                ),
                 geometry=create_circle_polygon(center[1], center[0], radius_m=threshold_meters),
             )
         )
@@ -190,8 +232,13 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
+            # store が dict を期待する場合、object を期待する場合の両方に対応
             if hasattr(store, "add"):
                 store.add(item)
+
+            # store の内部リストにも直接追加（安全柵）
+            if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
+                getattr(store, "_telemetry").append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
