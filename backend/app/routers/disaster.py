@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# サーバープロセス内でシミュレーションデータを確実に共有するリスト
+# シミュレーション投入データを管理するプロセス共有リスト
 _SIMULATED_ITEMS: list[StoredTelemetry] = []
 
 
@@ -78,60 +78,20 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
-def _get_telemetry_id(item: Any) -> str | None:
-    """アイテムから telemetry_id を安全に取得する。"""
-    if isinstance(item, dict):
-        val = item.get("telemetry_id")
-        return str(val) if val is not None else None
-    val_attr = getattr(item, "telemetry_id", None)
-    return str(val_attr) if val_attr is not None else None
-
-
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    store = get_store()
-
-    all_items = []
-    if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
-
-    all_items.extend(_SIMULATED_ITEMS)
-
-    seen_ids = set()
-    unique_items = []
-    for item in all_items:
-        t_id = _get_telemetry_id(item)
-        if t_id:
-            if t_id not in seen_ids:
-                seen_ids.add(t_id)
-                unique_items.append(item)
-        else:
-            unique_items.append(item)
-
-    level3_alerts = []
-    for a in unique_items:
-        sev = getattr(a, "severity_level", None)
-        analysis = getattr(a, "analysis", None)
-        if sev is None and analysis is not None:
-            sev = getattr(analysis, "severity_level", None)
-
-        if sev is None and isinstance(a, dict):
-            sev = a.get("severity_level") or a.get("severityLevel")
-            if sev is None and isinstance(a.get("analysis"), dict):
-                sev = a["analysis"].get("severity_level")
-
-        if str(sev) == "3":
-            level3_alerts.append(a)
-
-    if not level3_alerts:
+    # シミュレーション未実行(初期状態)の場合は 0 件を返す
+    if not _SIMULATED_ITEMS:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
             clusters=[],
         )
+
+    level3_alerts = list(_SIMULATED_ITEMS)
 
     clusters_raw: list[list[Any]] = []
     for alert in level3_alerts:
