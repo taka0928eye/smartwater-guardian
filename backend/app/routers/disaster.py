@@ -19,6 +19,9 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
+# サーバープロセス内でシミュレーションデータを確実に共有するリスト
+_SIMULATED_ITEMS: list[StoredTelemetry] = []
+
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -82,14 +85,27 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    # store から動的に全アイテムを取得 (store が空にリセットされていれば 0 件になる)
+    # store 内のデータと _SIMULATED_ITEMS を統合
+    all_items = []
     if hasattr(store, "get_all"):
-        all_items = store.get_all()
-    else:
-        all_items = getattr(store, "_telemetry", []) or getattr(store, "_alerts", [])
+        all_items.extend(store.get_all())
+    
+    all_items.extend(_SIMULATED_ITEMS)
+
+    # 重複排除 (telemetry_id 基準)
+    seen_ids = set()
+    unique_items = []
+    for item in all_items:
+        t_id = getattr(item, "telemetry_id", None) or (item.get("telemetry_id") if isinstance(item, dict) else None)
+        if t_id:
+            if t_id not in seen_ids:
+                seen_ids.add(t_id)
+                unique_items.append(item)
+        else:
+            unique_items.append(item)
 
     level3_alerts = []
-    for a in all_items:
+    for a in unique_items:
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
@@ -178,8 +194,11 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
+            # store への追加と、ルーターローカルリストへの追加の両方を行う
             if hasattr(store, "add"):
                 store.add(item)
+
+            _SIMULATED_ITEMS.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
