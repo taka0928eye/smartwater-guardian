@@ -19,9 +19,6 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# シミュレーション投入データを管理するプロセス共有リスト
-_SIMULATED_ITEMS: list[StoredTelemetry] = []
-
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -78,23 +75,36 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
+def _get_telemetry_id(item: Any) -> str:
+    """アイテムから telemetry_id を安全に取得する。"""
+    if isinstance(item, dict):
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    # シミュレーション未実行(初期状態)の場合は 0 件を返す
-    if not _SIMULATED_ITEMS:
+    store = get_store()
+
+    all_items = []
+    if hasattr(store, "get_all"):
+        all_items.extend(store.get_all())
+
+    # シミュレーションデータ (TEL-DISASTER- で始まるID) のみを対象とする
+    disaster_items = [item for item in all_items if "TEL-DISASTER-" in _get_telemetry_id(item)]
+
+    if not disaster_items:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
             clusters=[],
         )
 
-    level3_alerts = list(_SIMULATED_ITEMS)
-
     clusters_raw: list[list[Any]] = []
-    for alert in level3_alerts:
+    for alert in disaster_items:
         lat, lng = _extract_lat_lng(alert)
         assigned = False
         for cluster in clusters_raw:
@@ -163,8 +173,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            _SIMULATED_ITEMS.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
