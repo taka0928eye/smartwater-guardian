@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 # 既定の接続先（実エンドポイントはデモ直前に ORCAROUTER_BASE_URL で注入する）
 DEFAULT_ORCAROUTER_BASE_URL = "https://orcarouter.example.com/v1"
-DEFAULT_ORCAROUTER_MODEL = "orcarouter"
+DEFAULT_ORCAROUTER_MODEL = "openai/gpt-4o-mini"
 
 # 補修部材マスタ JSON のパス（cwd 非依存で解決する）
 REPAIR_PARTS_PATH = Path(__file__).resolve().parent.parent / "data" / "repair_parts.json"

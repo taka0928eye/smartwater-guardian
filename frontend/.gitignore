@@ -13,6 +13,10 @@
 # testing
 /coverage
 
+# playwright E2E 実行成果物（失敗時スクリーンショット・ビデオ・HTML レポート）
+/playwright-report/
+/test-results/
+
 # next.js
 /.next/
 /out/
@@ -33,6 +37,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.local.example
+!.env.e2e.example
 
 # vercel
 .vercel

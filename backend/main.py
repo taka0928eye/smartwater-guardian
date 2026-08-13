@@ -1,8 +1,12 @@
+﻿from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routers import alerts, demo, disaster, kpi, sensors, telemetry
+
+# .env ファイルを読み込み、環境変数を設定する（BE-5: Orcarouter LLM API 接続用）
+load_dotenv()
 
 app = FastAPI(title="SmartWater Guardian API")
 
