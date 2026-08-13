@@ -1,7 +1,6 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
 import math
-import os
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
