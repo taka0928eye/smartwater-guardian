@@ -180,9 +180,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
-            # オブジェクト直下にも severity_level を付与
-            setattr(item, "severity_level", 3)
-
             if hasattr(store, "add"):
                 store.add(item)
 
