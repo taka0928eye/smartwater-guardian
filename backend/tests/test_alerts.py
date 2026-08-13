@@ -269,12 +269,18 @@ class TestListSensors:
         # 将来の拡張に備えてステータスマッピングが 0:normal をサポートする設計
         store.add(
             make_record(
-                "tlm_warn", sensor_id="SNS-009", severity_level=2, received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc)
+                "tlm_warn",
+                sensor_id="SNS-009",
+                severity_level=2,
+                received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc),
             )
         )
         store.add(
             make_record(
-                "tlm_watch", sensor_id="SNS-010", severity_level=1, received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc)
+                "tlm_watch",
+                sensor_id="SNS-010",
+                severity_level=1,
+                received_at=datetime(2026, 8, 10, 11, 0, tzinfo=timezone.utc),
             )
         )
         body = client.get("/api/v1/sensors").json()
@@ -346,4 +352,47 @@ class TestRouteRegistration:
             app.url_path_for("create_work_order", telemetry_id="tlm_0000")
             == "/api/v1/alerts/tlm_0000/work-order"
         )
+        assert app.url_path_for("seed_alerts_for_e2e") == "/api/v1/alerts/seed"
         assert app.url_path_for("list_sensors") == "/api/v1/sensors"
+
+
+class TestSeedAlertsForE2E:
+    """POST /api/v1/alerts/seed（E2E デモシード投入）の検証。
+
+    E2E の global-setup が呼ぶデモシード。実在マスタ（hydrants.json）の消火栓へ
+    決定論的にレベルを割り当てて投入する（L3×3 / L2×3 / L1×3 / L0×1）。
+    実在マスタの sensor_id と配管台帳（BE-4）が一貫して参照できることを確認する。
+    """
+
+    def test_seed_inserts_real_hydrants_in_deterministic_order(self, client):
+        response = client.post("/api/v1/alerts/seed", json={"count": 10})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["inserted_count"] == 10
+        assert "シード投入完了" in data["message"]
+
+        alerts = client.get("/api/v1/alerts").json()
+        assert len(alerts) == 10
+        # 深刻度降順・投入順（安定ソート）で HYD-003（L3）が先頭
+        assert alerts[0]["hydrant_id"] == "HYD-003"
+        assert alerts[0]["severity_level"] == 3
+        # L3 上位 3 件が HYD-003 / HYD-004 / HYD-007 の順に並ぶ
+        assert [a["hydrant_id"] for a in alerts[:3]] == [
+            "HYD-003",
+            "HYD-004",
+            "HYD-007",
+        ]
+        # Level 0（正常・HYD-002）も投入される（「正常も表示」トグル検証用）
+        hydrant_ids = {a["hydrant_id"] for a in alerts}
+        assert "HYD-002" in hydrant_ids
+        assert len(hydrant_ids) == 10
+
+    def test_seed_records_reference_real_sensor_and_pipe(self, client):
+        client.post("/api/v1/alerts/seed", json={})
+
+        alerts = client.get("/api/v1/alerts").json()
+        first = client.get(f"/api/v1/alerts/{alerts[0]['telemetry_id']}").json()
+        # 実在マスタの sensor_id（SNS-003）が引き継がれる
+        assert first["sensor_id"] == "SNS-003"
+        # 配管台帳（BE-4）: HYD-003 → P-003
+        assert first["pipe_info"]["pipe_id"] == "P-003"

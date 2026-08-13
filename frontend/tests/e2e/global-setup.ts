@@ -38,14 +38,14 @@ async function globalSetup(config: FullConfig) {
     );
   }
 
-  // デモシード投入: Level 3, 2, 1 をそれぞれ投入
+  // デモシード投入: 実在マスタ（HYD-001〜010）へ L3×3 / L2×3 / L1×3 / L0×1 を決定論的に投入
   console.log("[global-setup] デモシード投入開始");
   try {
     const seedResponse = await fetch(`${apiBaseUrl}/api/v1/alerts/seed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        count: 9, // Level 3, 2, 1 をそれぞれ 3 件ずつ（合計 9 件）
+        count: 10, // 実在マスタ 10 件（L3×3 / L2×3 / L1×3 / L0×1）
       }),
     });
 

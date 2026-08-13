@@ -159,7 +159,9 @@ jobs:
       - name: Install Playwright Browsers
         run: |
           cd frontend
-          npx playwright install chromium
+          # --with-deps で Chromium が必要とするシステムライブラリ（libnss3 等）も
+          # apt で導入する。ubuntu-latest は sudo 不要で apt 実行できるため指定する。
+          npx playwright install --with-deps chromium
 
       - name: Build Next.js App for E2E
         run: |

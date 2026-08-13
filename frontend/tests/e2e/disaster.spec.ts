@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 災害シミュレーション E2E テスト（シナリオ 9）
  *
  * 防災シミュレーション（/api/v1/disaster/simulate エンドポイント）で
@@ -13,7 +13,9 @@ import { test, expect } from "@playwright/test";
 test.describe("災害シミュレーション（シナリオ 9）", () => {
   test("1. 防災シミュレーション実行前のアラート件数記録", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+
+    // アラート一覧が描画されるまで待つ（ポーリング）
+    await expect(page.getByTestId("alert-row").first()).toBeVisible();
 
     const alertRows = page.locator('[data-testid="alert-row"]');
     const initialCount = await alertRows.count();
@@ -21,9 +23,7 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
     expect(initialCount).toBeGreaterThan(0);
   });
 
-  test("2. 防災シミュレーション実行（/api/v1/disaster/simulate）", async ({
-    page,
-  }) => {
+  test("2. 防災シミュレーション実行（/api/v1/disaster/simulate）", async () => {
     const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
     const simulateResponse = await fetch(`${apiBaseUrl}/api/v1/disaster/simulate`, {
@@ -40,9 +40,10 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
   test("3. シミュレーション後のダッシュボード更新確認", async ({ page }) => {
     // ダッシュボード再読み込み
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
-    // アラート行の存在を確認
+    // アラート一覧が描画されるまで待つ
+    await expect(page.getByTestId("alert-row").first()).toBeVisible();
+
     const alertRows = page.locator('[data-testid="alert-row"]');
     const afterCount = await alertRows.count();
     console.log(`[災害シミュレーション後] アラート件数: ${afterCount}`);
@@ -51,22 +52,22 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
 
   test("4. 災害時の KPI サマリ更新確認", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
-    // KPI カード存在確認
-    const kpiCards = page.locator('[data-testid="kpi-card"]');
-    expect(await kpiCards.count()).toBeGreaterThan(0);
+    // KPI カードが実データで描画されるまで待つ
+    await expect(page.getByTestId("kpi-card-sensors")).toBeVisible();
+    await expect(page.getByTestId("kpi-card-level3")).toBeVisible();
 
-    // Level 3 カード（2 番目）確認
-    const level3Card = kpiCards.nth(1);
-    const level3Text = await level3Card.textContent();
+    // Level 3（管路破裂）カード: 災害シミュレーションで増加する件数が表示される
+    const level3Text = await page.getByTestId("kpi-card-level3").textContent();
     console.log(`[災害時 KPI] Level 3 カード: ${level3Text}`);
-    expect(level3Text).toBeTruthy();
+    expect(level3Text).toContain("Level 3");
   });
 
   test("5. ページ安定性確認（スクロール・操作可能）", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
+
+    // アラート一覧が描画されるまで待つ
+    await expect(page.getByTestId("alert-row").first()).toBeVisible();
 
     // スクロール操作
     const main = page.locator("main");
@@ -74,19 +75,13 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
       el.scrollTop = Math.min(el.scrollHeight / 2, 500);
     });
 
-    // アラート行をクリック可能であることを確認
-    const firstAlert = page.locator('[data-testid="alert-row"]').first();
-    if (await firstAlert.isVisible()) {
-      await firstAlert.click();
-      const detailPanel = page.locator('[data-testid="alert-detail-panel"]');
-      const isPanelVisible = await detailPanel.isVisible().catch(() => false);
-      expect(typeof isPanelVisible).toBe("boolean");
-    }
+    // アラート行をクリックして詳細ドロワーが開く（災害投入分もドロワー表示可能）
+    await page.locator('[data-testid="alert-row"]').first().click();
+    await expect(page.getByTestId("alert-detail-drawer")).toBeVisible();
   });
 
   test("6. ページネーション・レスポンシブ確認", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // ビューポート確認
     const viewport = page.viewportSize();

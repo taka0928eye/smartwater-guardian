@@ -21,7 +21,7 @@ from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.schemas.work_order import WorkOrder
 from app.services import orcarouter
 from app.services.ledger import find_pipe_by_hydrant, get_pipe_age
-from app.store import StoredTelemetry, get_store
+from app.store import StoredTelemetry, get_hydrants, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])
 
@@ -143,6 +143,26 @@ async def create_work_order(telemetry_id: str, client: HttpClientDep) -> WorkOrd
     return await orcarouter.create_work_order(client, telemetry_id, alert, pipe)
 
 
+# E2E テスト用シードのレベル割当（実在マスタ hydrants.json に対する決定論的マッピング）。
+# 実在マスタ（HYD-001〜010 / SNS-001〜010）を使うことで、
+# - 詳細ドロワーの配管情報（BE-4: 管台帳 P-xxx 表示）
+# - 地図マーカー（SNS-xxx）とアラート（sensor_id）の連動（FE-5）
+# が E2E で一貫して検証できる。Level 0（正常）を 1 件含めることで
+# 「正常も表示」トグル（FE-5）の切替も検証できる。
+_SEED_HYDRANT_LEVELS: dict[str, Literal[0, 1, 2, 3]] = {
+    "HYD-003": 3,
+    "HYD-004": 3,
+    "HYD-007": 3,
+    "HYD-005": 2,
+    "HYD-006": 2,
+    "HYD-008": 2,
+    "HYD-009": 1,
+    "HYD-010": 1,
+    "HYD-001": 1,
+    "HYD-002": 0,
+}
+
+
 @router.post(
     "/alerts/seed",
     response_model=SeedResponse,
@@ -152,34 +172,30 @@ async def create_work_order(telemetry_id: str, client: HttpClientDep) -> WorkOrd
 def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
     """E2E テスト用にデモアラートをストアへ投入する。
 
-    Level 1, 2, 3 を各 count/3 件ずつ投入する（合計 count 件）。
-    global-setup.ts から呼び出され、テスト開始前の初期状態を準備する。
+    ``_SEED_HYDRANT_LEVELS`` に従い、実在マスタ（hydrants.json）の消火栓へ
+    レベルを決定論的に割り当てて投入する（合計 10 件: L3×3 / L2×3 / L1×3 / L0×1）。
+    ``payload.count`` は後方互換用の受領のみで、投入件数には影響しない。
     """
-    store = get_store()
+    hydrants = {h.hydrant_id: h for h in get_hydrants()}
     now = datetime.now(UTC)
-    base_lat, base_lng = 35.6812, 139.7671
-    levels_per_type = payload.count // 3 if payload.count >= 3 else 1
+    store = get_store()
 
     inserted = 0
-    severity_levels: list[Literal[1, 2, 3]] = [3, 2, 1]
-    for level in severity_levels:
-        for i in range(levels_per_type):
-            telemetry_id = f"tlm_e2e_{level}_{i}_{uuid4().hex[:8]}"
-            hydrant_id = f"HYD-{(level * 100 + i):03d}"
-            sensor_id = f"SEN-{(level * 100 + i):03d}"
-
-            cur_lat = base_lat + (i * 0.0001)
-            cur_lng = base_lng + (i * 0.0001)
-
-            stored_telemetry = StoredTelemetry(
-                telemetry_id=telemetry_id,
-                sensor_id=sensor_id,
-                hydrant_id=hydrant_id,
+    for hydrant_id, level in _SEED_HYDRANT_LEVELS.items():
+        hydrant = hydrants.get(hydrant_id)
+        if hydrant is None:
+            # マスタに無い ID は投入しない（防御的）。実在マスタは全て揃っている前提。
+            continue
+        store.add(
+            StoredTelemetry(
+                telemetry_id=f"tlm_e2e_{level}_{inserted}_{uuid4().hex[:8]}",
+                sensor_id=hydrant.sensor_id,
+                hydrant_id=hydrant.hydrant_id,
                 recorded_at=now,
                 received_at=now,
                 location=GeoLocation(
-                    latitude=cur_lat,
-                    longitude=cur_lng,
+                    latitude=hydrant.latitude,
+                    longitude=hydrant.longitude,
                 ),
                 analysis=AnalysisResult(
                     severity_level=level,
@@ -188,8 +204,8 @@ def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
                     band_energy_ratio=(level - 1) * 0.1 + 0.8,
                 ),
             )
-            store.add(stored_telemetry)
-            inserted += 1
+        )
+        inserted += 1
 
     return SeedResponse(
         inserted_count=inserted,

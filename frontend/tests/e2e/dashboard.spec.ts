@@ -1,157 +1,127 @@
-﻿/**
+/**
  * ダッシュボード E2E テスト（シナリオ 1-8: 通常オペレーション）
  *
- * テスト順序:
- * 1. ダッシュボード読み込み
- * 2. KPI サマリ表示確認（監視センサー数・異常検知数）
- * 3. アラート一覧表示確認
- * 4. アラート詳細表示・フィルタリング
- * 5. 修繕管理（工事情報フェッチ・工事票起票）
- * 6. 災害シミュレーション（シナリオ 9 は別テストファイルで実行）
+ * 検証内容: 読み込み / KPI サマリ / アラート一覧 / 詳細ドロワー /
+ * 正常（Level 0）表示切替 / 修繕管理（AI 自動起票エントリーポイント）。
+ *
+ * 前提: global-setup が実在マスタ（HYD-001〜010）へシードを投入する。
+ * 先頭行は Level 3（HYD-003）、Level 0（HYD-002）は既定で非表示。
+ * セレクタは DashboardPage（pages/DashboardPage.ts）に集約する。
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { DashboardPage } from "./pages/DashboardPage";
 
 test.describe("ダッシュボード E2E テスト", () => {
   test("1. ダッシュボード読み込みと KPI サマリ表示", async ({ page }) => {
-    // ダッシュボードへ遷移
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
 
     // ページタイトル確認
     await expect(page).toHaveTitle(/SmartWater|Guardian/i);
 
-    // KPI セクション確認（aria-labelledby で h2 と連携）
-    const kpiSection = page.locator("section").first();
-    await expect(kpiSection.locator("h2")).toContainText(/KPI|監視/i);
-
-    // KPI カード確認（スケルトン消失後）
-    const kpiCards = page.locator('[data-testid="kpi-card"]');
-    await expect(kpiCards.first()).toBeDefined();
+    // KPI カードが実データで描画される（スケルトンから切替わるまで自動待機）
+    await expect(dashboard.kpiSensors).toBeVisible();
   });
 
   test("2. 監視中センサー数と異常検知数の表示", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
 
     // 監視センサー数カード
-    const sensorCard = page.locator('[data-testid="kpi-card"]').first();
-    await expect(sensorCard.locator("text=/センサー|監視/")).toBeDefined();
+    await expect(dashboard.kpiSensors).toBeVisible();
+    await expect(dashboard.kpiSensors).toContainText(/センサー|監視/);
 
-    // Level 1-3 カウント確認
-    const level3Card = page.locator('[data-testid="kpi-card"]').nth(1);
-    await expect(level3Card.locator("text=/Level 3|高/")).toBeDefined();
+    // Level 3（管路破裂）カード
+    await expect(dashboard.kpiLevel3).toBeVisible();
+    await expect(dashboard.kpiLevel3).toContainText(/Level 3|管路破裂/);
   });
 
   test("3. アラート一覧表示", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
 
-    // アラートセクション確認
-    const alertSection = page.locator("main").locator("section").nth(2);
-    await expect(alertSection.locator("h2")).toContainText(/アラート|異常/i);
-
-    // アラート行確認
-    const alertRows = page.locator('[data-testid="alert-row"]');
-    const rowCount = await alertRows.count();
-    expect(rowCount).toBeGreaterThan(0);
+    // アラート一覧が描画されるまで待つ（ポーリング）
+    await dashboard.waitForAlertList();
+    expect(await dashboard.alertRows.count()).toBeGreaterThan(0);
   });
 
-  test("4. アラート行の検査対象パイプ表示", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+  test("4. アラート行に検査対象（消火栓 ID）が表示される", async ({ page }) => {
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.waitForAlertList();
 
-    // 最初のアラート行から検査対象パイプを確認
-    const firstAlert = page.locator('[data-testid="alert-row"]').first();
-    const pipeId = await firstAlert.locator('[data-testid="alert-pipe-id"]').textContent();
-    expect(pipeId).toBeTruthy();
-    expect(pipeId).toMatch(/HYD-\d{3}/);
+    // 先頭行（Level 3・HYD-003）に検査対象の消火栓 ID が表示される
+    await expect(dashboard.alertRows.first()).toContainText("HYD-003");
   });
 
   test("5. アラート詳細パネル表示", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.waitForAlertList();
 
-    // アラート行をクリック
-    const firstAlert = page.locator('[data-testid="alert-row"]').first();
-    await firstAlert.click();
+    // アラート行をクリックして詳細ドロワーを開く
+    await dashboard.alertRows.first().click();
 
-    // 詳細パネルが表示されることを確認
-    const detailPanel = page.locator('[data-testid="alert-detail-panel"]');
-    await expect(detailPanel).toBeVisible();
-
-    // パネル内容確認
-    const pipeInfo = detailPanel.locator('[data-testid="pipe-info"]');
-    await expect(pipeInfo).toBeDefined();
+    // 配管情報（BE-6 管台帳参照: HYD-003 → P-003）が表示される
+    await expect(dashboard.drawer).toBeVisible();
+    await expect(
+      dashboard.drawer.getByRole("heading", { name: "配管情報" }),
+    ).toBeVisible();
+    await expect(dashboard.drawer).toContainText("P-003");
   });
 
-  test("6. Level フィルタリング", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+  test("6. Level 0（正常）の表示切替", async ({ page }) => {
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.waitForAlertList();
 
-    // 初期状態のアラート件数を記録
-    const allAlerts = page.locator('[data-testid="alert-row"]');
-    const initialCount = await allAlerts.count();
+    // Level 0（HYD-002）は既定で非表示
+    await expect(dashboard.alertRow("HYD-002")).not.toBeVisible();
 
-    // Level フィルタボタン確認と操作
-    const level3Filter = page.locator(
-      'button:has-text("Level 3"), button[aria-label*="Level 3"]'
-    );
-    if (await level3Filter.isVisible()) {
-      await level3Filter.click();
-      await page.waitForTimeout(300);
+    // 「正常も表示」トグルで表示を切り替えられる
+    const toggle = page.getByTestId("show-level0-toggle");
+    await toggle.check();
+    await expect(dashboard.alertRow("HYD-002")).toBeVisible();
 
-      // フィルタ後のアラート件数が初期値以下であることを確認
-      const filteredAlerts = page.locator('[data-testid="alert-row"]');
-      const filteredCount = await filteredAlerts.count();
-      expect(filteredCount).toBeLessThanOrEqual(initialCount);
-    }
+    await toggle.uncheck();
+    await expect(dashboard.alertRow("HYD-002")).not.toBeVisible();
   });
 
-  test("7. 修繕工事一覧取得（GET /work-orders/{id}）", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+  test("7. 詳細ドロワーから修繕管理（AI 自動起票）へ入れる", async ({ page }) => {
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.waitForAlertList();
 
-    // アラート行をクリックして詳細を表示
-    const firstAlert = page.locator('[data-testid="alert-row"]').first();
-    const alertId = await firstAlert.getAttribute("data-alert-id");
-    await firstAlert.click();
+    await dashboard.alertRows.first().click();
+    await expect(dashboard.drawer).toBeVisible();
 
-    // 修繕工事セクションを確認
-    const workOrderSection = page.locator('[data-testid="work-order-section"]');
-    if (await workOrderSection.isVisible()) {
-      // 工事一覧が表示されることを確認
-      const workOrderItems = workOrderSection.locator('[data-testid="work-order-item"]');
-      expect(await workOrderItems.count()).toBeGreaterThanOrEqual(0);
-    }
+    // 修繕管理エントリーポイント（FE-6: AI 自動起票ボタン）
+    await expect(
+      dashboard.drawer.getByRole("button", { name: /AI自動起票/ }),
+    ).toBeVisible();
   });
 
-  test("8. 修繕工事票起票（POST /work-orders）と成功確認", async ({ page }) => {
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
+  test("8. 修繕工事票（Work Order）の起票と成功確認", async ({ page }) => {
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.waitForAlertList();
 
-    // アラート行をクリック
-    const firstAlert = page.locator('[data-testid="alert-row"]').first();
-    await firstAlert.click();
+    await dashboard.alertRows.first().click();
+    await expect(dashboard.drawer).toBeVisible();
 
-    // 工事票起票ボタンを確認・クリック
-    const issueButton = page.locator('button:has-text("工事票起票")');
-    if (await issueButton.isVisible()) {
-      await issueButton.click();
-      await page.waitForTimeout(500);
-
-      // 成功メッセージまたは工事票行の追加を確認
-      const successMsg = page.locator('[data-testid="success-message"]');
-      const newWorkOrder = page.locator('[data-testid="work-order-item"]');
-
-      const hasSuccess =
-        (await successMsg.isVisible()) || (await newWorkOrder.count()) > 0;
-      expect(hasSuccess).toBeTruthy();
-    }
+    // AI 自動起票 → モーダルが開き見積が表示される（fallback 経路・決定論的）
+    await dashboard.drawer
+      .getByRole("button", { name: /AI自動起票/ })
+      .click();
+    const modal = page.getByRole("dialog", {
+      name: "作業指示書 (Work Order)",
+    });
+    await expect(modal).toBeVisible();
+    await expect(modal).toContainText("概算見積合計:");
   });
 
   test("9. ページスクロール・ナビゲーション確認", async ({ page }) => {
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // KPI セクションへスクロール
     const kpiSection = page.locator("section").first();
@@ -167,7 +137,6 @@ test.describe("ダッシュボード E2E テスト", () => {
   test("10. レスポンシブ表示確認（デスクトップ）", async ({ page }) => {
     // viewport は playwright.config.ts の devices["Desktop Chrome"] で固定
     await page.goto("/");
-    await page.waitForLoadState("networkidle");
 
     // ビューポート確認
     const viewport = page.viewportSize();
