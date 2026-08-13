@@ -19,6 +19,8 @@
 ## 2. 事前チェックリスト（事故防止）
 
 - [ ] `backend/` に `venv` が存在し、依存がインストール済み
+- [ ] `backend/dataset/` にデモ用実音響WAV（`*no-leak*_level0.wav` / `*leak*_level{N}.wav`）が配置済み
+      （※ Git 管理外。Zenodo データセットから held-out を切出して配置する）
 - [ ] `frontend/` で `npm install` 済み（初回のみ）
 - [ ] `--seed` を固定し、リハーサルと同一の結果が出ることを確認済み（既定 `--seed 42`）
 - [ ] `ORCAROUTER_ENABLED=false` でも完走することを確認済み（§6 オフラインリハーサル）
@@ -62,8 +64,9 @@ KPI「推定削減コスト」はこの内訳から **2,048,400 円（204.8万�
 | オプション | 既定 | 説明 |
 |---|---|---|
 | `--seed` | （必須） | シーケンス再現用シード。同一値で同一結果（再現性） |
+| `--audio-dir` | `backend/dataset` | 実音響WAVのディレクトリ（`*_level{N}.wav` の leak / no-leak 規約） |
 | `--url` | `http://localhost:8000/api/v1/demo/seed` | デモシード API の URL |
-| `--dry-run` | off | 送信せず組み立て結果（内訳・割当）だけを表示 |
+| `--dry-run` | off | 送信せず組み立て結果（内訳・割当・音源ファイル）だけを表示 |
 
 ```powershell
 # 送信せずに確認したい場合
@@ -73,20 +76,28 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --dry-run
 ## 4. デモ初期状態の仕様
 
 シードは `scripts/seed_demo.py` の `build_demo_sequence(seed)` が決定的に組み立て、
+各ステップで実音響WAVを再生（**BE-2 の `load_audio_file()` 再利用**）して
 `POST /api/v1/demo/seed` で1件ずつ投入する。
 
-- **BE-2 の `generate_signal()` を再利用**しており、音響生成ロジックを重複していない
+- **音源は「学習未使用の Zenodo 実音響」**（学習データと同ドメインの held-out カット）。
+  `generate_signal()` の人工音は実 SVM が意図レベルに分類できないため DEMO-1 で不採用にした。
+  実音響は `--audio-dir`（既定 `backend/dataset`）に配置し、Git 管理外（`.gitignore`）とする
+- **ファイル名規約**: `*no-leak*_level{N}.wav` = 正常音 / `*leak*_level{N}.wav` = 漏水音。
+  leak / no-leak を判別できないファイル名は投入ミス防止のためエラーにする
+- **音源選定は決定論的**: Level 0 は no-leak 音、Level 1〜3 は leak 音を使い、
+  ファイル名の `_level{N}` 一致を優先する（無ければ同バケット内から `--seed` で選ぶ）
+- **BE-3 MVP 契約の事前検証**: シードAPIは 8000Hz / 1.0秒 / 8000サンプルの WAV のみ受付可能
+  （`validate_mvp_contract`）。契約外の WAV は 422 になる前にエラーで停止する
 - 各ステップの `hydrant_id` は `hydrants.json` に実在するIDから決定論的に選定
 - Level 0 ベースラインの消火栓は後続ステップで再利用しない
   （最新状態が上書きされると「正常」対比が消えるため）
 - Level 1 のステップは Level 3 より**必ず先**に投入される（山場は Level 1）
 - **深刻度の確定方式**: デモシード専用 API（`POST /api/v1/demo/seed`）が
   `analyze_audio()` で**実スペクトルを算出**しつつ、深刻度を意図レベルに確定する。
-  実 SVM は合成波形（`generate_signal`）を意図レベルに分類できないため
-  （DEMO-1 調査で確認）、この補正でデモの内訳・KPI を保証する
-  - ハイブリッド拡張: 実漏水音（Zenodo データセット）が手元にある場合は、
-    同じ経路に BE-2 の `load_audio_file()` によるリプレイを差し込めば、
-    実信号 + 深刻度確定（= severity 0 の「正常」が SVM でも自然に返る）が成立する
+  実 no-leak 音は SVM が自然に severity 0（正常）を返すため、
+  「Level 0 = 正しい正常」「Level 1+ = AIが気づいた漏水」の対比が実信号で成立する
+  - 実測: `BE3_demo_no-leak_level0.wav` → severity 0（honest 正常）/
+    `BE3_demo_leak_level2.wav` → severity 2（leak）を確認済み
 
 ## 5. 1分間デモタイムライン（`docs/ui-wireframe.md` §5 と整合）
 

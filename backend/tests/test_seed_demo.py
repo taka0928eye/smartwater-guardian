@@ -7,27 +7,38 @@ Issue #23（DEMO-1）の受け入れ条件を検証する:
 - 同一 ``seed`` で同一シーケンスが再現され、hydrant_id がマスタに実在する
 - Level 1 のステップが Level 3 より先に現れる（山場は Level 1）
 - シードAPI（``POST /api/v1/demo/seed``）が意図した深刻度でストアへ投入する
-  （実 SVM の合成波形誤分類をデモシード専用に補正）
-- ``run_seed`` が ``--seed`` 固定で送信でき、``--dry-run`` は送信しない
+- ``run_seed`` が BE-2 の ``load_audio_file``（replay）で**実音響WAV**を読み込み、
+  ``--seed`` 固定で送信でき、``--dry-run`` は送信しない
+- replay ファイルはファイル名規約（``*_level{N}.wav`` の leak / no-leak）で
+  決定論的に選定され、BE-3 MVP 契約（8000Hz / 1.0秒 / 8000サンプル）を
+  満たす
 """
 
 from __future__ import annotations
 
+import random
+import wave
 from collections import Counter
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from scripts.seed_demo import (
     BASELINE_LEVEL,
+    DEFAULT_AUDIO_DIR,
     DEMO_COMPOSITION,
     build_demo_sequence,
     main,
     parse_args,
+    resolve_replay_files,
     run_seed,
+    select_replay_file,
+    validate_mvp_contract,
 )
 from scripts.simulate_sensor import (
+    SimulationError,
     encode_audio,
     generate_signal,
     load_hydrants,
@@ -38,6 +49,34 @@ SEED_DURATION_SEC = 1.0
 
 # デモ既定値（docs/business-model.md §3.4）: Level 1×8 / Level 2×3 / Level 3×1
 EXPECTED_STEP_COUNT = 1 + sum(DEMO_COMPOSITION.values())
+
+
+def _write_wav(path: Path, samples: np.ndarray, rate: int = 8_000) -> None:
+    """テスト用の PCM16 モノラル WAV を書き出す。"""
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(rate)
+        wav_file.writeframes(samples.astype("<i2").tobytes())
+
+
+@pytest.fixture
+def audio_dir(tmp_path: Path) -> Path:
+    """no-leak 1件 + leak 3件（level1/2/3）を含む音声ディレクトリを作る。"""
+    for name, level in [
+        ("no-leak_level0", 0),
+        ("leak_level1", 1),
+        ("leak_level2", 2),
+        ("leak_level3", 3),
+    ]:
+        signal = generate_signal(
+            level, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        )
+        _write_wav(tmp_path / f"BE3_demo_{name}.wav", signal)
+    return tmp_path
+
+
+# --- シーケンス組み立て（build_demo_sequence）---
 
 
 def test_sequence_starts_with_level0_baseline() -> None:
@@ -94,8 +133,110 @@ def test_baseline_hydrant_is_not_reused() -> None:
     assert all(step.hydrant_id != baseline_id for step in steps[1:])
 
 
-def test_run_seed_posts_all_steps_with_level_field() -> None:
-    """run_seed が全ステップを送信し、各 payload に意図レベルが入る。"""
+# --- replay ファイル解決（BE-2 load_audio_file 再利用）---
+
+
+def test_resolve_replay_files_separates_buckets(audio_dir: Path) -> None:
+    """no-leak と leak をファイル名規約で分離する。"""
+    no_leak, leak = resolve_replay_files(audio_dir)
+    assert [path.name for path in no_leak] == ["BE3_demo_no-leak_level0.wav"]
+    assert [path.name for path in leak] == [
+        "BE3_demo_leak_level1.wav",
+        "BE3_demo_leak_level2.wav",
+        "BE3_demo_leak_level3.wav",
+    ]
+
+
+def test_resolve_replay_files_missing_leak_raises(tmp_path: Path) -> None:
+    """leak が無いディレクトリは SimulationError（デモ内訳を投入できないため）。"""
+    _write_wav(
+        tmp_path / "BE3_demo_no-leak_level0.wav",
+        generate_signal(
+            0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        ),
+    )
+    with pytest.raises(SimulationError):
+        resolve_replay_files(tmp_path)
+
+
+def test_resolve_replay_files_rejects_unclassifiable_name(tmp_path: Path) -> None:
+    """leak / no-leak を判別できないファイル名は SimulationError。"""
+    _write_wav(
+        tmp_path / "BE3_demo_mystery.wav",
+        generate_signal(
+            0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        ),
+    )
+    with pytest.raises(SimulationError):
+        resolve_replay_files(tmp_path)
+
+
+def test_select_replay_file_level0_uses_no_leak(audio_dir: Path) -> None:
+    """Level 0 ステップは no-leak（正常音）を使う。"""
+    no_leak, leak = resolve_replay_files(audio_dir)
+    path = select_replay_file(no_leak, leak, level=0, rng=random.Random(42))
+    assert "no-leak" in path.name
+
+
+def test_select_replay_file_prefers_exact_level(audio_dir: Path) -> None:
+    """Level 1 ステップは _level1 の leak 音を優先する。"""
+    no_leak, leak = resolve_replay_files(audio_dir)
+    path = select_replay_file(no_leak, leak, level=1, rng=random.Random(42))
+    assert path.name == "BE3_demo_leak_level1.wav"
+
+
+def test_select_replay_file_falls_back_when_level_missing(tmp_path: Path) -> None:
+    """該当レベルのファイルが無い場合は同バケットの leak 音にフォールバックする。"""
+    for name, level in [("no-leak_level0", 0), ("leak_level2", 2)]:
+        _write_wav(
+            tmp_path / f"BE3_demo_{name}.wav",
+            generate_signal(
+                level, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+            ),
+        )
+    no_leak, leak = resolve_replay_files(tmp_path)
+    path = select_replay_file(no_leak, leak, level=1, rng=random.Random(42))
+    assert "leak" in path.name
+
+
+def test_select_replay_file_deterministic(audio_dir: Path) -> None:
+    """同一 seed で選定結果が再現される（デモの再現性）。"""
+    no_leak, leak = resolve_replay_files(audio_dir)
+    rng_a = random.Random(7)
+    rng_b = random.Random(7)
+    picks_a = [
+        select_replay_file(no_leak, leak, level, rng_a) for level in (1, 2, 3)
+    ]
+    picks_b = [
+        select_replay_file(no_leak, leak, level, rng_b) for level in (1, 2, 3)
+    ]
+    assert picks_a == picks_b
+
+
+def test_validate_mvp_contract_rejects_wrong_rate(tmp_path: Path) -> None:
+    """8000Hz 以外の WAV は SimulationError（シードAPIが422する前の事前検知）。"""
+    path = tmp_path / "bad_rate.wav"
+    signal = generate_signal(
+        0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+    )
+    _write_wav(path, signal, rate=44_100)
+    with pytest.raises(SimulationError):
+        validate_mvp_contract(signal, sample_rate_hz=44_100, duration_sec=8_000 / 44_100, path=path)
+
+
+def test_validate_mvp_contract_accepts_mvp() -> None:
+    """MVP 契約（8000Hz / 1.0秒 / 8000サンプル）は受け付ける。"""
+    signal = generate_signal(
+        1, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+    )
+    validate_mvp_contract(signal, sample_rate_hz=8_000, duration_sec=1.0, path=Path("ok.wav"))
+
+
+# --- run_seed / CLI ---
+
+
+def test_run_seed_posts_all_steps_with_level_field(audio_dir: Path) -> None:
+    """run_seed が全ステップを送信し、各 payload に意図レベルと実音響が入る。"""
     captured: list[tuple[str, dict, float]] = []
 
     def fake_post(url: str, payload: dict, timeout: float) -> dict:
@@ -105,6 +246,7 @@ def test_run_seed_posts_all_steps_with_level_field() -> None:
     results = run_seed(
         seed=42,
         url="http://test.local/api/v1/demo/seed",
+        audio_dir=audio_dir,
         post_func=fake_post,
     )
     assert len(results) == EXPECTED_STEP_COUNT
@@ -114,25 +256,54 @@ def test_run_seed_posts_all_steps_with_level_field() -> None:
     assert Counter(levels) == {0: 1, **DEMO_COMPOSITION}
     # 先頭は Level 0 ベースライン
     assert captured[0][1]["level"] == BASELINE_LEVEL
+    # 実音響（replay）が使われる: MVP 契約の WAV を読み込んだ値になる
+    for _, payload, _ in captured:
+        assert payload["sample_rate_hz"] == SEED_SAMPLE_RATE_HZ
+        assert payload["duration_sec"] == SEED_DURATION_SEC
+        assert payload["audio_base64"]  # Base64 音声が入っている
 
 
-def test_run_seed_dry_run_does_not_post() -> None:
+def test_run_seed_contract_violation_raises(tmp_path: Path) -> None:
+    """契約外（8000Hz以外）のWAVは投入前に SimulationError になる。"""
+    _write_wav(
+        tmp_path / "BE3_demo_no-leak_level0.wav",
+        generate_signal(
+            0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        ),
+        rate=44_100,
+    )
+    _write_wav(
+        tmp_path / "BE3_demo_leak_level2.wav",
+        generate_signal(
+            2, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        ),
+    )
+
+    def boom(url: str, payload: dict, timeout: float) -> dict:
+        raise AssertionError("契約検証より先に送信してはいけない")
+
+    with pytest.raises(SimulationError):
+        run_seed(seed=42, audio_dir=tmp_path, post_func=boom)
+
+
+def test_run_seed_dry_run_does_not_post(audio_dir: Path) -> None:
     """--dry-run では送信せず、組み立て結果だけを返す。"""
 
     def boom(url: str, payload: dict, timeout: float) -> dict:
         raise AssertionError("dry-run では送信してはいけない")
 
-    results = run_seed(seed=42, dry_run=True, post_func=boom)
+    results = run_seed(seed=42, audio_dir=audio_dir, dry_run=True, post_func=boom)
     assert results
     assert all(result["dry_run"] for result in results)
     assert all(result["level"] in (0, 1, 2, 3) for result in results)
 
 
 def test_parse_args_requires_seed() -> None:
-    """--seed が必須で、デフォルトで dry_run は無効。"""
+    """--seed が必須で、audio-dir は既定値（backend/dataset）。"""
     args = parse_args(["--seed", "42"])
     assert args.seed == 42
     assert args.dry_run is False
+    assert args.audio_dir == DEFAULT_AUDIO_DIR
 
 
 def test_parse_args_dry_run_flag() -> None:
@@ -141,9 +312,15 @@ def test_parse_args_dry_run_flag() -> None:
     assert args.dry_run is True
 
 
-def test_main_dry_run_returns_zero(capsys: pytest.CaptureFixture[str]) -> None:
+def test_parse_args_audio_dir_override(tmp_path: Path) -> None:
+    """--audio-dir で実音響ディレクトリを差し替えられる。"""
+    args = parse_args(["--seed", "42", "--audio-dir", str(tmp_path)])
+    assert args.audio_dir == tmp_path
+
+
+def test_main_dry_run_returns_zero(capsys: pytest.CaptureFixture[str], audio_dir: Path) -> None:
     """CLI の --dry-run は送信せず成功終了する。"""
-    rc = main(["--seed", "42", "--dry-run"])
+    rc = main(["--seed", "42", "--dry-run", "--audio-dir", str(audio_dir)])
     assert rc == 0
     assert "[DRY-RUN]" in capsys.readouterr().out
 

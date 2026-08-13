@@ -4,21 +4,24 @@ Issue #23（DEMO-1）の実装。デモの山場である Level 1（微小漏水
 Level 0（正常）との対比を、決定的なシーケンスで1コマンド投入する。
 
 実装方針:
-- BE-2 の ``generate_signal()`` を再利用し、音響生成ロジックを重複させない。
+- 音源は BE-2 の ``load_audio_file()``（replay）で読み込む**実音響WAV**。
+  ``generate_signal()`` の人工音は実 SVM が意図レベルに分類できないため
+  （DEMO-1 調査で確認）、学習未使用の Zenodo 実音響（``backend/dataset``）を
+  用いる。実 no-leak 音は SVM が自然に severity 0 を返す「正しい正常」になる。
 - 投入内訳は ``docs/business-model.md`` §3.4 のデモ既定値
   （Level 1×8 / Level 2×3 / Level 3×1）。
 - Level 0（正常）ベースラインを先頭に投入し、「AIだけが気づいた」対比を成立させる。
 - 同一 ``--seed`` で同一シーケンスを再現する（デモの再現性）。
 - 深刻度は ``POST /api/v1/demo/seed``（デモシード専用エンドポイント）で意図レベルに
-  確定する。実 SVM は合成波形を意図レベルに分類できないため（DEMO-1 調査で確認）。
-  ハイブリッド方針（実信号 + 深刻度確定）の受け皿であり、実録音リプレイ時も
-  この経路で深刻度が保証される。
+  確定する。実スペクトルは ``analyze_audio()`` で算出され、実 leak 音は SVM でも
+  leak と判定される（ハイブリッド: 実信号 + 深刻度確定）。
 """
 
 from __future__ import annotations
 
 import argparse
 import random
+import re
 import sys
 from collections import Counter
 from collections.abc import Callable
@@ -27,26 +30,31 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 # スクリプト直接実行時も backend/ を sys.path に載せ、scripts.simulate_sensor を
 # import できるようにする（train_leak_svm.py と同じブートストラップ）。
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from app.services.audio import DURATION_SEC, SAMPLE_COUNT, SAMPLE_RATE_HZ  # noqa: E402
 from scripts.simulate_sensor import (  # noqa: E402
     DEFAULT_HYDRANTS_PATH,
     Hydrant,
     SimulationError,
     build_payload,
     find_hydrant,
-    generate_signal,
+    load_audio_file,
     load_hydrants,
     send_telemetry,
 )
 
-# BE-3 MVP は 8000Hz・1.0 秒のみ対応（decode_pcm16 の契約）
-SEED_SAMPLE_RATE_HZ = 8_000
-SEED_DURATION_SEC = 1.0
+# BE-3 MVP 契約（analyze_audio が受付可能な形式）。replay する WAV もこの契約に一致させる。
+
+# 実音響WAVの既定ディレクトリ（backend/dataset）。Git 管理外（.gitignore）の
+# デモ用カットを配置する。ファイル名規約: ``*_level{N}.wav`` + ``leak`` / ``no-leak``。
+DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[1] / "dataset"
 
 # デモ既定値（docs/business-model.md §3.4）
 DEMO_COMPOSITION: dict[int, int] = {1: 8, 2: 3, 3: 1}
@@ -76,6 +84,90 @@ class DemoStep:
     level: int
     hydrant_id: str
     offset_sec: int
+
+
+def _classify_audio_name(path: Path) -> tuple[bool, int | None]:
+    """ファイル名から (is_leak, 意図レベル) を決定論的に導出する。
+
+    規約: ``*no-leak*_level{N}.wav`` は正常音、``*leak*_level{N}.wav`` は漏水音。
+    leak / no-leak を判別できない名前は投入ミスを防ぐためエラーにする。
+    """
+    name = path.stem.lower()
+    if "no-leak" in name:
+        is_leak = False
+    elif "leak" in name:
+        is_leak = True
+    else:
+        raise SimulationError(
+            f"leak / no-leak が判別できないファイル名です: {path.name}"
+        )
+    match = re.search(r"level(\d+)", name)
+    level = int(match.group(1)) if match else None
+    return is_leak, level
+
+
+def resolve_replay_files(audio_dir: Path) -> tuple[list[Path], list[Path]]:
+    """音声ディレクトリから no-leak と leak の WAV 一覧を返す。
+
+    ``backend/dataset`` のデモ用カット（``BE3_demo_no-leak_level0.wav`` /
+    ``BE3_demo_leak_level2.wav``）が先例。決定論のためにソートする。
+    """
+    if not audio_dir.is_dir():
+        raise SimulationError(f"音声ディレクトリが見つかりません: {audio_dir}")
+    wavs = sorted(path for path in audio_dir.glob("*.wav") if path.is_file())
+    no_leak: list[Path] = []
+    leak: list[Path] = []
+    for path in wavs:
+        is_leak, _ = _classify_audio_name(path)
+        (leak if is_leak else no_leak).append(path)
+    if not no_leak:
+        raise SimulationError(
+            f"no-leak（正常音）のWAVが見つかりません: {audio_dir}"
+        )
+    if not leak:
+        raise SimulationError(
+            f"leak（漏水音）のWAVが見つかりません: {audio_dir}"
+        )
+    return no_leak, leak
+
+
+def select_replay_file(
+    no_leak_files: list[Path],
+    leak_files: list[Path],
+    level: int,
+    rng: random.Random,
+) -> Path:
+    """ステップの深刻度に合う実音響ファイルを決定論的に選ぶ。
+
+    Level 0 は no-leak 音（SVM が自然に severity 0 を返す正常音）を使い、
+    Level 1〜3 は leak 音を使う。ファイル名の ``_level{N}`` が一致するものを
+    優先し、無ければ同バケット内から seed で選ぶ（件数不足は循環で補える）。
+    """
+    files = no_leak_files if level == 0 else leak_files
+    exact = [
+        path for path in files if _classify_audio_name(path)[1] == level
+    ]
+    pool = exact if exact else files
+    return pool[rng.randrange(len(pool))]
+
+
+def validate_mvp_contract(
+    signal: np.ndarray,
+    sample_rate_hz: int,
+    duration_sec: float,
+    path: Path,
+) -> None:
+    """シードAPI（BE-3 MVP 契約）に適合する WAV かを投入前に検証する。"""
+    if (
+        sample_rate_hz != SAMPLE_RATE_HZ
+        or duration_sec != DURATION_SEC
+        or len(signal) != SAMPLE_COUNT
+    ):
+        raise SimulationError(
+            f"{path.name}: シードAPIは 8000Hz / 1.0秒 / 8000サンプルのWAVのみ"
+            f"受付可能です（実際: {sample_rate_hz}Hz / {duration_sec:.3f}秒 / "
+            f"{len(signal)}サンプル）。8000Hz・1.0秒に変換して配置してください"
+        )
 
 
 def build_demo_sequence(
@@ -127,28 +219,27 @@ def run_seed(
     url: str = SEED_ENDPOINT,
     *,
     dry_run: bool = False,
+    audio_dir: Path = DEFAULT_AUDIO_DIR,
     hydrants_path: Path = DEFAULT_HYDRANTS_PATH,
     post_func: PostFunc = send_telemetry,
-    sample_rate_hz: int = SEED_SAMPLE_RATE_HZ,
-    duration_sec: float = SEED_DURATION_SEC,
 ) -> list[dict[str, Any]]:
     """デモシーケンスを組み立ててデモシード API へ投入する。
 
+    音源は ``audio_dir`` 内の実音響 WAV（BE-2 の ``load_audio_file`` で再生）。
     ``post_func`` はテストで差し替え可能。``dry_run`` は送信せず、
     組み立て結果（level / hydrant_id / recorded_at）だけを返す。
     """
     hydrants = load_hydrants(hydrants_path)
     steps = build_demo_sequence(seed, hydrants)
+    no_leak_files, leak_files = resolve_replay_files(audio_dir)
+    rng = random.Random(seed)
     base_time = datetime.now(UTC)
     results: list[dict[str, Any]] = []
     for index, step in enumerate(steps):
         hydrant = find_hydrant(hydrants, step.hydrant_id)
-        signal = generate_signal(
-            step.level,
-            sample_rate_hz=sample_rate_hz,
-            duration_sec=duration_sec,
-            seed=seed + index,
-        )
+        audio_path = select_replay_file(no_leak_files, leak_files, step.level, rng)
+        signal, sample_rate_hz, duration_sec = load_audio_file(audio_path)
+        validate_mvp_contract(signal, sample_rate_hz, duration_sec, audio_path)
         payload = build_payload(
             hydrant,
             signal,
@@ -164,6 +255,7 @@ def run_seed(
                     "level": step.level,
                     "hydrant_id": step.hydrant_id,
                     "recorded_at": payload["recorded_at"],
+                    "audio_file": audio_path.name,
                 }
             )
         else:
@@ -176,12 +268,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="デモ初期状態を1コマンドで投入します"
         "（Level 0 ベースライン + Level 1×8 / Level 2×3 / Level 3×1）。"
+        "音源は実音響WAVの replay（BE-2 load_audio_file）。"
     )
     parser.add_argument(
         "--seed",
         type=int,
         required=True,
         help="シーケンス再現用シード（同一値で同一結果）",
+    )
+    parser.add_argument(
+        "--audio-dir",
+        type=Path,
+        default=DEFAULT_AUDIO_DIR,
+        help="実音響WAVのディレクトリ"
+        "（*_level{N}.wav の leak / no-leak 規約。既定: backend/dataset）",
     )
     parser.add_argument(
         "--url",
@@ -197,10 +297,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI エントリポイント。成功 0 / マスタ起因 1 / 引数起因 2。"""
+    """CLI エントリポイント。成功 0 / マスタ・音源起因 1 / 引数起因 2。"""
     args = parse_args(argv)
     try:
-        results = run_seed(seed=args.seed, url=args.url, dry_run=args.dry_run)
+        results = run_seed(
+            seed=args.seed, url=args.url, dry_run=args.dry_run,
+            audio_dir=args.audio_dir,
+        )
     except SimulationError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1
@@ -217,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         for result in results:
             print(
                 f"  level={result['level']} hydrant_id={result['hydrant_id']} "
-                f"recorded_at={result['recorded_at']}"
+                f"audio={result['audio_file']} recorded_at={result['recorded_at']}"
             )
     else:
         print(f"[OK] {len(results)} 件を {args.url} へ投入しました")

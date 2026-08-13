@@ -63,6 +63,20 @@ class TestAddGet:
         store.add(make_record(telemetry_id="tlm_2"))
         assert len(store) == 2
 
+    def test_get_all_returns_all_records_in_insertion_order(self):
+        """防災クラスタリング等の全件走査用: 全レコードを挿入順で返す。"""
+        store = InMemoryStore()
+        store.add(make_record(telemetry_id="tlm_1", severity=3))
+        store.add(make_record(telemetry_id="tlm_2", severity=1))
+        store.add(make_record(telemetry_id="tlm_3", severity=3))
+        all_items = store.get_all()
+        assert [item.telemetry_id for item in all_items] == [
+            "tlm_1",
+            "tlm_2",
+            "tlm_3",
+        ]
+        assert len(all_items) == 3
+
 
 class TestMaxlen:
     """maxlen 超過時の追い出しと index 整合。"""

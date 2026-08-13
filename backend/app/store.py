@@ -84,6 +84,11 @@ class InMemoryStore:
         with self._lock:
             return self._index.get(telemetry_id)
 
+    def get_all(self) -> list[StoredTelemetry]:
+        """全レコードを挿入順で返す（防災クラスタリング等の全件走査用）。"""
+        with self._lock:
+            return list(self._records)
+
     def list_alerts(
         self, level: int | None = None, limit: int | None = None
     ) -> list[StoredTelemetry]:

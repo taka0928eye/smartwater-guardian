@@ -250,9 +250,10 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 | POST | `/api/v1/demo/seed` | デモ初期状態の1件投入（実スペクトル算出 + 深刻度を意図レベルに確定） | DEMO-1 | ✅ 実装済み |
 
 > **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
-> 追加した `DemoSeedRequest` を受ける。実 SVM は合成波形（`scripts/simulate_sensor.py` の
-> `generate_signal`）を意図レベルに分類できないため、`analyze_audio()` で実スペクトルを
-> 算出しつつ深刻度のみ上書きする。使い方は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
+> 追加した `DemoSeedRequest` を受ける。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
+> 上書きする。音源は**学習未使用の Zenodo 実音響**（`scripts/simulate_sensor.py` の
+> `load_audio_file()` による replay、`backend/dataset`・Git管理外）。実 no-leak 音は SVM が
+> 自然に severity 0（正常）を返す。使い方は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
 
 ### 6.2 防災モード（BE-7）
 
