@@ -81,6 +81,20 @@ def _get_item_telemetry_id(item: Any) -> str:
     return str(getattr(item, "telemetry_id", ""))
 
 
+def _get_sensor_id(item: Any, fallback: str) -> str:
+    """sensor_id を取得。"""
+    if isinstance(item, dict):
+        return str(item.get("sensor_id", fallback))
+    return str(getattr(item, "sensor_id", fallback))
+
+
+def _get_hydrant_id(item: Any, fallback: str) -> str:
+    """hydrant_id を取得。"""
+    if isinstance(item, dict):
+        return str(item.get("hydrant_id", fallback))
+    return str(getattr(item, "hydrant_id", fallback))
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -135,8 +149,8 @@ async def get_disaster_summary(
 
         h = len(group) * 120 + 50
         total_households += h
-        s_id = group[0].get("sensor_id", f"SEN-{idx}") if isinstance(group[0], dict) else getattr(group[0], "sensor_id", f"SEN-{idx}")
-        h_id = group[0].get("hydrant_id", f"HYD-{idx}") if isinstance(group[0], dict) else getattr(group[0], "hydrant_id", f"HYD-{idx}")
+        s_id = _get_sensor_id(group[0], f"SEN-{idx}")
+        h_id = _get_hydrant_id(group[0], f"HYD-{idx}")
 
         result_clusters.append(
             DisasterCluster(
