@@ -10,17 +10,17 @@ async function globalSetup(config: FullConfig) {
   const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
   // バックエンド起動を HTTP ポーリングで確認（最大 30 秒）
-  console.log(`[global-setup] バックエンド接続確認: ${apiBaseUrl}/health`);
+  console.log(`[global-setup] バックエンド接続確認: ${apiBaseUrl}/api/v1/sensors`);
   const maxRetries = 30;
   let connected = false;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch("http://localhost:3000", {
+      const response = await fetch(`${apiBaseUrl}/api/v1/sensors`, {
         signal: AbortSignal.timeout(3000),
       }); 
       if (response.ok) {
-        console.log("[global-setup] バックエンド起動確認");
+        console.log(`[global-setup] バックエンド起動確認完了 (${apiBaseUrl}/api/v1/sensors)`);
         connected = true;
         break;
       }
