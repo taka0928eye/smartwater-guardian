@@ -155,9 +155,12 @@ async def get_disaster_summary(
     level3_alerts = [item for item in unique_items if _is_level3(item)]
 
     # store が空にリセットされている場合、またはシミュレーション未実行かつ初期データのみの場合は 0
-    if (raw_telemetry == [] or raw_alerts == []) and not _SIMULATED_ITEMS:
+    has_disaster_id = any("TEL-DISASTER-" in _get_telemetry_id(i) for i in unique_items)
+    is_store_empty = (raw_telemetry == [] or raw_alerts == []) and not _SIMULATED_ITEMS
+
+    if is_store_empty:
         level3_alerts = []
-    elif not any("TEL-DISASTER-" in _get_telemetry_id(i) for i in unique_items) and len(level3_alerts) == 7:
+    elif not has_disaster_id and len(level3_alerts) == 7:
         level3_alerts = []
 
     if not level3_alerts:
