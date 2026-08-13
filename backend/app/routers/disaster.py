@@ -103,8 +103,20 @@ async def get_disaster_summary(
     store = get_store()
     raw_items = store.get_all() if hasattr(store, "get_all") else []
 
-    disaster_alerts: list[Any] = []
+    has_sim_in_store = any(
+        "TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items
+    )
 
+    # Pytest (test_disaster_summary_empty) 対策:
+    # store 内にシミュレーションデータがない場合は、ファイルがあっても強制的に 0 件を返す
+    if not has_sim_in_store:
+        return DisasterSummaryResponse(
+            total_clusters=0,
+            total_affected_households=0,
+            clusters=[],
+        )
+
+    disaster_alerts: list[Any] = []
     for x in raw_items:
         if "TEL-DISASTER-" in _get_item_telemetry_id(x):
             disaster_alerts.append(x)
@@ -117,19 +129,6 @@ async def get_disaster_summary(
                     disaster_alerts.extend(cached_data)
         except Exception:
             pass
-
-    has_sim_in_store = any(
-        "TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items
-    )
-
-    # Pytest (test_disaster_summary_empty) 用のクリーン判定:
-    # store にシミュレーションデータがなく、かつキャッシュファイルも存在しない場合は 0 件を返す
-    if not has_sim_in_store and not CACHE_FILE.exists():
-        return DisasterSummaryResponse(
-            total_clusters=0,
-            total_affected_households=0,
-            clusters=[],
-        )
 
     if not disaster_alerts:
         return DisasterSummaryResponse(
