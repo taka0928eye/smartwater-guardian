@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'GitHub Actions OIDC provider and deployment IAM role for SmartWater Guardian'
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Default: 'taka0928eye'
+    Description: GitHub organization name
+  GitHubRepo:
+    Type: String
+    Default: 'smartwater-guardian'
+    Description: GitHub repository name
+  GitHubBranch:
+    Type: String
+    Default: 'main'
+    Description: GitHub branch for deployment (e.g., main)
+
+Outputs:
+  OIDCProviderArn:
+    Description: GitHub Actions OIDC Provider ARN
+    Value: !GetAtt GitHubOIDCProvider.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-oidc-provider-arn'
+  DeployRoleArn:
+    Description: IAM Role ARN for GitHub Actions deployment
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-deploy-role-arn'
+  DeployRoleName:
+    Description: IAM Role Name for GitHub Actions deployment
+    Value: !Ref GitHubActionsDeployRole
+    Export:
+      Name: !Sub '${AWS::StackName}-deploy-role-name'
+
+Resources:
+  # GitHub OIDC Provider
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1b511abead59c6ce207077c0ef0285ebeaef6b30
+
+  # IAM Role for GitHub Actions (trust OIDC + repo/branch)
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'smartwater-guardian-github-deploy-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !GetAtt GitHubOIDCProvider.Arn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+              StringLike:
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: ECRPushPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:BatchGetImage
+                  - ecr:DescribeImages
+                Resource:
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/smartwater-guardian-backend'
+                  - !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/smartwater-guardian-frontend'
+        - PolicyName: ECSUpdateTaskDefinition
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTaskDefinition
+                  - ecs:RegisterTaskDefinition
+                Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/smartwater-guardian-*'
+        - PolicyName: CloudFormationStackUpdate
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                Resource: !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/smartwater-guardian-*'

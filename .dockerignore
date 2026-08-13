@@ -1,0 +1,42 @@
+# INFRA-1: Docker マルチステージビルド（frontend/Dockerfile、context = リポジトリルート）
+# ビルドコンテキストからの除外パターン
+
+# backend（frontend ビルドに不要）
+backend/
+backend/venv/
+backend/.pytest_cache/
+backend/.coverage
+
+# 開発・IDE ディレクトリ
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# node_modules （各 stage で npm ci で再インストール）
+node_modules/
+frontend/node_modules/
+
+# Next.js キャッシュ（build で再生成）
+.next/
+frontend/.next/
+
+# 開発環境
+.env
+.env.local
+.env.*.local
+
+# Python 関連
+venv/
+*.pyc
+__pycache__/
+.pytest_cache/
+
+# 作業ファイル
+*.swp
+*.swo
+*~
+
+# AI-DLC ワークフロー（本番イメージに不要）
+aidlc/
+.claude/

@@ -1,0 +1,159 @@
+# INFRA-1: AWS デプロイ自動化（GitHub Actions + OIDC）
+# このワークフローは手動トリガー (workflow_dispatch) で実行
+# backend/frontend イメージをビルド→ECR プッシュ→ECS タスク定義更新
+
+name: Deploy to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      backend_image_tag:
+        description: 'Backend image tag (default: git SHA)'
+        required: false
+        type: string
+      frontend_image_tag:
+        description: 'Frontend image tag (default: git SHA)'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: ap-northeast-1
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    name: Build and Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/smartwater-guardian-github-oidc-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: tags
+        run: |
+          BACKEND_TAG=${{ inputs.backend_image_tag || github.sha }}
+          FRONTEND_TAG=${{ inputs.frontend_image_tag || github.sha }}
+
+          echo "backend_tag=${BACKEND_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_tag=${FRONTEND_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_image=${{ steps.login-ecr.outputs.registry }}/smartwater-guardian-backend:${BACKEND_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ steps.login-ecr.outputs.registry }}/smartwater-guardian-frontend:${FRONTEND_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.backend_image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://${{ secrets.ALB_DNS_NAME }}
+          tags: ${{ steps.tags.outputs.frontend_image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update ECS task definitions and services
+        run: |
+          ENV=${{ inputs.environment }}
+          BACKEND_IMAGE=${{ steps.tags.outputs.backend_image }}
+          FRONTEND_IMAGE=${{ steps.tags.outputs.frontend_image }}
+
+          # backend タスク定義更新
+          aws ecs describe-task-definition \
+            --task-definition smartwater-guardian-${ENV}-backend \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition' > backend-taskdef.json
+
+          sed -i "s|\"image\": \".*smartwater-guardian-backend:.*\"|\"image\": \"${BACKEND_IMAGE}\"|g" backend-taskdef.json
+          sed -i '/\"taskDefinitionArn\"/d;/\"revision\"/d;/\"status\"/d;/\"requiresAttributes\"/d;/\"compatibilities\"/d;/\"registeredAt\"/d;/\"registeredBy\"/d' backend-taskdef.json
+
+          aws ecs register-task-definition \
+            --cli-input-json file://backend-taskdef.json \
+            --region ${{ env.AWS_REGION }}
+
+          # frontend タスク定義更新
+          aws ecs describe-task-definition \
+            --task-definition smartwater-guardian-${ENV}-frontend \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition' > frontend-taskdef.json
+
+          sed -i "s|\"image\": \".*smartwater-guardian-frontend:.*\"|\"image\": \"${FRONTEND_IMAGE}\"|g" frontend-taskdef.json
+          sed -i '/\"taskDefinitionArn\"/d;/\"revision\"/d;/\"status\"/d;/\"requiresAttributes\"/d;/\"compatibilities\"/d;/\"registeredAt\"/d;/\"registeredBy\"/d' frontend-taskdef.json
+
+          aws ecs register-task-definition \
+            --cli-input-json file://frontend-taskdef.json \
+            --region ${{ env.AWS_REGION }}
+
+          # ECS サービス更新（新しいタスク定義を使用）
+          aws ecs update-service \
+            --cluster smartwater-guardian-${ENV} \
+            --service smartwater-guardian-backend \
+            --task-definition smartwater-guardian-${ENV}-backend:1 \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+          aws ecs update-service \
+            --cluster smartwater-guardian-${ENV} \
+            --service smartwater-guardian-frontend \
+            --task-definition smartwater-guardian-${ENV}-frontend:1 \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for ECS deployments
+        run: |
+          ENV=${{ inputs.environment }}
+
+          for service in smartwater-guardian-backend smartwater-guardian-frontend; do
+            echo "Waiting for $service..."
+            aws ecs wait services-stable \
+              --cluster smartwater-guardian-${ENV} \
+              --services $service \
+              --region ${{ env.AWS_REGION }}
+            echo "✓ $service is stable"
+          done
+
+      - name: Deployment summary
+        run: |
+          ENV=${{ inputs.environment }}
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend Image: ${{ steps.tags.outputs.backend_image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend Image: ${{ steps.tags.outputs.frontend_image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Region: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Cluster: smartwater-guardian-${ENV}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECR repositories for SmartWater Guardian'
+
+Resources:
+  # ECR Repositories
+  BackendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: smartwater-guardian-backend
+      ScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-backend
+
+  FrontendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: smartwater-guardian-frontend
+      ScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: IMMUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-frontend
+
+Outputs:
+  BackendRepositoryUri:
+    Description: Backend ECR Repository URI
+    Value: !GetAtt BackendRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-repository-uri'
+  FrontendRepositoryUri:
+    Description: Frontend ECR Repository URI
+    Value: !GetAtt FrontendRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-repository-uri'
+  BackendRepositoryName:
+    Description: Backend ECR Repository Name
+    Value: !Ref BackendRepository
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-repository-name'
+  FrontendRepositoryName:
+    Description: Frontend ECR Repository Name
+    Value: !Ref FrontendRepository
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-repository-name'

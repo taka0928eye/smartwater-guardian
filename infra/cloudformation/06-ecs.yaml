@@ -1,0 +1,316 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECS cluster and services for SmartWater Guardian'
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: smartwater-guardian-network
+    Description: Name of the network stack
+  SecurityStackName:
+    Type: String
+    Default: smartwater-guardian-security
+    Description: Name of the security stack
+  EcrStackName:
+    Type: String
+    Default: smartwater-guardian-ecr
+    Description: Name of the ECR stack
+  AlbStackName:
+    Type: String
+    Default: smartwater-guardian-alb
+    Description: Name of the ALB stack
+  BackendImageTag:
+    Type: String
+    Default: latest
+    Description: Backend Docker image tag
+  FrontendImageTag:
+    Type: String
+    Default: latest
+    Description: Frontend Docker image tag
+  BackendDesiredCount:
+    Type: Number
+    Default: 2
+    Description: Desired number of backend tasks
+  FrontendDesiredCount:
+    Type: Number
+    Default: 2
+    Description: Desired number of frontend tasks
+  BackendCpu:
+    Type: String
+    Default: '256'
+    AllowedValues: ['256', '512', '1024', '2048', '4096']
+  BackendMemory:
+    Type: String
+    Default: '512'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192']
+  FrontendCpu:
+    Type: String
+    Default: '512'
+    AllowedValues: ['256', '512', '1024', '2048', '4096']
+  FrontendMemory:
+    Type: String
+    Default: '1024'
+    AllowedValues: ['512', '1024', '2048', '4096', '8192']
+  OrcaRouterBaseUrl:
+    Type: String
+    Default: 'https://api.orcarouter.com'
+    Description: Orcarouter API base URL
+  OrcaRouterModel:
+    Type: String
+    Default: 'gpt-4-turbo'
+    Description: Orcarouter model name
+  OrcaRouterEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable Orcarouter API
+  AllowedOrigins:
+    Type: String
+    Default: 'http://localhost:3000'
+    Description: Comma-separated list of allowed CORS origins
+
+Resources:
+  # CloudWatch Log Groups
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/smartwater-guardian-backend
+      RetentionInDays: 30
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/smartwater-guardian-frontend
+      RetentionInDays: 30
+
+  # ECS Cluster
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: smartwater-guardian-cluster
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-cluster
+
+  # Backend Task Definition
+  BackendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: smartwater-guardian-backend
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref BackendCpu
+      Memory: !Ref BackendMemory
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub '${SecurityStackName}-ecs-task-execution-role-arn'
+      TaskRoleArn:
+        Fn::ImportValue: !Sub '${SecurityStackName}-backend-task-role-arn'
+      ContainerDefinitions:
+        - Name: backend
+          Image: !Sub
+            - '${RepoUri}:${ImageTag}'
+            - RepoUri:
+                Fn::ImportValue: !Sub '${EcrStackName}-backend-repository-uri'
+              ImageTag: !Ref BackendImageTag
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: ALLOWED_ORIGINS
+              Value: !Ref AllowedOrigins
+            - Name: ORCAROUTER_BASE_URL
+              Value: !Ref OrcaRouterBaseUrl
+            - Name: ORCAROUTER_MODEL
+              Value: !Ref OrcaRouterModel
+            - Name: ORCAROUTER_ENABLED
+              Value: !Ref OrcaRouterEnabled
+          Secrets:
+            - Name: ORCAROUTER_API_KEY
+              ValueFrom:
+                Fn::ImportValue: !Sub '${SecurityStackName}-orcarouter-secret-arn'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # Frontend Task Definition
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: smartwater-guardian-frontend
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: !Ref FrontendCpu
+      Memory: !Ref FrontendMemory
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub '${SecurityStackName}-ecs-task-execution-role-arn'
+      TaskRoleArn:
+        Fn::ImportValue: !Sub '${SecurityStackName}-frontend-task-role-arn'
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Sub
+            - '${RepoUri}:${ImageTag}'
+            - RepoUri:
+                Fn::ImportValue: !Sub '${EcrStackName}-frontend-repository-uri'
+              ImageTag: !Ref FrontendImageTag
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FrontendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # Backend Service
+  BackendService:
+    Type: AWS::ECS::Service
+    DependsOn: BackendTaskDefinition
+    Properties:
+      ServiceName: smartwater-guardian-backend-service
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref BackendTaskDefinition
+      DesiredCount: !Ref BackendDesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub '${NetworkStackName}-private-subnet-az1'
+            - Fn::ImportValue: !Sub '${NetworkStackName}-private-subnet-az2'
+          SecurityGroups:
+            - Fn::ImportValue: !Sub '${SecurityStackName}-backend-sg-id'
+      LoadBalancers:
+        - ContainerName: backend
+          ContainerPort: 8000
+          TargetGroupArn:
+            Fn::ImportValue: !Sub '${AlbStackName}-backend-tg-arn'
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-backend-service
+
+  # Frontend Service
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn: FrontendTaskDefinition
+    Properties:
+      ServiceName: smartwater-guardian-frontend-service
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DesiredCount: !Ref FrontendDesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+            - Fn::ImportValue: !Sub '${NetworkStackName}-private-subnet-az1'
+            - Fn::ImportValue: !Sub '${NetworkStackName}-private-subnet-az2'
+          SecurityGroups:
+            - Fn::ImportValue: !Sub '${SecurityStackName}-frontend-sg-id'
+      LoadBalancers:
+        - ContainerName: frontend
+          ContainerPort: 3000
+          TargetGroupArn:
+            Fn::ImportValue: !Sub '${AlbStackName}-frontend-tg-arn'
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-frontend-service
+
+  # Auto Scaling for Backend
+  BackendScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 4
+      MinCapacity: !Ref BackendDesiredCount
+      ResourceId: !Sub 'service/${EcsCluster}/${BackendService.Name}'
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  BackendScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: smartwater-guardian-backend-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref BackendScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+
+  # Auto Scaling for Frontend
+  FrontendScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 4
+      MinCapacity: !Ref FrontendDesiredCount
+      ResourceId: !Sub 'service/${EcsCluster}/${FrontendService.Name}'
+      RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  FrontendScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: smartwater-guardian-frontend-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref FrontendScalingTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleOutCooldown: 300
+        ScaleInCooldown: 300
+
+Outputs:
+  ClusterArn:
+    Description: ECS Cluster ARN
+    Value: !GetAtt EcsCluster.ClusterArn
+    Export:
+      Name: !Sub '${AWS::StackName}-cluster-arn'
+  ClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref EcsCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-cluster-name'
+  BackendServiceName:
+    Description: Backend Service Name
+    Value: !GetAtt BackendService.Name
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-service-name'
+  BackendServiceArn:
+    Description: Backend Service ARN
+    Value: !Ref BackendService
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-service-arn'
+  FrontendServiceName:
+    Description: Frontend Service Name
+    Value: !GetAtt FrontendService.Name
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-service-name'
+  FrontendServiceArn:
+    Description: Frontend Service ARN
+    Value: !Ref FrontendService
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-service-arn'

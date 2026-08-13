@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ALB and target groups for SmartWater Guardian'
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: smartwater-guardian-network
+    Description: Name of the network stack
+  SecurityStackName:
+    Type: String
+    Default: smartwater-guardian-security
+    Description: Name of the security stack
+  DomainName:
+    Type: String
+    Default: ''
+    Description: Custom domain name (optional)
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: Route53 Hosted Zone ID (optional)
+  EnableHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable HTTPS with ACM certificate
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: ACM certificate ARN (required if EnableHttps=true)
+
+Conditions:
+  HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
+  EnableHttpsCondition: !Equals [!Ref EnableHttps, 'true']
+  CreateRoute53Record: !And
+    - !Condition HasCustomDomain
+    - !Not [!Equals [!Ref HostedZoneId, '']]
+
+Resources:
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: smartwater-guardian-alb
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      SecurityGroups:
+        - Fn::ImportValue: !Sub '${SecurityStackName}-alb-sg-id'
+      Subnets:
+        - Fn::ImportValue: !Sub '${NetworkStackName}-public-subnet-az1'
+        - Fn::ImportValue: !Sub '${NetworkStackName}-public-subnet-az2'
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-alb
+
+  # Target Groups
+  BackendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: smartwater-guardian-backend-tg
+      Port: 8000
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-vpc-id'
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      TargetGroupAttributes:
+        - Key: stickiness.enabled
+          Value: 'true'
+        - Key: stickiness.type
+          Value: lb_cookie
+        - Key: stickiness.lb_cookie.duration_seconds
+          Value: '86400'
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-backend-tg
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: smartwater-guardian-frontend-tg
+      Port: 3000
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-vpc-id'
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-frontend-tg
+
+  # Listeners
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !GetAtt ApplicationLoadBalancer.LoadBalancerArn
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: !If [EnableHttpsCondition, redirect, forward]
+          RedirectConfig: !If
+            - EnableHttpsCondition
+            - Protocol: HTTPS
+              Port: '443'
+              StatusCode: HTTP_301
+            - !Ref AWS::NoValue
+          TargetGroupArn: !If
+            - EnableHttpsCondition
+            - !Ref AWS::NoValue
+            - !GetAtt FrontendTargetGroup.TargetGroupArn
+
+  HttpApiRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: !Not [!Condition EnableHttpsCondition]
+    Properties:
+      ListenerArn: !Ref HttpListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/v1/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !GetAtt BackendTargetGroup.TargetGroupArn
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: EnableHttpsCondition
+    Properties:
+      LoadBalancerArn: !GetAtt ApplicationLoadBalancer.LoadBalancerArn
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !GetAtt FrontendTargetGroup.TargetGroupArn
+
+  HttpsApiRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: EnableHttpsCondition
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /api/v1/*
+      Actions:
+        - Type: forward
+          TargetGroupArn: !GetAtt BackendTargetGroup.TargetGroupArn
+
+  # Route53 DNS Record
+  Route53Record:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateRoute53Record
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: true
+
+Outputs:
+  AlbArn:
+    Description: Application Load Balancer ARN
+    Value: !GetAtt ApplicationLoadBalancer.LoadBalancerArn
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-arn'
+  AlbDnsName:
+    Description: Application Load Balancer DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-dns-name'
+  BackendTargetGroupArn:
+    Description: Backend Target Group ARN
+    Value: !GetAtt BackendTargetGroup.TargetGroupArn
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-tg-arn'
+  FrontendTargetGroupArn:
+    Description: Frontend Target Group ARN
+    Value: !GetAtt FrontendTargetGroup.TargetGroupArn
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-tg-arn'

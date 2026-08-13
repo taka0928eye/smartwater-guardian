@@ -1,0 +1,280 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC and network infrastructure for SmartWater Guardian'
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: '10.0.0.0/16'
+    Description: CIDR block for VPC
+  NatGatewayCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 2
+    Description: Number of NAT Gateways (1 for cost optimization, 2 for full HA)
+
+Conditions:
+  CreateSecondNatGateway: !Equals [!Ref NatGatewayCount, 2]
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-vpc
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-igw
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Public Subnets
+  PublicSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.1.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-public-subnet-az1
+
+  PublicSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.2.0/24'
+      AvailabilityZone: !Select [2, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-public-subnet-az2
+
+  # Private Subnets
+  PrivateSubnetAz1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.10.0/24'
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-private-subnet-az1
+
+  PrivateSubnetAz2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: '10.0.11.0/24'
+      AvailabilityZone: !Select [2, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-private-subnet-az2
+
+  # Elastic IPs for NAT Gateways
+  NatGatewayEipAz1:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-nat-eip-az1
+
+  NatGatewayEipAz2:
+    Type: AWS::EC2::EIP
+    Condition: CreateSecondNatGateway
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-nat-eip-az2
+
+  # NAT Gateways
+  NatGatewayAz1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEipAz1.AllocationId
+      SubnetId: !Ref PublicSubnetAz1
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-nat-az1
+
+  NatGatewayAz2:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateSecondNatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEipAz2.AllocationId
+      SubnetId: !Ref PublicSubnetAz2
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-nat-az2
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-public-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAz1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAz2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Private Route Tables
+  PrivateRouteTableAz1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-private-rt-az1
+
+  PrivateRouteAz1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAz1
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGatewayAz1
+
+  PrivateSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAz1
+      RouteTableId: !Ref PrivateRouteTableAz1
+
+  PrivateRouteTableAz2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-private-rt-az2
+
+  PrivateRouteAz2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableAz2
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !If [CreateSecondNatGateway, !Ref NatGatewayAz2, !Ref NatGatewayAz1]
+
+  PrivateSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetAz2
+      RouteTableId: !Ref PrivateRouteTableAz2
+
+  # VPC Flow Logs
+  VpcFlowLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vpc/flowlogs/*'
+
+  VpcFlowLogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/vpc/flowlogs/smartwater-guardian
+      RetentionInDays: 7
+
+  VpcFlowLogs:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      ResourceType: VPC
+      ResourceId: !Ref VPC
+      TrafficType: REJECT
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref VpcFlowLogsLogGroup
+      DeliverLogsPermissionIAM: !GetAtt VpcFlowLogsRole.Arn
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-vpc-flowlogs
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-vpc-id'
+  PublicSubnetIds:
+    Description: Comma-separated list of public subnet IDs
+    Value: !Join [',', [!Ref PublicSubnetAz1, !Ref PublicSubnetAz2]]
+    Export:
+      Name: !Sub '${AWS::StackName}-public-subnet-ids'
+  PrivateSubnetIds:
+    Description: Comma-separated list of private subnet IDs
+    Value: !Join [',', [!Ref PrivateSubnetAz1, !Ref PrivateSubnetAz2]]
+    Export:
+      Name: !Sub '${AWS::StackName}-private-subnet-ids'
+  PrivateSubnetAz1:
+    Description: Private Subnet in AZ 1
+    Value: !Ref PrivateSubnetAz1
+    Export:
+      Name: !Sub '${AWS::StackName}-private-subnet-az1'
+  PrivateSubnetAz2:
+    Description: Private Subnet in AZ 2
+    Value: !Ref PrivateSubnetAz2
+    Export:
+      Name: !Sub '${AWS::StackName}-private-subnet-az2'
+  PublicSubnetAz1:
+    Description: Public Subnet in AZ 1
+    Value: !Ref PublicSubnetAz1
+    Export:
+      Name: !Sub '${AWS::StackName}-public-subnet-az1'
+  PublicSubnetAz2:
+    Description: Public Subnet in AZ 2
+    Value: !Ref PublicSubnetAz2
+    Export:
+      Name: !Sub '${AWS::StackName}-public-subnet-az2'

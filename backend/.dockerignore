@@ -1,0 +1,30 @@
+# INFRA-1: backend Docker イメージビルド時に転送から除外するパターン
+
+# Python 仮想環境
+venv/
+
+# Python バイトコード・キャッシュ
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# pytest キャッシュ
+.pytest_cache/
+.coverage
+coverage.xml
+
+# テストコード本体（本番イメージに不要）
+tests/
+
+# 開発用環境ファイル
+.env
+.mypy_cache/
+.ruff_cache/
+
+# Zenodo 由来の大型音声データセット（再配布禁止）
+dataset/
+
+# Git ディレクトリ（コンテナに不要）
+.git/
+.gitignore

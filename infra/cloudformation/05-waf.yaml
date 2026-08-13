@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'WAF for SmartWater Guardian'
+
+Parameters:
+  AlbStackName:
+    Type: String
+    Default: smartwater-guardian-alb
+    Description: Name of the ALB stack
+  RateLimitPerFiveMin:
+    Type: Number
+    Default: 2000
+    Description: Rate limit per 5 minutes
+
+Resources:
+  # IP Set for rate limiting
+  RateLimitIpSet:
+    Type: AWS::WAFv2::IPSet
+    Properties:
+      Name: smartwater-guardian-rate-limit-ips
+      Scope: REGIONAL
+      IPAddressVersion: IPV4
+      Addresses: []
+
+  # WAF WebACL
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: smartwater-guardian-waf
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: smartwater-guardian-waf-metrics
+      Rules:
+        # AWS Managed Rule - Common Rule Set
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 0
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSetMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              Name: AWSManagedRulesCommonRuleSet
+              VendorName: AWS
+              ExcludedRules:
+                - Name: SizeRestrictions_BODY
+              RuleActionOverrides:
+                - Name: SizeRestrictions_BODY
+                  ActionOverride:
+                    Allow: {}
+        # AWS Managed Rule - Known Bad Inputs
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 1
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesKnownBadInputsRuleSetMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+              VendorName: AWS
+        # AWS Managed Rule - IP Reputation List
+        - Name: AWSManagedRulesAmazonIpReputationList
+          Priority: 2
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesAmazonIpReputationListMetric
+          Statement:
+            ManagedRuleGroupStatement:
+              Name: AWSManagedRulesAmazonIpReputationList
+              VendorName: AWS
+        # Rate Limiting
+        - Name: RateLimitRule
+          Priority: 3
+          Action:
+            Block:
+              CustomResponse:
+                ResponseCode: 429
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRuleMetric
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref RateLimitPerFiveMin
+              AggregateKeyType: IP
+
+  # WAF Association
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn:
+        Fn::ImportValue: !Sub '${AlbStackName}-alb-arn'
+      WebACLArn: !GetAtt WebACL.Arn
+
+Outputs:
+  WebAclArn:
+    Description: WAF WebACL ARN
+    Value: !GetAtt WebACL.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-waf-arn'
+  WebAclId:
+    Description: WAF WebACL ID
+    Value: !GetAtt WebACL.Id
+    Export:
+      Name: !Sub '${AWS::StackName}-waf-id'

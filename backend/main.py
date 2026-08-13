@@ -1,4 +1,6 @@
-﻿from dotenv import load_dotenv
+﻿import os
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,9 +12,20 @@ load_dotenv()
 
 app = FastAPI(title="SmartWater Guardian API")
 
+
+def _get_allowed_origins() -> list[str]:
+    """CORS 許可オリジンを環境変数 ALLOWED_ORIGINS から取得する（INFRA-1）。
+
+    未設定時はローカル開発向けの既定値（http://localhost:3000）のみを許可する。
+    本番（AWS）デプロイ時は ECS タスク定義の環境変数で公開ドメイン/ALB DNS名を設定する。
+    """
+    raw = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

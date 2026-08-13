@@ -1,0 +1,198 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch alarms and SNS notifications for SmartWater Guardian'
+
+Parameters:
+  EcsStackName:
+    Type: String
+    Default: smartwater-guardian-ecs
+    Description: Name of the ECS stack
+  AlbStackName:
+    Type: String
+    Default: smartwater-guardian-alb
+    Description: Name of the ALB stack
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email address for CloudWatch alarms (optional)
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # SNS Topic
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      TopicName: smartwater-guardian-alerts
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-alerts
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlertTopic
+      Endpoint: !Ref AlertEmail
+
+  # ALB Alarms
+  AlbTargetResponseTimeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: smartwater-guardian-alb-target-response-time
+      AlarmDescription: Alert when ALB target response time is high
+      MetricName: TargetResponseTime
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: LoadBalancer
+          Value:
+            Fn::ImportValue: !Sub '${AlbStackName}-alb-arn'
+
+  AlbUnHealthyHostCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-alb-unhealthy-hosts
+      AlarmDescription: Alert when ALB has unhealthy targets
+      MetricName: UnHealthyHostCount
+      Namespace: AWS/ApplicationELB
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: LoadBalancer
+          Value:
+            Fn::ImportValue: !Sub '${AlbStackName}-alb-arn'
+        - Name: TargetGroup
+          Value:
+            Fn::ImportValue: !Sub '${AlbStackName}-backend-tg-arn'
+
+  # Backend ECS Alarms
+  BackendCpuUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-backend-cpu-utilization
+      AlarmDescription: Alert when backend CPU utilization is high
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: ServiceName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-backend-service-name'
+        - Name: ClusterName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-cluster-name'
+
+  BackendMemoryUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-backend-memory-utilization
+      AlarmDescription: Alert when backend memory utilization is high
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: ServiceName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-backend-service-name'
+        - Name: ClusterName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-cluster-name'
+
+  # Frontend ECS Alarms
+  FrontendCpuUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-frontend-cpu-utilization
+      AlarmDescription: Alert when frontend CPU utilization is high
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: ServiceName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-frontend-service-name'
+        - Name: ClusterName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-cluster-name'
+
+  FrontendMemoryUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-frontend-memory-utilization
+      AlarmDescription: Alert when frontend memory utilization is high
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+      Dimensions:
+        - Name: ServiceName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-frontend-service-name'
+        - Name: ClusterName
+          Value:
+            Fn::ImportValue: !Sub '${EcsStackName}-cluster-name'
+
+  # Log Group Alarms
+  BackendLogErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmName: smartwater-guardian-backend-errors
+      AlarmDescription: Alert on backend log errors
+      MetricName: ErrorCount
+      Namespace: AWS/Logs
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref AlertTopic
+
+Outputs:
+  AlertTopicArn:
+    Condition: HasAlertEmail
+    Description: SNS Alert Topic ARN
+    Value: !Ref AlertTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-alert-topic-arn'

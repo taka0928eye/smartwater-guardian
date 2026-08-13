@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Security groups and IAM roles for SmartWater Guardian'
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: smartwater-guardian-network
+    Description: Name of the network stack
+
+Resources:
+  # Security Groups
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: smartwater-guardian-alb-sg
+      GroupDescription: Security group for ALB
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-vpc-id'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-alb-sg
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: smartwater-guardian-backend-sg
+      GroupDescription: Security group for backend ECS tasks
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-vpc-id'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-backend-sg
+
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: smartwater-guardian-frontend-sg
+      GroupDescription: Security group for frontend ECS tasks
+      VpcId:
+        Fn::ImportValue: !Sub '${NetworkStackName}-vpc-id'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-frontend-sg
+
+  # IAM Roles
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: smartwater-guardian-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ECRPullPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:smartwater-guardian/*'
+
+  BackendTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: smartwater-guardian-backend-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecretsManagerRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !GetAtt OrcaRouterApiKeySecret.Arn
+
+  FrontendTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: smartwater-guardian-frontend-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  # Secrets Manager
+  OrcaRouterApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: smartwater-guardian/orcarouter-api-key
+      Description: Orcarouter API Key for SmartWater Guardian
+      SecretString: '{"api_key":"placeholder-replace-after-deployment"}'
+      Tags:
+        - Key: Name
+          Value: smartwater-guardian-orcarouter-api-key
+
+Outputs:
+  AlbSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-alb-sg-id'
+  BackendSecurityGroupId:
+    Description: Backend Security Group ID
+    Value: !Ref BackendSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-sg-id'
+  FrontendSecurityGroupId:
+    Description: Frontend Security Group ID
+    Value: !Ref FrontendSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-sg-id'
+  EcsTaskExecutionRoleArn:
+    Description: ECS Task Execution Role ARN
+    Value: !GetAtt EcsTaskExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ecs-task-execution-role-arn'
+  BackendTaskRoleArn:
+    Description: Backend Task Role ARN
+    Value: !GetAtt BackendTaskRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-backend-task-role-arn'
+  FrontendTaskRoleArn:
+    Description: Frontend Task Role ARN
+    Value: !GetAtt FrontendTaskRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-frontend-task-role-arn'
+  OrcaRouterSecretArn:
+    Description: Orcarouter API Key Secret ARN
+    Value: !GetAtt OrcaRouterApiKeySecret.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-orcarouter-secret-arn'
