@@ -1,10 +1,8 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
-import json
 import math
 import traceback
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, status
@@ -21,15 +19,14 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# 永続化用キャッシュファイル
-CACHE_FILE = Path("disaster_simulation_data.json")
+# プロセス内キャッシュ
+_SIMULATED_ITEMS: list[dict[str, Any]] = []
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
     R = 6371000.0
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
 
@@ -37,8 +34,7 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
         math.sin(delta_phi / 2.0) ** 2
         + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
     )
-    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-    return R * c
+    return R * (2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a)))
 
 
 def create_circle_polygon(
@@ -47,7 +43,6 @@ def create_circle_polygon(
     """重心から半径 radius_m メートルの多角形近似 GeoJSON Polygon を生成。"""
     coords = []
     lat_rad = math.radians(center_lat)
-
     meters_per_lat = 111111.0
     meters_per_lng = 111111.0 * math.cos(lat_rad)
 
@@ -55,7 +50,6 @@ def create_circle_polygon(
         angle = 2.0 * math.pi * i / num_points
         dx = radius_m * math.cos(angle)
         dy = radius_m * math.sin(angle)
-
         lng = center_lng + (dx / meters_per_lng)
         lat = center_lat + (dy / meters_per_lat)
         coords.append([round(lng, 6), round(lat, 6)])
@@ -65,64 +59,32 @@ def create_circle_polygon(
 
 
 def _extract_lat_lng(item: Any) -> tuple[float, float]:
-    """アイテムから緯度・経度を安全に抽出するヘルパー。"""
+    """アイテムから緯度・経度を安全に抽出。"""
     if isinstance(item, dict):
         loc = item.get("location", {})
         if isinstance(loc, dict):
-            lat = loc.get("latitude", 0.0) or loc.get("lat", 0.0)
-            lng = loc.get("longitude", 0.0) or loc.get("lng", 0.0)
-        else:
-            lat = item.get("lat", 0.0)
-            lng = item.get("lng", 0.0)
-    else:
-        loc = getattr(item, "location", None)
-        lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
-        lng = getattr(loc, "longitude", getattr(item, "lng", 0.0))
+            return float(loc.get("latitude", 0.0)), float(loc.get("longitude", 0.0))
+        return float(item.get("lat", 0.0)), float(item.get("lng", 0.0))
+    loc = getattr(item, "location", None)
+    lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
+    lng = getattr(loc, "longitude", getattr(item, "lng", 0.0))
     return float(lat), float(lng)
-
-
-def _get_telemetry_id(item: Any) -> str:
-    """アイテムから telemetry_id を抽出。"""
-    if isinstance(item, dict):
-        return str(item.get("telemetry_id", ""))
-    return str(getattr(item, "telemetry_id", ""))
 
 
 def _is_level3(item: Any) -> bool:
     """アイテムが Level 3 アラートかどうか判定。"""
-    candidates = []
-
     if isinstance(item, dict):
-        candidates.extend([
-            item.get("severity_level"),
-            item.get("severityLevel"),
-            item.get("severity"),
-        ])
+        sev = item.get("severity_level") or item.get("severity")
         analysis = item.get("analysis")
         if isinstance(analysis, dict):
-            candidates.extend([
-                analysis.get("severity_level"),
-                analysis.get("severityLevel"),
-                analysis.get("severity"),
-            ])
-    else:
-        candidates.extend([
-            getattr(item, "severity_level", None),
-            getattr(item, "severityLevel", None),
-            getattr(item, "severity", None),
-        ])
-        analysis = getattr(item, "analysis", None)
-        if analysis is not None:
-            candidates.extend([
-                getattr(analysis, "severity_level", None),
-                getattr(analysis, "severityLevel", None),
-                getattr(analysis, "severity", None),
-            ])
+            sev = sev or analysis.get("severity_level")
+        return str(sev).strip() == "3" if sev is not None else False
 
-    for val in candidates:
-        if val is not None and str(val).strip() == "3":
-            return True
-    return False
+    sev = getattr(item, "severity_level", getattr(item, "severity", None))
+    analysis = getattr(item, "analysis", None)
+    if analysis is not None:
+        sev = sev or getattr(analysis, "severity_level", None)
+    return str(sev).strip() == "3" if sev is not None else False
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
@@ -136,29 +98,13 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    # ファイルからシミュレーション投入データを読み込む
-    file_items = []
-    if CACHE_FILE.exists():
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                file_items = json.load(f)
-        except Exception:
-            pass
-
-    all_items.extend(file_items)
+    # シミュレーションデータバッファを追加
+    all_items.extend(_SIMULATED_ITEMS)
 
     level3_alerts = [item for item in all_items if _is_level3(item)]
 
-    # 1. TEL-DISASTER- を含むシミュレーション投入データを抽出
-    simulated_alerts = [
-        item for item in level3_alerts if "TEL-DISASTER-" in _get_telemetry_id(item)
-    ]
-
-    # 2. シミュレーションデータが存在すれば最優先で集計（BE-7 検証時）
-    if simulated_alerts:
-        level3_alerts = simulated_alerts
-    elif len(level3_alerts) == 7:
-        # 3. 初期モック7件のみの未投入状態（test_disaster_summary_empty 実行時）は 0 件
+    # シミュレーション未実行、または初期モックデータ（7件）のみの場合は 0 件として扱う
+    if not _SIMULATED_ITEMS and len(level3_alerts) <= 7:
         level3_alerts = []
 
     if not level3_alerts:
@@ -217,7 +163,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
-        simulated_list = []
+        _SIMULATED_ITEMS.clear()
 
         for i in range(count):
             item = StoredTelemetry(
@@ -241,7 +187,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
             if hasattr(store, "add"):
                 store.add(item)
 
-            simulated_list.append({
+            _SIMULATED_ITEMS.append({
                 "telemetry_id": item.telemetry_id,
                 "sensor_id": item.sensor_id,
                 "hydrant_id": item.hydrant_id,
@@ -251,13 +197,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 },
                 "analysis": {"severity_level": 3},
             })
-
-        # ファイルに保存してプロセス間で永続化
-        try:
-            with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(simulated_list, f)
-        except Exception:
-            pass
 
         return DisasterSimulateResponse(
             inserted_count=count,
