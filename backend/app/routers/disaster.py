@@ -78,6 +78,15 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
+def _get_telemetry_id(item: Any) -> str | None:
+    """アイテムから telemetry_id を安全に取得する。"""
+    if isinstance(item, dict):
+        val = item.get("telemetry_id")
+        return str(val) if val is not None else None
+    val_attr = getattr(item, "telemetry_id", None)
+    return str(val_attr) if val_attr is not None else None
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -85,18 +94,16 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    # store 内のデータと _SIMULATED_ITEMS を統合
     all_items = []
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
-    
+
     all_items.extend(_SIMULATED_ITEMS)
 
-    # 重複排除 (telemetry_id 基準)
     seen_ids = set()
     unique_items = []
     for item in all_items:
-        t_id = getattr(item, "telemetry_id", None) or (item.get("telemetry_id") if isinstance(item, dict) else None)
+        t_id = _get_telemetry_id(item)
         if t_id:
             if t_id not in seen_ids:
                 seen_ids.add(t_id)
@@ -194,7 +201,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
-            # store への追加と、ルーターローカルリストへの追加の両方を行う
             if hasattr(store, "add"):
                 store.add(item)
 
