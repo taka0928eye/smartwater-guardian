@@ -245,7 +245,10 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 "telemetry_id": item.telemetry_id,
                 "sensor_id": item.sensor_id,
                 "hydrant_id": item.hydrant_id,
-                "location": {"latitude": item.location.latitude, "longitude": item.location.longitude},
+                "location": {
+                    "latitude": item.location.latitude,
+                    "longitude": item.location.longitude,
+                },
                 "analysis": {"severity_level": 3},
             })
 
