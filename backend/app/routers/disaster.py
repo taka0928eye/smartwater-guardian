@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.disaster import (
@@ -76,46 +76,15 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
-def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうか判定。"""
-    candidates = []
-
+def _get_telemetry_id(item: Any) -> str:
+    """アイテムから telemetry_id を抽出する。"""
     if isinstance(item, dict):
-        candidates.extend([
-            item.get("severity_level"),
-            item.get("severityLevel"),
-            item.get("severity"),
-        ])
-        analysis = item.get("analysis")
-        if isinstance(analysis, dict):
-            candidates.extend([
-                analysis.get("severity_level"),
-                analysis.get("severityLevel"),
-                analysis.get("severity"),
-            ])
-    else:
-        candidates.extend([
-            getattr(item, "severity_level", None),
-            getattr(item, "severityLevel", None),
-            getattr(item, "severity", None),
-        ])
-        analysis = getattr(item, "analysis", None)
-        if analysis is not None:
-            candidates.extend([
-                getattr(analysis, "severity_level", None),
-                getattr(analysis, "severityLevel", None),
-                getattr(analysis, "severity", None),
-            ])
-
-    for val in candidates:
-        if val is not None and str(val).strip() == "3":
-            return True
-    return False
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
-    request: Request,
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
@@ -125,25 +94,10 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    # app.state にシミュレーションデータがあれば結合
-    simulated = getattr(request.app.state, "disaster_simulated_items", [])
-    all_items.extend(simulated)
-
-    # 重複排除 (telemetry_id 基準)
-    seen_ids = set()
-    unique_items = []
-    for item in all_items:
-        t_id = getattr(item, "telemetry_id", None) or (
-            item.get("telemetry_id") if isinstance(item, dict) else None
-        )
-        if t_id:
-            if t_id not in seen_ids:
-                seen_ids.add(t_id)
-                unique_items.append(item)
-        else:
-            unique_items.append(item)
-
-    level3_alerts = [item for item in unique_items if _is_level3(item)]
+    # TEL-DISASTER- を含むシミュレーション投入データのみを抽出
+    level3_alerts = [
+        item for item in all_items if "TEL-DISASTER-" in _get_telemetry_id(item)
+    ]
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -194,18 +148,12 @@ async def get_disaster_summary(
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-async def simulate_disaster(
-    request: Request,
-    count: int = Query(6, ge=1, le=20),
-) -> Any:
+async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     try:
         store = get_store()
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
-
-        if not hasattr(request.app.state, "disaster_simulated_items"):
-            request.app.state.disaster_simulated_items = []
 
         for i in range(count):
             item = StoredTelemetry(
@@ -228,8 +176,6 @@ async def simulate_disaster(
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            request.app.state.disaster_simulated_items.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
