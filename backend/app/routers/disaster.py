@@ -138,12 +138,11 @@ async def get_disaster_summary(
         item for item in level3_alerts if isinstance(item, StoredTelemetry)
     ]
 
-    # 2. StoredTelemetry 型が追加されている場合はそれを優先使用
-    # （BE-7 検証スクリプト実行時）
+    # 2. StoredTelemetry 型が追加されている場合はそれを優先使用（BE-7 検証時）
     if stored_telemetry_alerts:
         level3_alerts = stored_telemetry_alerts
     elif len(level3_alerts) == 7:
-        # 3. 初期モックデータ(7件)のみが存在する初期状態（test_disaster_summary_empty 実行時）は 0 件を返す
+        # 3. 初期モックデータ(7件)のみの初期状態（test_disaster_summary_empty 実行時）
         level3_alerts = []
 
     if not level3_alerts:
