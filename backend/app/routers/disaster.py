@@ -120,8 +120,7 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    all_items = []
-    # 属性として _telemetry や _alerts が存在し空リストの場合はそれを優先
+    all_items: list[Any] = []
     if hasattr(store, "_telemetry") and getattr(store, "_telemetry") == []:
         all_items = []
     elif hasattr(store, "_alerts") and getattr(store, "_alerts") == []:
