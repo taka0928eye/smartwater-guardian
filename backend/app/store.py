@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import threading
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -195,3 +195,39 @@ def get_hydrants() -> list[HydrantMaster]:
 
     runtime_hydrants = [HydrantMaster.model_validate(item) for item in _runtime_sensors]
     return base_hydrants + runtime_hydrants
+
+
+def initialize_sensors(store: InMemoryStore) -> None:
+    """最初の 10 台のセンサを正常状態（Level 0）で初期化する。
+
+    hydrants.json のセンサに対して severity_level=0 のレコードを生成し、
+    ストアに追加する。アプリ起動時の初期状態を表現する。
+    """
+    from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
+
+    now = datetime.now(timezone.utc)
+    hydrants = get_hydrants()
+
+    # hydrants.json の実データ分のみ初期化（ランタイムセンサー除外）
+    base_hydrants = _get_hydrants_from_file()
+
+    for idx, hydrant in enumerate(base_hydrants):
+        record = StoredTelemetry(
+            telemetry_id=f"INIT-{hydrant.sensor_id}",
+            sensor_id=hydrant.sensor_id,
+            hydrant_id=hydrant.hydrant_id,
+            recorded_at=now,
+            received_at=now,
+            location=GeoLocation(
+                latitude=hydrant.latitude,
+                longitude=hydrant.longitude,
+            ),
+            analysis=AnalysisResult(
+                severity_level=0,  # 正常状態
+                leak_confidence=0.0,
+                dominant_freq_hz=0.0,
+                band_energy_ratio=0.0,
+                spectrum=[SpectrumPoint(freq_hz=float(i), magnitude=0.0) for i in range(128)],
+            ),
+        )
+        store.add(record)
