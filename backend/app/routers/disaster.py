@@ -75,13 +75,6 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return lat, lng
 
 
-def _get_telemetry_id(item: Any) -> str:
-    """アイテムから telemetry_id を安全に取得する。"""
-    if isinstance(item, dict):
-        return str(item.get("telemetry_id", ""))
-    return str(getattr(item, "telemetry_id", ""))
-
-
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -91,12 +84,28 @@ async def get_disaster_summary(
 
     all_items = []
     if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
+        all_items = store.get_all()
+    elif hasattr(store, "get_all_alerts"):
+        all_items = store.get_all_alerts()
+    elif hasattr(store, "_telemetry"):
+        all_items = getattr(store, "_telemetry", [])
 
-    # シミュレーションデータ (TEL-DISASTER- で始まるID) のみを対象とする
-    disaster_items = [item for item in all_items if "TEL-DISASTER-" in _get_telemetry_id(item)]
+    level3_alerts = []
+    for a in all_items:
+        sev = getattr(a, "severity_level", None)
+        analysis = getattr(a, "analysis", None)
+        if sev is None and analysis is not None:
+            sev = getattr(analysis, "severity_level", None)
 
-    if not disaster_items:
+        if sev is None and isinstance(a, dict):
+            sev = a.get("severity_level") or a.get("severityLevel")
+            if sev is None and isinstance(a.get("analysis"), dict):
+                sev = a["analysis"].get("severity_level")
+
+        if sev == 3 or str(sev) == "3":
+            level3_alerts.append(a)
+
+    if not level3_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
@@ -104,7 +113,7 @@ async def get_disaster_summary(
         )
 
     clusters_raw: list[list[Any]] = []
-    for alert in disaster_items:
+    for alert in level3_alerts:
         lat, lng = _extract_lat_lng(alert)
         assigned = False
         for cluster in clusters_raw:
@@ -170,6 +179,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                     band_energy_ratio=1.0,
                 ),
             )
+
+            # オブジェクト直下にも severity_level を付与
+            setattr(item, "severity_level", 3)
 
             if hasattr(store, "add"):
                 store.add(item)
