@@ -185,7 +185,7 @@ def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
                     severity_level=level,
                     leak_confidence=90.0 + level * 2,
                     dominant_freq_hz=100 + level * 20,
-                    band_energy_ratio=0.8 + level * 0.1,
+                    band_energy_ratio=(level - 1) * 0.1 + 0.8,
                 ),
             )
             store.add(stored_telemetry)
