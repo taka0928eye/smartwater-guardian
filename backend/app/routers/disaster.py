@@ -121,12 +121,10 @@ async def get_disaster_summary(
     store = get_store()
 
     all_items: list[Any] = []
-    if hasattr(store, "_telemetry") and getattr(store, "_telemetry") == []:
-        all_items = []
-    elif hasattr(store, "_alerts") and getattr(store, "_alerts") == []:
-        all_items = []
-    elif hasattr(store, "get_all"):
+    if hasattr(store, "get_all"):
         all_items = store.get_all()
+    elif hasattr(store, "_telemetry"):
+        all_items = getattr(store, "_telemetry", [])
 
     level3_alerts = [item for item in all_items if _is_level3(item)]
 
