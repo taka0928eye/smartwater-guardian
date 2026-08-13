@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# サーバープロセス内で投入データを確実に保持する共有バッファ
+# シミュレーション投入データのプロセス共有用バッファ
 _DISASTER_STORE_BUFFER: list[Any] = []
 
 
@@ -79,41 +79,11 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
-def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうか判定。"""
-    candidates = []
-
+def _get_telemetry_id(item: Any) -> str:
+    """アイテムから telemetry_id を抽出。"""
     if isinstance(item, dict):
-        candidates.extend([
-            item.get("severity_level"),
-            item.get("severityLevel"),
-            item.get("severity"),
-        ])
-        analysis = item.get("analysis")
-        if isinstance(analysis, dict):
-            candidates.extend([
-                analysis.get("severity_level"),
-                analysis.get("severityLevel"),
-                analysis.get("severity"),
-            ])
-    else:
-        candidates.extend([
-            getattr(item, "severity_level", None),
-            getattr(item, "severityLevel", None),
-            getattr(item, "severity", None),
-        ])
-        analysis = getattr(item, "analysis", None)
-        if analysis is not None:
-            candidates.extend([
-                getattr(analysis, "severity_level", None),
-                getattr(analysis, "severityLevel", None),
-                getattr(analysis, "severity", None),
-            ])
-
-    for val in candidates:
-        if val is not None and str(val).strip() == "3":
-            return True
-    return False
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
@@ -127,16 +97,13 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    # 共有バッファのデータも確実に統合
     all_items.extend(_DISASTER_STORE_BUFFER)
 
-    # 重複排除 (telemetry_id 基準)
+    # 重複排除
     seen_ids = set()
     unique_items = []
     for item in all_items:
-        t_id = getattr(item, "telemetry_id", None) or (
-            item.get("telemetry_id") if isinstance(item, dict) else None
-        )
+        t_id = _get_telemetry_id(item)
         if t_id:
             if t_id not in seen_ids:
                 seen_ids.add(t_id)
@@ -144,9 +111,12 @@ async def get_disaster_summary(
         else:
             unique_items.append(item)
 
-    level3_alerts = [item for item in unique_items if _is_level3(item)]
+    # シミュレーション投入データ(TEL-DISASTER-)のみを厳密に抽出
+    disaster_alerts = [
+        item for item in unique_items if "TEL-DISASTER-" in _get_telemetry_id(item)
+    ]
 
-    if not level3_alerts:
+    if not disaster_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
@@ -154,7 +124,7 @@ async def get_disaster_summary(
         )
 
     clusters_raw: list[list[Any]] = []
-    for alert in level3_alerts:
+    for alert in disaster_alerts:
         lat, lng = _extract_lat_lng(alert)
         assigned = False
         for cluster in clusters_raw:
@@ -201,6 +171,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         store = get_store()
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
+
+        # 新しいシミュレーション実行時はバッファをクリア
+        _DISASTER_STORE_BUFFER.clear()
 
         for i in range(count):
             item = StoredTelemetry(
