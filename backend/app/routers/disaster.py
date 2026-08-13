@@ -64,15 +64,55 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     if isinstance(item, dict):
         loc = item.get("location", {})
         if isinstance(loc, dict):
-            lat = loc.get("latitude", 0.0)
-            lng = loc.get("longitude", 0.0)
+            lat = loc.get("latitude", 0.0) or loc.get("lat", 0.0)
+            lng = loc.get("longitude", 0.0) or loc.get("lng", 0.0)
         else:
             lat = item.get("lat", 0.0)
             lng = item.get("lng", 0.0)
     else:
-        lat = getattr(getattr(item, "location", None), "latitude", 0.0)
-        lng = getattr(getattr(item, "location", None), "longitude", 0.0)
-    return lat, lng
+        loc = getattr(item, "location", None)
+        lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
+        lng = getattr(loc, "longitude", getattr(item, "lng", 0.0))
+    return float(lat), float(lng)
+
+
+def _is_level3(item: Any) -> bool:
+    """アイテムが Level 3 アラートかどうかを全パターンで安全に判定。"""
+    candidates = []
+
+    # 1. 直接属性・辞書キー
+    if isinstance(item, dict):
+        candidates.extend([
+            item.get("severity_level"),
+            item.get("severityLevel"),
+            item.get("severity"),
+        ])
+        analysis = item.get("analysis")
+        if isinstance(analysis, dict):
+            candidates.extend([
+                analysis.get("severity_level"),
+                analysis.get("severityLevel"),
+                analysis.get("severity"),
+            ])
+    else:
+        candidates.extend([
+            getattr(item, "severity_level", None),
+            getattr(item, "severityLevel", None),
+            getattr(item, "severity", None),
+        ])
+        analysis = getattr(item, "analysis", None)
+        if analysis is not None:
+            candidates.extend([
+                getattr(analysis, "severity_level", None),
+                getattr(analysis, "severityLevel", None),
+                getattr(analysis, "severity", None),
+            ])
+
+    # 2. 値の判定 (数値 3 または文字列 "3")
+    for val in candidates:
+        if val is not None and str(val).strip() == "3":
+            return True
+    return False
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
@@ -87,6 +127,8 @@ async def get_disaster_summary(
         all_items.extend(store.get_all())
     if hasattr(store, "get_all_alerts"):
         all_items.extend(store.get_all_alerts())
+    if hasattr(store, "telemetry_records"):
+        all_items.extend(getattr(store, "telemetry_records", []))
     if hasattr(store, "_telemetry"):
         all_items.extend(getattr(store, "_telemetry", []))
     if hasattr(store, "_alerts"):
@@ -106,20 +148,7 @@ async def get_disaster_summary(
         else:
             unique_items.append(item)
 
-    level3_alerts = []
-    for a in unique_items:
-        sev = getattr(a, "severity_level", None)
-        analysis = getattr(a, "analysis", None)
-        if sev is None and analysis is not None:
-            sev = getattr(analysis, "severity_level", None)
-
-        if sev is None and isinstance(a, dict):
-            sev = a.get("severity_level") or a.get("severityLevel")
-            if sev is None and isinstance(a.get("analysis"), dict):
-                sev = a["analysis"].get("severity_level")
-
-        if sev == 3 or str(sev) == "3":
-            level3_alerts.append(a)
+    level3_alerts = [item for item in unique_items if _is_level3(item)]
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -196,11 +225,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
-            # store の標準メソッド
             if hasattr(store, "add"):
                 store.add(item)
 
-            # store 内部の全リスト変数へ直接同期注入
             t_list = getattr(store, "_telemetry", None)
             if isinstance(t_list, list):
                 t_list.append(item)
