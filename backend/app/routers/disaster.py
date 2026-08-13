@@ -126,7 +126,7 @@ async def get_disaster_summary(
     all_items = []
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
-    
+
     # 共有保持リストを必ず結合
     all_items.extend(_SIMULATED_ITEMS)
 
