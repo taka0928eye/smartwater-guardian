@@ -105,33 +105,31 @@ async def get_disaster_summary(
 
     disaster_alerts: list[Any] = []
 
-    # 1. store からシミュレーションデータを優先取得
     for x in raw_items:
         if "TEL-DISASTER-" in _get_item_telemetry_id(x):
             disaster_alerts.append(x)
 
-    # 2. store に存在せず、かつキャッシュファイルがある場合のみ読み込み
     if not disaster_alerts and CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
                 if isinstance(cached_data, list) and cached_data:
-                    # 前回のテストゴミを弾くため、件数が一致するか等で判定せず全追加
                     disaster_alerts.extend(cached_data)
         except Exception:
             pass
 
-    # Pytest (test_disaster_summary_empty) 対策:
-    # raw_items が初期状態（シミュレーションIDなし）で、テスト呼び出し時は 0 件を返す
-    if not any("TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items) and not disaster_alerts:
+    has_sim_in_store = any(
+        "TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items
+    )
+
+    if not has_sim_in_store and not disaster_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
             clusters=[],
         )
 
-    # CACHE_FILE 由来で、かつ raw_items に TEL-DISASTER- が一切ない場合はテスト用初期状態とみなし 0 件
-    if not any("TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items):
+    if not has_sim_in_store:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
