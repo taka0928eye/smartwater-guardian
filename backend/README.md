@@ -63,7 +63,8 @@ backend/
 │       ├── alerts.py          # GET /api/v1/alerts 系（BE-6・BE-5 work-order 実装済み）
 │       ├── sensors.py         # GET /api/v1/sensors（JSON / GeoJSON。BE-6）
 │       ├── disaster.py        # GET /summary, POST /simulate（BE-7 防災モード・クラスタリング）
-│       └── kpi.py             # GET /api/v1/kpi/summary（BE-8）
+│       ├── kpi.py             # GET /api/v1/kpi/summary（BE-8）
+│       └── demo.py            # POST /api/v1/demo/seed（DEMO-1 デモシード投入）
 ├── scripts/                    # 手動検証スクリプト（CI で実行、サーバー起動前提）
 │   ├── check_telemetry.py     # E2E検証（テレメトリ受信・解析パイプライン）
 │   ├── check_alerts.py        # アラート・センサーAPI の E2E検証
@@ -246,6 +247,12 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 | POST | `/api/v1/alerts/{telemetry_id}/work-order` | LLM自動起票・部材選定・見積（リトライ分類・キャッシング） | BE-5 | ✅ 実装済み |
 | GET | `/api/v1/sensors` | センサー状態一覧（`?format=geojson`） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/kpi/summary` | KPIサマリ（監視数・Level別件数・推定削減コスト） | BE-8 | ✅ 実装済み |
+| POST | `/api/v1/demo/seed` | デモ初期状態の1件投入（実スペクトル算出 + 深刻度を意図レベルに確定） | DEMO-1 | ✅ 実装済み |
+
+> **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
+> 追加した `DemoSeedRequest` を受ける。実 SVM は合成波形（`scripts/simulate_sensor.py` の
+> `generate_signal`）を意図レベルに分類できないため、`analyze_audio()` で実スペクトルを
+> 算出しつつ深刻度のみ上書きする。使い方は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
 
 ### 6.2 防災モード（BE-7）
 

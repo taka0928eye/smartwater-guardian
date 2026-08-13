@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routers import alerts, disaster, kpi, sensors, telemetry
+from app.routers import alerts, demo, disaster, kpi, sensors, telemetry
 
 app = FastAPI(title="SmartWater Guardian API")
 
@@ -19,6 +19,7 @@ app.include_router(alerts.router)
 app.include_router(sensors.router)
 app.include_router(kpi.router)
 app.include_router(disaster.router)
+app.include_router(demo.router)
 
 
 @app.exception_handler(RuntimeError)
