@@ -5,7 +5,7 @@ import traceback
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from app.schemas.disaster import (
@@ -18,9 +18,6 @@ from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
-
-# Web サーバープロセス内で投入データを確実に保持するリスト
-_SIMULATED_ITEMS: list[Any] = []
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -118,6 +115,7 @@ def _is_level3(item: Any) -> bool:
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
+    request: Request,
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
@@ -127,8 +125,9 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    # 共有保持リストを必ず結合
-    all_items.extend(_SIMULATED_ITEMS)
+    # app.state にシミュレーションデータがあれば結合
+    simulated = getattr(request.app.state, "disaster_simulated_items", [])
+    all_items.extend(simulated)
 
     # 重複排除 (telemetry_id 基準)
     seen_ids = set()
@@ -195,12 +194,18 @@ async def get_disaster_summary(
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
+async def simulate_disaster(
+    request: Request,
+    count: int = Query(6, ge=1, le=20),
+) -> Any:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     try:
         store = get_store()
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
+
+        if not hasattr(request.app.state, "disaster_simulated_items"):
+            request.app.state.disaster_simulated_items = []
 
         for i in range(count):
             item = StoredTelemetry(
@@ -224,7 +229,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
             if hasattr(store, "add"):
                 store.add(item)
 
-            _SIMULATED_ITEMS.append(item)
+            request.app.state.disaster_simulated_items.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
