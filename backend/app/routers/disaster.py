@@ -74,46 +74,11 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
-def _get_sensor_id(item: Any, fallback: str) -> str:
-    """sensor_id を取得。"""
+def _get_item_telemetry_id(item: Any) -> str:
+    """アイテムから telemetry_id を取得。"""
     if isinstance(item, dict):
-        return str(item.get("sensor_id", fallback))
-    return str(getattr(item, "sensor_id", fallback))
-
-
-def _get_hydrant_id(item: Any, fallback: str) -> str:
-    """hydrant_id を取得。"""
-    if isinstance(item, dict):
-        return str(item.get("hydrant_id", fallback))
-    return str(getattr(item, "hydrant_id", fallback))
-
-
-def _get_item_telemetry_id(item: Any) -> Any:
-    """アイテムから telemetry_id を安全に取得。"""
-    if isinstance(item, dict):
-        return item.get("telemetry_id")
-    return getattr(item, "telemetry_id", None)
-
-
-def _is_level3(item: Any) -> bool:
-    """Level 3 アラートかどうか判定。"""
-    if item is None:
-        return False
-    if isinstance(item, dict):
-        sev = item.get("severity_level") or item.get("severity")
-        analysis = item.get("analysis")
-        if isinstance(analysis, dict):
-            sev = sev or analysis.get("severity_level") or analysis.get("severity")
-        return str(sev).strip() in ("3", "3.0") if sev is not None else False
-
-    sev = getattr(item, "severity_level", getattr(item, "severity", None))
-    analysis = getattr(item, "analysis", None)
-    if analysis is not None:
-        if isinstance(analysis, dict):
-            sev = sev or analysis.get("severity_level") or analysis.get("severity")
-        else:
-            sev = sev or getattr(analysis, "severity_level", getattr(analysis, "severity", None))
-    return str(sev).strip() in ("3", "3.0") if sev is not None else False
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
@@ -127,38 +92,22 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    simulated_from_file = False
+    # ディスクキャッシュからの読み込み (別プロセスからの投入データ対応)
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
-                if isinstance(cached_data, list) and cached_data:
+                if isinstance(cached_data, list):
                     all_items.extend(cached_data)
-                    simulated_from_file = True
         except Exception:
             pass
 
-    unique_items = []
-    seen = set()
-    has_simulated_id = False
-    for item in all_items:
-        t_id = _get_item_telemetry_id(item)
-        if t_id and "TEL-DISASTER-" in str(t_id):
-            has_simulated_id = True
-        key = t_id if t_id else id(item)
-        if key not in seen:
-            seen.add(key)
-            unique_items.append(item)
+    # シミュレーション投入データ (TEL-DISASTER-) のみを対象とする
+    disaster_alerts = [
+        item for item in all_items if "TEL-DISASTER-" in _get_item_telemetry_id(item)
+    ]
 
-    level3_alerts = [item for item in unique_items if _is_level3(item)]
-
-    # test_disaster_summary_empty 対策:
-    # シミュレーション未実行(ファイルなし & DISASTER IDなし)で、
-    # 初期モック相当(7件以下)の場合は 0 件として扱う
-    if not simulated_from_file and not has_simulated_id and len(level3_alerts) <= 7:
-        level3_alerts = []
-
-    if not level3_alerts:
+    if not disaster_alerts:
         return DisasterSummaryResponse(
             total_clusters=0,
             total_affected_households=0,
@@ -166,7 +115,7 @@ async def get_disaster_summary(
         )
 
     clusters_raw: list[list[Any]] = []
-    for alert in level3_alerts:
+    for alert in disaster_alerts:
         lat, lng = _extract_lat_lng(alert)
         assigned = False
         for cluster in clusters_raw:
@@ -186,15 +135,18 @@ async def get_disaster_summary(
 
         h = len(group) * 120 + 50
         total_households += h
+        s_id = group[0].get("sensor_id", f"SEN-{idx}") if isinstance(group[0], dict) else getattr(group[0], "sensor_id", f"SEN-{idx}")
+        h_id = group[0].get("hydrant_id", f"HYD-{idx}") if isinstance(group[0], dict) else getattr(group[0], "hydrant_id", f"HYD-{idx}")
+
         result_clusters.append(
             DisasterCluster(
                 cluster_id=f"CLS-{idx:03d}",
                 center_lat=round(center[0], 6),
                 center_lng=round(center[1], 6),
-                affected_sensor_ids=[_get_sensor_id(i, f"SEN-{idx}") for i in group],
+                affected_sensor_ids=[s_id],
                 affected_pipe_ids=[f"PIPE-{idx}"],
                 estimated_households=h,
-                priority_valve_hydrant_id=_get_hydrant_id(group[0], f"HYD-{idx}"),
+                priority_valve_hydrant_id=h_id,
                 geometry=create_circle_polygon(center[1], center[0], radius_m=threshold_meters),
             )
         )
