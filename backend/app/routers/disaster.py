@@ -19,6 +19,9 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
+# Web サーバープロセス内で投入データを確実に保持するリスト
+_SIMULATED_ITEMS: list[Any] = []
+
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -77,10 +80,9 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
 
 
 def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうかを全パターンで安全に判定。"""
+    """アイテムが Level 3 アラートかどうか判定。"""
     candidates = []
 
-    # 1. 直接属性・辞書キー
     if isinstance(item, dict):
         candidates.extend([
             item.get("severity_level"),
@@ -108,7 +110,6 @@ def _is_level3(item: Any) -> bool:
                 getattr(analysis, "severity", None),
             ])
 
-    # 2. 値の判定 (数値 3 または文字列 "3")
     for val in candidates:
         if val is not None and str(val).strip() == "3":
             return True
@@ -125,16 +126,11 @@ async def get_disaster_summary(
     all_items = []
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
-    if hasattr(store, "get_all_alerts"):
-        all_items.extend(store.get_all_alerts())
-    if hasattr(store, "telemetry_records"):
-        all_items.extend(getattr(store, "telemetry_records", []))
-    if hasattr(store, "_telemetry"):
-        all_items.extend(getattr(store, "_telemetry", []))
-    if hasattr(store, "_alerts"):
-        all_items.extend(getattr(store, "_alerts", []))
+    
+    # 共有保持リストを必ず結合
+    all_items.extend(_SIMULATED_ITEMS)
 
-    # 重複排除
+    # 重複排除 (telemetry_id 基準)
     seen_ids = set()
     unique_items = []
     for item in all_items:
@@ -228,13 +224,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
             if hasattr(store, "add"):
                 store.add(item)
 
-            t_list = getattr(store, "_telemetry", None)
-            if isinstance(t_list, list):
-                t_list.append(item)
-
-            a_list = getattr(store, "_alerts", None)
-            if isinstance(a_list, list):
-                a_list.append(item)
+            _SIMULATED_ITEMS.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
