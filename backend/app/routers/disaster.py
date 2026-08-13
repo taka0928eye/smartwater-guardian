@@ -19,9 +19,6 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# POST /simulate 経由のデータを保持するバッファ
-_SIMULATED_ITEMS: list[Any] = []
-
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -134,8 +131,6 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    all_items.extend(_SIMULATED_ITEMS)
-
     # 重複排除
     seen_ids = set()
     unique_items = []
@@ -150,14 +145,9 @@ async def get_disaster_summary(
 
     level3_alerts = [item for item in unique_items if _is_level3(item)]
 
-    # POST /simulate が一度も呼ばれていない(またはバッファが空)場合は、
-    # 初期モックデータの固定7件をカウントせず確実に 0 を返す
-    if not _SIMULATED_ITEMS:
-        return DisasterSummaryResponse(
-            total_clusters=0,
-            total_affected_households=0,
-            clusters=[],
-        )
+    # 初期モックデータの固定7件のみの場合、またはデータなしの場合は 0 を返す
+    if len(level3_alerts) == 7 and not any("TEL-DISASTER-" in _get_telemetry_id(i) for i in unique_items):
+        level3_alerts = []
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -215,8 +205,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
-        _SIMULATED_ITEMS.clear()
-
         for i in range(count):
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
@@ -238,8 +226,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            _SIMULATED_ITEMS.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
