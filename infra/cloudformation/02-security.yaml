@@ -98,14 +98,6 @@ Resources:
                   - ecr:BatchGetImage
                   - ecr:GetDownloadUrlForLayer
                 Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
-        - PolicyName: SecretsManagerAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:smartwater-guardian/*'
 
   BackendTaskRole:
     Type: AWS::IAM::Role
@@ -118,15 +110,7 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: SecretsManagerRead
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - secretsmanager:GetSecretValue
-                Resource: !GetAtt OrcaRouterApiKeySecret.Arn
+      # ポリシーなし（Secrets Manager 廃止のため。タスク定義が参照するためロールは維持）
 
   FrontendTaskRole:
     Type: AWS::IAM::Role
@@ -139,17 +123,6 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-
-  # Secrets Manager
-  OrcaRouterApiKeySecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Name: smartwater-guardian/orcarouter-api-key
-      Description: Orcarouter API Key for SmartWater Guardian
-      SecretString: '{"api_key":"placeholder-replace-after-deployment"}'
-      Tags:
-        - Key: Name
-          Value: smartwater-guardian-orcarouter-api-key
 
 Outputs:
   AlbSecurityGroupId:
@@ -182,8 +155,3 @@ Outputs:
     Value: !GetAtt FrontendTaskRole.Arn
     Export:
       Name: !Sub '${AWS::StackName}-frontend-task-role-arn'
-  OrcaRouterSecretArn:
-    Description: Orcarouter API Key Secret ARN
-    Value: !GetAtt OrcaRouterApiKeySecret.Arn
-    Export:
-      Name: !Sub '${AWS::StackName}-orcarouter-secret-arn'

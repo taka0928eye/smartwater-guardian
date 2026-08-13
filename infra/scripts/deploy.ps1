@@ -22,6 +22,7 @@ param(
     [string]$OrcaRouterBaseUrl = "",
     [string]$OrcaRouterModel = "gpt-4",
     [string]$OrcaRouterEnabled = "false",
+    [string]$OrcaRouterApiKey = "",
     [string]$AllowedOrigins = "http://localhost:3000"
 )
 
@@ -125,10 +126,7 @@ Deploy-Stack -StackName "alb" -TemplateFile "$TemplateDir/04-alb.yaml" -Paramete
     SecurityStackName = "${StackPrefix}-security"
 }
 
-# 05: WAF
-Deploy-Stack -StackName "waf" -TemplateFile "$TemplateDir/05-waf.yaml" -Parameters @{
-    AlbStackName = "${StackPrefix}-alb"
-}
+# 05: WAF（コスト削減のため削除。デモ向け最小構成では不要）
 
 # 06: ECS
 Deploy-Stack -StackName "ecs" -TemplateFile "$TemplateDir/06-ecs.yaml" -Parameters @{
@@ -141,6 +139,7 @@ Deploy-Stack -StackName "ecs" -TemplateFile "$TemplateDir/06-ecs.yaml" -Paramete
     OrcaRouterBaseUrl = $OrcaRouterBaseUrl
     OrcaRouterModel = $OrcaRouterModel
     OrcaRouterEnabled = $OrcaRouterEnabled
+    OrcaRouterApiKey = $OrcaRouterApiKey
     AllowedOrigins = $AllowedOrigins
 }
 
@@ -154,6 +153,6 @@ Write-Host ""
 Write-Host "✓ All stacks deployed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "1. Set Orcarouter API key: aws secretsmanager put-secret-value --secret-id smartwater-guardian-orcarouter-key --secret-string '<API_KEY>'"
+Write-Host "1. Orcarouter API key: ECS スタック（ecs）の OrcaRouterApiKey パラメータに注入（secretsmanager はコスト削減のため不使用）"
 Write-Host "2. Verify ALB: aws elbv2 describe-load-balancers --region $Region"
 Write-Host "3. Monitor ECS: aws ecs describe-services --cluster smartwater-guardian-$Environment --services smartwater-guardian-backend smartwater-guardian-frontend --region $Region"
