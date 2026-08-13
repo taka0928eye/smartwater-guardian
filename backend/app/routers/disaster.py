@@ -88,6 +88,13 @@ def _get_hydrant_id(item: Any, fallback: str) -> str:
     return str(getattr(item, "hydrant_id", fallback))
 
 
+def _get_item_telemetry_id(item: Any) -> Any:
+    """アイテムから telemetry_id を安全に取得。"""
+    if isinstance(item, dict):
+        return item.get("telemetry_id")
+    return getattr(item, "telemetry_id", None)
+
+
 def _is_level3(item: Any) -> bool:
     """Level 3 アラートかどうか判定。"""
     if item is None:
@@ -135,7 +142,7 @@ async def get_disaster_summary(
     seen = set()
     has_simulated_id = False
     for item in all_items:
-        t_id = item.get("telemetry_id") if isinstance(item, dict) else getattr(item, "telemetry_id", None)
+        t_id = _get_item_telemetry_id(item)
         if t_id and "TEL-DISASTER-" in str(t_id):
             has_simulated_id = True
         key = t_id if t_id else id(item)
