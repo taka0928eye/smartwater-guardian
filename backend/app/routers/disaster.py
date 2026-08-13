@@ -89,6 +89,13 @@ def _get_hydrant_id(item: Any, fallback: str) -> str:
     return str(getattr(item, "hydrant_id", fallback))
 
 
+def _get_item_telemetry_id(item: Any) -> Any:
+    """アイテムから telemetry_id を安全に取得。"""
+    if isinstance(item, dict):
+        return item.get("telemetry_id")
+    return getattr(item, "telemetry_id", None)
+
+
 def _is_level3(item: Any) -> bool:
     """アイテムが Level 3 アラートかどうか判定。"""
     if item is None:
@@ -150,7 +157,7 @@ async def get_disaster_summary(
     unique_items = []
     seen = set()
     for item in all_items:
-        t_id = item.get("telemetry_id") if isinstance(item, dict) else getattr(item, "telemetry_id", None)
+        t_id = _get_item_telemetry_id(item)
         key = t_id if t_id else id(item)
         if key not in seen:
             seen.add(key)
@@ -216,6 +223,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
         file_items = []
         for i in range(count):
+            cur_lat = base_lat + (i * 0.001)
+            cur_lng = base_lng + (i * 0.001)
+
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
                 sensor_id=f"SEN-DISASTER-{i+1:03d}",
@@ -223,8 +233,8 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 recorded_at=now,
                 received_at=now,
                 location=GeoLocation(
-                    latitude=base_lat + (i * 0.001),
-                    longitude=base_lng + (i * 0.001),
+                    latitude=cur_lat,
+                    longitude=cur_lng,
                 ),
                 analysis=AnalysisResult(
                     severity_level=3,
@@ -241,7 +251,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 "telemetry_id": item.telemetry_id,
                 "sensor_id": item.sensor_id,
                 "hydrant_id": item.hydrant_id,
-                "location": {"latitude": base_lat + (i * 0.001), "longitude": base_lng + (i * 0.001)},
+                "location": {"latitude": cur_lat, "longitude": cur_lng},
                 "analysis": {"severity_level": 3},
             })
 
