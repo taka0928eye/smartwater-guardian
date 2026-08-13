@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 import pytest
 
-
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "audio_feature_v1"
 GOLDEN_PCM_PATH = FIXTURE_DIR / "golden_pcm16le.raw"
 EXPECTED_FEATURES_PATH = FIXTURE_DIR / "expected_features.json"

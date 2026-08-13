@@ -7,8 +7,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.store import get_store
-
 
 @pytest.fixture
 def client():

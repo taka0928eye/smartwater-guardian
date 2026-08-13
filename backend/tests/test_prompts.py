@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytest
+
 from app.schemas.work_order import WorkOrder
 from app.services.prompts import (
     build_system_prompt,

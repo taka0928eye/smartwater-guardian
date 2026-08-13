@@ -1,7 +1,9 @@
 """LLM原価計算および構造化ログの単体テスト."""
 
 import logging
+
 import pytest
+
 from app.schemas.work_order import WorkOrder
 from app.services.llm_cost import (
     calc_cost_yen,

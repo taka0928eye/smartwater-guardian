@@ -28,8 +28,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from scripts.simulate_sensor import SimulationError, send_telemetry  # noqa: E402
-
+from scripts.simulate_sensor import SimulationError  # noqa: E402
 
 # デモシードクリア API のエンドポイント
 CLEAR_ENDPOINT = "http://localhost:8000/api/v1/demo/clear"
@@ -43,8 +42,8 @@ def run_clear(url: str = CLEAR_ENDPOINT) -> dict[str, Any]:
     """
     try:
         # DELETE メソッドを使う。ペイロードは不要。
-        import urllib.request
         import json
+        import urllib.request
 
         req = urllib.request.Request(url, method="DELETE")
         req.add_header("Content-Type", "application/json")

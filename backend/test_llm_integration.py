@@ -15,7 +15,7 @@ from app.services import orcarouter
 @pytest.mark.asyncio
 async def test_llm_is_called_when_enabled():
     """ORCAROUTER_ENABLED=true と API キーが設定されている場合、LLM が呼ばれることを確認"""
-    
+
     # テスト用の環境変数
     with patch.dict(os.environ, {
         "ORCAROUTER_ENABLED": "true",
@@ -45,10 +45,10 @@ async def test_llm_is_called_when_enabled():
                 "completion_tokens": 50
             }
         }
-        
+
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(return_value=mock_response)
-        
+
         # テスト用アラート
         alert = AlertDetail(
             telemetry_id="test-001",
@@ -66,30 +66,30 @@ async def test_llm_is_called_when_enabled():
             ),
             pipe_info=None
         )
-        
+
         # LLM を呼び出す
         orcarouter.clear_work_order_cache()
         result = await orcarouter.create_work_order(mock_client, "test-001", alert, None)
-        
+
         # 検証
         print("SUCCESS: WorkOrder generated")
         print(f"  Source: {result.source}")
         print(f"  Model: {result.model}")
         print(f"  Cost: {result.cost_yen}")
         print(f"  Total Estimate: {result.total_estimate_yen}")
-        
+
         # LLM が呼ばれたことを確認
         assert mock_client.post.called, "LLM API should be called"
         print("SUCCESS: LLM API was called")
-        
+
         # source が "llm" であることを確認
         assert result.source == "llm", f"source should be 'llm', got {result.source}"
         print("SUCCESS: Source is 'llm'")
-        
+
         # cost が計算されていることを確認
         assert result.cost_yen is not None and result.cost_yen > 0, "Cost should be calculated"
         print(f"SUCCESS: Cost calculated: {result.cost_yen} yen")
-        
+
         return result
 
 
