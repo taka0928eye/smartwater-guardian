@@ -109,7 +109,9 @@ async def get_disaster_summary(
     disaster_alerts: list[Any] = []
 
     if store_has_sim:
-        disaster_alerts.extend([x for x in raw_items if "TEL-DISASTER-" in _get_item_telemetry_id(x)])
+        for x in raw_items:
+            if "TEL-DISASTER-" in _get_item_telemetry_id(x):
+                disaster_alerts.append(x)
     elif CACHE_FILE.exists():
         # 別プロセス経由で投入された場合
         try:
