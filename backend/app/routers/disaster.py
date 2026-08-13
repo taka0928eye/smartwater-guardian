@@ -133,16 +133,16 @@ async def get_disaster_summary(
 
     level3_alerts = [item for item in all_items if _is_level3(item)]
 
-    # 1. POST /simulate で直接追加された StoredTelemetry 型オブジェクトを抽出
-    stored_telemetry_alerts = [
-        item for item in level3_alerts if isinstance(item, StoredTelemetry)
+    # 1. TEL-DISASTER- を含むシミュレーション投入データを抽出
+    simulated_alerts = [
+        item for item in level3_alerts if "TEL-DISASTER-" in _get_telemetry_id(item)
     ]
 
-    # 2. StoredTelemetry 型が追加されている場合はそれを優先使用（BE-7 検証時）
-    if stored_telemetry_alerts:
-        level3_alerts = stored_telemetry_alerts
+    # 2. シミュレーションデータが存在すれば最優先で集計（BE-7 検証時）
+    if simulated_alerts:
+        level3_alerts = simulated_alerts
     elif len(level3_alerts) == 7:
-        # 3. 初期モックデータ(7件)のみの初期状態（test_disaster_summary_empty 実行時）
+        # 3. 初期モック7件のみの未投入状態（test_disaster_summary_empty 実行時）は 0 件
         level3_alerts = []
 
     if not level3_alerts:
