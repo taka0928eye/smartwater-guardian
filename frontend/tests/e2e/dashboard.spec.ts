@@ -21,7 +21,7 @@ test.describe("ダッシュボード E2E テスト", () => {
     await expect(page).toHaveTitle(/SmartWater|Guardian/i);
 
     // KPI セクション確認（aria-labelledby で h2 と連携）
-    const kpiSection = page.locator("section");
+    const kpiSection = page.locator("section").first();
     await expect(kpiSection.locator("h2")).toContainText(/KPI|監視/i);
 
     // KPI カード確認（スケルトン消失後）
@@ -47,7 +47,7 @@ test.describe("ダッシュボード E2E テスト", () => {
     await page.waitForLoadState("networkidle");
 
     // アラートセクション確認
-    const alertSection = page.locator("main").locator("section").nth(1);
+    const alertSection = page.locator("main").locator("section").nth(2);
     await expect(alertSection.locator("h2")).toContainText(/アラート|異常/i);
 
     // アラート行確認

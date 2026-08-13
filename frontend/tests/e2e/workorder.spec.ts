@@ -14,12 +14,12 @@ import { test, expect } from "./fixtures";
 import { DashboardPage } from "./pages/DashboardPage";
 
 test.describe("AI 自動起票（シナリオ 8）", () => {
-  /** Level 3（HYD-003）の詳細ドロワーから作業指示書モーダルを開く。 */
+  /** Level 3（HYD-300）の詳細ドロワーから作業指示書モーダルを開く。 */
   async function openWorkOrderModal(
     page: import("@playwright/test").Page,
     dashboard: DashboardPage,
   ) {
-    await dashboard.openAlert("HYD-003");
+    await dashboard.openAlert("HYD-300");
     await expect(dashboard.drawer).toBeVisible();
     await dashboard.drawer
       .getByRole("button", { name: /AI自動起票/ })
