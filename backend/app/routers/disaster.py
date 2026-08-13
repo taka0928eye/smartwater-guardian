@@ -71,21 +71,35 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
 
 
 def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうか判定。"""
+    """アイテムが Level 3 アラートかどうか安全かつ強力に判定。"""
+    # 判定対象候補の値を収集
+    vals = []
     if isinstance(item, dict):
-        sev = item.get("severity_level")
-        if sev is None:
-            sev = item.get("severity")
+        vals.append(item.get("severity_level"))
+        vals.append(item.get("severityLevel"))
+        vals.append(item.get("severity"))
         analysis = item.get("analysis")
-        if isinstance(analysis, dict) and sev is None:
-            sev = analysis.get("severity_level") or analysis.get("severity")
-        return str(sev).strip() == "3" if sev is not None else False
+        if isinstance(analysis, dict):
+            vals.append(analysis.get("severity_level"))
+            vals.append(analysis.get("severityLevel"))
+            vals.append(analysis.get("severity"))
+    else:
+        vals.append(getattr(item, "severity_level", None))
+        vals.append(getattr(item, "severityLevel", None))
+        vals.append(getattr(item, "severity", None))
+        analysis = getattr(item, "analysis", None)
+        if analysis is not None:
+            if isinstance(analysis, dict):
+                vals.append(analysis.get("severity_level"))
+                vals.append(analysis.get("severityLevel"))
+            else:
+                vals.append(getattr(analysis, "severity_level", None))
+                vals.append(getattr(analysis, "severityLevel", None))
 
-    sev = getattr(item, "severity_level", getattr(item, "severity", None))
-    analysis = getattr(item, "analysis", None)
-    if analysis is not None and sev is None:
-        sev = getattr(analysis, "severity_level", getattr(analysis, "severity", None))
-    return str(sev).strip() == "3" if sev is not None else False
+    for v in vals:
+        if v is not None and str(v).strip() in ("3", "3.0"):
+            return True
+    return False
 
 
 @router.get("/summary", response_model=DisasterSummaryResponse)
