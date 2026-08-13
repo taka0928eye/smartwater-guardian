@@ -8,7 +8,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.store import get_store, reset_store
+from app.store import get_store, reset_store, clear_runtime_sensors
 from main import app
 
 
@@ -27,11 +27,15 @@ def store():
 
 @pytest.fixture(autouse=True)
 def _reset_store():
-    """BE-6: 各テスト実行前にインメモリストアをリセットし、テスト間を隔離する。
+    """BE-6: 各テスト実行前にインメモリストアとランタイムセンサーをリセットし、テスト間を隔離する。
 
     ルーターはハンドラ実行時に ``get_store()`` を呼ぶため、``reset_store()`` で
     シングルトンを破棄すれば次リクエストは新規ストアを生成して完全に隔離される。
+    ランタイムセンサーも防災シミュレーションの影響を各テスト間で隔離するため
+    クリアする。
     """
     reset_store()
+    clear_runtime_sensors()
     yield
     reset_store()
+    clear_runtime_sensors()

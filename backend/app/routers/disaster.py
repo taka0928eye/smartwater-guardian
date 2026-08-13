@@ -17,7 +17,7 @@ from app.schemas.disaster import (
     GeoJSONPolygon,
 )
 from app.schemas.telemetry import AnalysisResult, GeoLocation
-from app.store import StoredTelemetry, get_store
+from app.store import StoredTelemetry, get_store, register_runtime_sensors
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
@@ -183,13 +183,17 @@ async def get_disaster_summary(
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
 async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
-    """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
+    """デモ用に一括で Level 3 アラートをシミュレーション投入する。
+
+    シミュレーション時に新しいセンサーを登録し、監視センサ数が動的に増加するようにする。
+    """
     try:
         store = get_store()
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
         file_items = []
+        runtime_sensors = []
         for i in range(count):
             cur_lat = base_lat + (i * 0.001)
             cur_lng = base_lng + (i * 0.001)
@@ -222,6 +226,18 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 "location": {"latitude": cur_lat, "longitude": cur_lng},
                 "analysis": {"severity_level": 3},
             })
+
+            runtime_sensors.append({
+                "sensor_id": item.sensor_id,
+                "hydrant_id": item.hydrant_id,
+                "name": f"シミュレーション消火栓 {i+1}",
+                "latitude": cur_lat,
+                "longitude": cur_lng,
+                "pipe_id": f"PIPE-SIM-{i+1:03d}",
+            })
+
+        # シミュレーション用センサーを登録し、監視センサ数に反映させる
+        register_runtime_sensors(runtime_sensors)
 
         try:
             with open(CACHE_FILE, "w", encoding="utf-8") as f:

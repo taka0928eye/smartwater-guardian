@@ -1,6 +1,7 @@
 """防災モード API (GET /summary, POST /simulate) のテスト。"""
 
-from app.store import get_store, reset_store
+from app.store import get_store, reset_store, clear_runtime_sensors
+from app.services.kpi import calculate_kpi_summary
 
 
 def test_simulate_disaster_creates_level3_alerts(client):
@@ -89,3 +90,29 @@ def test_disaster_summary_clustering(client):
         assert "affected_sensor_ids" in cluster
         assert "geometry" in cluster
         assert cluster["geometry"]["type"] == "Polygon"
+
+
+def test_disaster_simulate_increases_total_sensors(client):
+    """防災シミュレーション実行後、KPI の監視センサ数が増加する。"""
+    # 初期状態: 監視センサ数は 10（hydrants.json の実件数）
+    summary_before = calculate_kpi_summary()
+    assert summary_before.total_sensors == 10
+
+    # シミュレーションを 6 件実行
+    response = client.post("/api/v1/disaster/simulate?count=6")
+    assert response.status_code == 200
+
+    # シミュレーション後: 監視センサ数は 16（10 + 6）に増加
+    summary_after = calculate_kpi_summary()
+    assert summary_after.total_sensors == 16
+
+    # KPI エンドポイントでも 16 を返す
+    kpi_response = client.get("/api/v1/kpi/summary")
+    assert kpi_response.status_code == 200
+    kpi_data = kpi_response.json()
+    assert kpi_data["total_sensors"] == 16
+
+    # テスト隔離: クリア後は元に戻る
+    clear_runtime_sensors()
+    summary_cleared = calculate_kpi_summary()
+    assert summary_cleared.total_sensors == 10

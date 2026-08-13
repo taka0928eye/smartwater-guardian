@@ -148,18 +148,50 @@ def reset_store() -> None:
 
 # --- 消火栓マスタローダー ---
 
+_runtime_sensors: list[dict] = []
+
+
+def register_runtime_sensors(sensors: list[dict]) -> None:
+    """防災シミュレーション用のランタイムセンサーを登録する。
+
+    シミュレーションで新しいセンサーが追加された場合、``get_hydrants()``
+    がそれを含めて返すようにする。テスト隔離のため ``clear_runtime_sensors()``
+    で明示的にクリアできる。
+    """
+    global _runtime_sensors
+    _runtime_sensors = list(sensors)
+
+
+def clear_runtime_sensors() -> None:
+    """登録されたランタイムセンサーをクリアする（テスト用）。"""
+    global _runtime_sensors
+    _runtime_sensors = []
+
 
 @lru_cache(maxsize=1)
-def get_hydrants() -> list[HydrantMaster]:
-    """hydrants.json を1度だけ読み込んでキャッシュする。
+def _get_hydrants_from_file() -> list[HydrantMaster]:
+    """hydrants.json を1度だけ読み込んでキャッシュする（内部用）。
 
     欠損・破損はサイレントな空台帳にせず、明確に例外を上げる。``@lru_cache`` による
     遅延初期化のため、例外が実際に飛ぶのはアプリ起動時ではなく初回呼び出し時（最初に
     ``/api/v1/sensors`` 等が呼ばれたタイミング）。
-    本ファイルは BE-2 が正式に管理する予定のため、BE-6 は互換データの先行作成に留める。
     """
     try:
         data = json.loads(HYDRANTS_PATH.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"hydrants.json を読み込めません: {HYDRANTS_PATH}") from exc
     return [HydrantMaster.model_validate(item) for item in data]
+
+
+def get_hydrants() -> list[HydrantMaster]:
+    """hydrants.json の消火栓 + ランタイムセンサーを返す。
+
+    防災シミュレーション実行時、``register_runtime_sensors()`` で登録された
+    センサーが KPI 集計に反映される。
+    """
+    base_hydrants = _get_hydrants_from_file()
+    if not _runtime_sensors:
+        return base_hydrants
+
+    runtime_hydrants = [HydrantMaster.model_validate(item) for item in _runtime_sensors]
+    return base_hydrants + runtime_hydrants
