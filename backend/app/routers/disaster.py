@@ -1,8 +1,10 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
+import json
 import math
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, status
@@ -18,6 +20,9 @@ from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
+
+# 永続化用キャッシュファイル
+CACHE_FILE = Path("disaster_simulation_data.json")
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -131,6 +136,17 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
+    # ファイルからシミュレーション投入データを読み込む
+    file_items = []
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                file_items = json.load(f)
+        except Exception:
+            pass
+
+    all_items.extend(file_items)
+
     level3_alerts = [item for item in all_items if _is_level3(item)]
 
     # 1. TEL-DISASTER- を含むシミュレーション投入データを抽出
@@ -201,6 +217,8 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
+        simulated_list = []
+
         for i in range(count):
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
@@ -222,6 +240,21 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
+
+            simulated_list.append({
+                "telemetry_id": item.telemetry_id,
+                "sensor_id": item.sensor_id,
+                "hydrant_id": item.hydrant_id,
+                "location": {"latitude": item.location.latitude, "longitude": item.location.longitude},
+                "analysis": {"severity_level": 3},
+            })
+
+        # ファイルに保存してプロセス間で永続化
+        try:
+            with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(simulated_list, f)
+        except Exception:
+            pass
 
         return DisasterSimulateResponse(
             inserted_count=count,
