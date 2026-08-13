@@ -1,8 +1,10 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。"""
 
+import json
 import math
 import traceback
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Query, status
@@ -18,6 +20,9 @@ from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
+
+# プロセス間でデータを共有するためのキャッシュファイル
+CACHE_FILE = Path("/tmp/disaster_simulated_items.json")
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -85,7 +90,7 @@ def _get_hydrant_id(item: Any, fallback: str) -> str:
 
 
 def _is_level3(item: Any) -> bool:
-    """アイテムが Level 3 アラートかどうかを全パターンで判定。"""
+    """アイテムが Level 3 アラートかどうか判定。"""
     if item is None:
         return False
 
@@ -97,11 +102,6 @@ def _is_level3(item: Any) -> bool:
         if isinstance(analysis, dict):
             for k in ["severity_level", "severityLevel", "severity"]:
                 if str(analysis.get(k, "")).strip() in ("3", "3.0"):
-                    return True
-        data = item.get("data")
-        if isinstance(data, dict):
-            for k in ["severity_level", "severityLevel", "severity"]:
-                if str(data.get(k, "")).strip() in ("3", "3.0"):
                     return True
         return False
 
@@ -136,20 +136,21 @@ async def get_disaster_summary(
 
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
-    if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
-        all_items.extend(getattr(store, "_telemetry"))
-    if hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
-        all_items.extend(getattr(store, "_alerts"))
+
+    # ディスク上のファイルからプロセス間共有データを復元
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+                if isinstance(cached_data, list):
+                    all_items.extend(cached_data)
+        except Exception:
+            pass
 
     unique_items = []
     seen = set()
     for item in all_items:
-        t_id = None
-        if isinstance(item, dict):
-            t_id = item.get("telemetry_id") or item.get("id")
-        else:
-            t_id = getattr(item, "telemetry_id", getattr(item, "id", None))
-
+        t_id = item.get("telemetry_id") if isinstance(item, dict) else getattr(item, "telemetry_id", None)
         key = t_id if t_id else id(item)
         if key not in seen:
             seen.add(key)
@@ -213,6 +214,7 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
+        file_items = []
         for i in range(count):
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
@@ -235,8 +237,20 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
             if hasattr(store, "add"):
                 store.add(item)
 
-            if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
-                getattr(store, "_telemetry").append(item)
+            file_items.append({
+                "telemetry_id": item.telemetry_id,
+                "sensor_id": item.sensor_id,
+                "hydrant_id": item.hydrant_id,
+                "location": {"latitude": base_lat + (i * 0.001), "longitude": base_lng + (i * 0.001)},
+                "analysis": {"severity_level": 3},
+            })
+
+        # プロセス間共有用に JSON ファイルへ保存
+        try:
+            with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(file_items, f)
+        except Exception:
+            pass
 
         return DisasterSimulateResponse(
             inserted_count=count,
