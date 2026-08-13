@@ -70,24 +70,34 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
+def _get_sensor_id(item: Any, fallback: str) -> str:
+    """アイテムから sensor_id を安全に取得。"""
+    if isinstance(item, dict):
+        return str(item.get("sensor_id", fallback))
+    return str(getattr(item, "sensor_id", fallback))
+
+
+def _get_hydrant_id(item: Any, fallback: str) -> str:
+    """アイテムから hydrant_id を安全に取得。"""
+    if isinstance(item, dict):
+        return str(item.get("hydrant_id", fallback))
+    return str(getattr(item, "hydrant_id", fallback))
+
+
 def _is_level3(item: Any) -> bool:
     """アイテムが Level 3 アラートかどうかを全パターンで判定。"""
     if item is None:
         return False
 
-    # 1. 辞書形式の探索
     if isinstance(item, dict):
-        # 直下のキー
         for k in ["severity_level", "severityLevel", "severity"]:
             if str(item.get(k, "")).strip() in ("3", "3.0"):
                 return True
-        # analysis ネスト
         analysis = item.get("analysis")
         if isinstance(analysis, dict):
             for k in ["severity_level", "severityLevel", "severity"]:
                 if str(analysis.get(k, "")).strip() in ("3", "3.0"):
                     return True
-        # data ネスト
         data = item.get("data")
         if isinstance(data, dict):
             for k in ["severity_level", "severityLevel", "severity"]:
@@ -95,7 +105,6 @@ def _is_level3(item: Any) -> bool:
                     return True
         return False
 
-    # 2. オブジェクト形式の探索
     for k in ["severity_level", "severityLevel", "severity"]:
         val = getattr(item, k, None)
         if val is not None and str(val).strip() in ("3", "3.0"):
@@ -125,7 +134,6 @@ async def get_disaster_summary(
 
     all_items: list[Any] = []
 
-    # 1. store から全データ取得
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
     if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
@@ -133,7 +141,6 @@ async def get_disaster_summary(
     if hasattr(store, "_alerts") and isinstance(getattr(store, "_alerts"), list):
         all_items.extend(getattr(store, "_alerts"))
 
-    # 重複除去（telemetry_id またはオブジェクトID）
     unique_items = []
     seen = set()
     for item in all_items:
@@ -183,17 +190,10 @@ async def get_disaster_summary(
                 cluster_id=f"CLS-{idx:03d}",
                 center_lat=round(center[0], 6),
                 center_lng=round(center[1], 6),
-                affected_sensor_ids=[
-                    getattr(i, "sensor_id", i.get("sensor_id", f"SEN-{idx}") if isinstance(i, dict) else f"SEN-{idx}")
-                    for i in group
-                ],
+                affected_sensor_ids=[_get_sensor_id(i, f"SEN-{idx}") for i in group],
                 affected_pipe_ids=[f"PIPE-{idx}"],
                 estimated_households=h,
-                priority_valve_hydrant_id=getattr(
-                    group[0],
-                    "hydrant_id",
-                    group[0].get("hydrant_id", f"HYD-{idx}") if isinstance(group[0], dict) else f"HYD-{idx}",
-                ),
+                priority_valve_hydrant_id=_get_hydrant_id(group[0], f"HYD-{idx}"),
                 geometry=create_circle_polygon(center[1], center[0], radius_m=threshold_meters),
             )
         )
@@ -232,11 +232,9 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
-            # store が dict を期待する場合、object を期待する場合の両方に対応
             if hasattr(store, "add"):
                 store.add(item)
 
-            # store の内部リストにも直接追加（安全柵）
             if hasattr(store, "_telemetry") and isinstance(getattr(store, "_telemetry"), list):
                 getattr(store, "_telemetry").append(item)
 
