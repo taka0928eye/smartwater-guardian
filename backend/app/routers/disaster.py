@@ -84,14 +84,30 @@ async def get_disaster_summary(
 
     all_items = []
     if hasattr(store, "get_all"):
-        all_items = store.get_all()
-    elif hasattr(store, "get_all_alerts"):
-        all_items = store.get_all_alerts()
-    elif hasattr(store, "_telemetry"):
-        all_items = getattr(store, "_telemetry", [])
+        all_items.extend(store.get_all())
+    if hasattr(store, "get_all_alerts"):
+        all_items.extend(store.get_all_alerts())
+    if hasattr(store, "_telemetry"):
+        all_items.extend(getattr(store, "_telemetry", []))
+    if hasattr(store, "_alerts"):
+        all_items.extend(getattr(store, "_alerts", []))
+
+    # 重複排除
+    seen_ids = set()
+    unique_items = []
+    for item in all_items:
+        t_id = getattr(item, "telemetry_id", None) or (
+            item.get("telemetry_id") if isinstance(item, dict) else None
+        )
+        if t_id:
+            if t_id not in seen_ids:
+                seen_ids.add(t_id)
+                unique_items.append(item)
+        else:
+            unique_items.append(item)
 
     level3_alerts = []
-    for a in all_items:
+    for a in unique_items:
         sev = getattr(a, "severity_level", None)
         analysis = getattr(a, "analysis", None)
         if sev is None and analysis is not None:
@@ -180,8 +196,18 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
                 ),
             )
 
+            # store の標準メソッド
             if hasattr(store, "add"):
                 store.add(item)
+
+            # store 内部の全リスト変数へ直接同期注入
+            t_list = getattr(store, "_telemetry", None)
+            if isinstance(t_list, list):
+                t_list.append(item)
+
+            a_list = getattr(store, "_alerts", None)
+            if isinstance(a_list, list):
+                a_list.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
