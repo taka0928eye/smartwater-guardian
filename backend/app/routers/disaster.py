@@ -19,9 +19,6 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# プロセス内キャッシュ
-_SIMULATED_ITEMS: list[dict[str, Any]] = []
-
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -63,7 +60,9 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     if isinstance(item, dict):
         loc = item.get("location", {})
         if isinstance(loc, dict):
-            return float(loc.get("latitude", 0.0)), float(loc.get("longitude", 0.0))
+            return float(loc.get("latitude", 0.0) or loc.get("lat", 0.0)), float(
+                loc.get("longitude", 0.0) or loc.get("lng", 0.0)
+            )
         return float(item.get("lat", 0.0)), float(item.get("lng", 0.0))
     loc = getattr(item, "location", None)
     lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
@@ -74,16 +73,18 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
 def _is_level3(item: Any) -> bool:
     """アイテムが Level 3 アラートかどうか判定。"""
     if isinstance(item, dict):
-        sev = item.get("severity_level") or item.get("severity")
+        sev = item.get("severity_level")
+        if sev is None:
+            sev = item.get("severity")
         analysis = item.get("analysis")
-        if isinstance(analysis, dict):
-            sev = sev or analysis.get("severity_level")
+        if isinstance(analysis, dict) and sev is None:
+            sev = analysis.get("severity_level") or analysis.get("severity")
         return str(sev).strip() == "3" if sev is not None else False
 
     sev = getattr(item, "severity_level", getattr(item, "severity", None))
     analysis = getattr(item, "analysis", None)
-    if analysis is not None:
-        sev = sev or getattr(analysis, "severity_level", None)
+    if analysis is not None and sev is None:
+        sev = getattr(analysis, "severity_level", getattr(analysis, "severity", None))
     return str(sev).strip() == "3" if sev is not None else False
 
 
@@ -98,14 +99,7 @@ async def get_disaster_summary(
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
 
-    # シミュレーションデータバッファを追加
-    all_items.extend(_SIMULATED_ITEMS)
-
     level3_alerts = [item for item in all_items if _is_level3(item)]
-
-    # シミュレーション未実行、または初期モックデータ（7件）のみの場合は 0 件として扱う
-    if not _SIMULATED_ITEMS and len(level3_alerts) <= 7:
-        level3_alerts = []
 
     if not level3_alerts:
         return DisasterSummaryResponse(
@@ -163,8 +157,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
-        _SIMULATED_ITEMS.clear()
-
         for i in range(count):
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
@@ -186,17 +178,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            _SIMULATED_ITEMS.append({
-                "telemetry_id": item.telemetry_id,
-                "sensor_id": item.sensor_id,
-                "hydrant_id": item.hydrant_id,
-                "location": {
-                    "latitude": item.location.latitude,
-                    "longitude": item.location.longitude,
-                },
-                "analysis": {"severity_level": 3},
-            })
 
         return DisasterSimulateResponse(
             inserted_count=count,
