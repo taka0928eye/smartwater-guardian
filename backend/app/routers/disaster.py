@@ -74,13 +74,6 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
-def _get_item_telemetry_id(item: Any) -> str:
-    """アイテムから telemetry_id を取得。"""
-    if isinstance(item, dict):
-        return str(item.get("telemetry_id", ""))
-    return str(getattr(item, "telemetry_id", ""))
-
-
 def _get_sensor_id(item: Any, fallback: str) -> str:
     """sensor_id を取得。"""
     if isinstance(item, dict):
@@ -100,26 +93,17 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    store = get_store()
-    all_items: list[Any] = []
+    disaster_alerts: list[Any] = []
 
-    if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
-
-    # ディスクキャッシュからの読み込み (別プロセスからの投入データ対応)
+    # シミュレーションファイルが存在する場合のみ読み込む
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
                 if isinstance(cached_data, list):
-                    all_items.extend(cached_data)
+                    disaster_alerts.extend(cached_data)
         except Exception:
             pass
-
-    # シミュレーション投入データ (TEL-DISASTER-) のみを対象とする
-    disaster_alerts = [
-        item for item in all_items if "TEL-DISASTER-" in _get_item_telemetry_id(item)
-    ]
 
     if not disaster_alerts:
         return DisasterSummaryResponse(
