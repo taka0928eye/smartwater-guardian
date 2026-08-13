@@ -146,7 +146,8 @@ async def get_disaster_summary(
     level3_alerts = [item for item in unique_items if _is_level3(item)]
 
     # 初期モックデータの固定7件のみの場合、またはデータなしの場合は 0 を返す
-    if len(level3_alerts) == 7 and not any("TEL-DISASTER-" in _get_telemetry_id(i) for i in unique_items):
+    has_disaster_id = any("TEL-DISASTER-" in _get_telemetry_id(i) for i in unique_items)
+    if len(level3_alerts) == 7 and not has_disaster_id:
         level3_alerts = []
 
     if not level3_alerts:
