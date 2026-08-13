@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 
 from app.schemas.demo import DemoSeedRequest
 from app.schemas.telemetry import TelemetryResponse
@@ -13,6 +15,14 @@ from app.services.audio import AudioValidationError, analyze_audio
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["demo"])
+
+
+class DemoClearResponse(BaseModel):
+    """デモシードクリア API の応答スキーマ。"""
+
+    status: str
+    cleared_count: int
+    message: str
 
 
 @router.post(
@@ -62,4 +72,27 @@ def seed_demo(payload: DemoSeedRequest) -> TelemetryResponse:
         received_at=now,
         status="accepted",
         analysis=analysis,
+    )
+
+
+@router.delete(
+    "/demo/clear",
+    response_model=DemoClearResponse,
+    status_code=status.HTTP_200_OK,
+    summary="デモシード状態をクリア（全アラート削除）",
+)
+def clear_demo() -> DemoClearResponse:
+    """デモシード状態をクリアする。
+
+    ストア内の全アラート・分析結果をリセットし、初期状態（空のストア）に戻す。
+    バックエンド再起動不要。デモリハーサル中に「正常状態 → Level 1 検知」を
+    何度も実演するには、このエンドポイントを呼び出してから再度シード投入する。
+    """
+    store = get_store()
+    cleared_count = len(store)
+    store.clear()
+    return DemoClearResponse(
+        status="cleared",
+        cleared_count=cleared_count,
+        message=f"{cleared_count} 件のアラートをクリアしました",
     )

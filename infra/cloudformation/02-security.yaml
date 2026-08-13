@@ -110,7 +110,7 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      # ポリシーなし（Secrets Manager 廃止のため。タスク定義が参照するためロールは維持）
+      # No policies (Secrets Manager not used for demo. Role kept for task definition reference)
 
   FrontendTaskRole:
     Type: AWS::IAM::Role

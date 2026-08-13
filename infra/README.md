@@ -104,93 +104,137 @@ infra/
 
 ## デプロイ手順
 
-### 初回デプロイ（ローカルまたは CI/CD）
+> ⚠️ **ビルド順序の注意（重要）**
+> frontend イメージは `NEXT_PUBLIC_API_BASE_URL`（フロントが API を呼ぶ接続先 = ALB DNS 名）を**ビルド時に固定**する
+> （`frontend/Dockerfile` の `ARG`。ECS タスク定義の環境変数上書きでは変更不可）。
+> ALB は `04-alb.yaml` のデプロイで初めて生成されるため、初回は
+> **「インフラ構築（00〜04）→ ALB DNS 名取得 → frontend イメージビルド → ECR プッシュ → アプリ構築（06〜07）」**
+> の順で進める。`deploy.ps1` は `-Phase` パラメータでこの順序に対応している。
 
-#### 1. Docker イメージ準備
+### 初回デプロイ（ローカル実行）
+
+> CI/CD（GitHub Actions）は初回では使えない。`deploy.yml` が参照する `ALB_DNS_NAME` シークレットは
+> 下記 Phase 2 で ALB を作成してから登録するため、初回構築のみローカルで行う。
+
+#### Phase 1: インフラストラクチャ構築（00〜04、ALB まで）
+
+OIDC / VPC / SG / ECR / ALB をデプロイする（この時点では frontend イメージは不要）。
+
+```powershell
+cd infra/scripts
+.\deploy.ps1 -Phase Infra -Environment dev -Region ap-northeast-1
+```
+
+`-Phase Infra` はスタック 00（GitHub OIDC）〜 04（ALB）のみをデプロイする。ECR リポジトリ（03）もここで作成される。
+
+#### Phase 2: ALB DNS 名の取得
+
+```bash
+aws elbv2 describe-load-balancers `
+  --names smartwater-guardian-alb `
+  --query 'LoadBalancers[0].DNSName' `
+  --output text `
+  --region ap-northeast-1
+```
+
+出力例: `smartwater-guardian-alb-1234567890.ap-northeast-1.elb.amazonaws.com`
+
+以降、この値を `<ALB-DNS-NAME>` と表記する。**GitHub Actions でデプロイする場合**は、この値を
+リポジトリの **Actions シークレット `ALB_DNS_NAME`** に登録する（`.github/workflows/deploy.yml` が参照）。
+
+#### Phase 3: Docker イメージ準備（ALB DNS をビルド時指定）
 
 backend：
 ```bash
 docker build -f backend/Dockerfile -t smartwater-guardian-backend:latest backend/
 ```
 
-frontend（`NEXT_PUBLIC_API_BASE_URL` をビルド時指定）：
+frontend（`NEXT_PUBLIC_API_BASE_URL` = ALB DNS 名をビルド時指定）：
 ```bash
-docker build -f frontend/Dockerfile \
-  --build-arg NEXT_PUBLIC_API_BASE_URL=http://<ALB-DNS-or-domain> \
+docker build -f frontend/Dockerfile `
+  --build-arg NEXT_PUBLIC_API_BASE_URL=http://<ALB-DNS-NAME> `
   -t smartwater-guardian-frontend:latest .
 ```
 
-#### 2. ECR リポジトリ作成（03-ecr.yaml のみデプロイ）
+#### Phase 4: イメージを ECR にプッシュ
 
 ```bash
-aws cloudformation deploy \
-  --template-file infra/cloudformation/03-ecr.yaml \
-  --stack-name smartwater-guardian-ecr \
-  --region ap-northeast-1
-```
-
-#### 3. イメージを ECR にプッシュ
-
-```bash
-aws ecr get-login-password --region ap-northeast-1 | \
+aws ecr get-login-password --region ap-northeast-1 | `
   docker login --username AWS --password-stdin <AWS-ACCOUNT-ID>.dkr.ecr.ap-northeast-1.amazonaws.com
 
-docker tag smartwater-guardian-backend:latest \
+docker tag smartwater-guardian-backend:latest `
   <AWS-ACCOUNT-ID>.dkr.ecr.ap-northeast-1.amazonaws.com/smartwater-guardian-backend:latest
 
-docker tag smartwater-guardian-frontend:latest \
+docker tag smartwater-guardian-frontend:latest `
   <AWS-ACCOUNT-ID>.dkr.ecr.ap-northeast-1.amazonaws.com/smartwater-guardian-frontend:latest
 
 docker push <AWS-ACCOUNT-ID>.dkr.ecr.ap-northeast-1.amazonaws.com/smartwater-guardian-backend:latest
 docker push <AWS-ACCOUNT-ID>.dkr.ecr.ap-northeast-1.amazonaws.com/smartwater-guardian-frontend:latest
 ```
 
-#### 4. 全スタックをデプロイ（PowerShell）
+#### Phase 5: アプリスタックをデプロイ（ECS・監視）
 
-```powershell
+```bash
 cd infra/scripts
-.\deploy.ps1 -Environment dev -Region ap-northeast-1 `
+.\deploy.ps1 -Phase App -Environment dev -Region ap-northeast-1 `
   -BackendImageTag latest -FrontendImageTag latest `
   -OrcaRouterApiKey '<ACTUAL_ORCAROUTER_API_KEY>'
 ```
 
+`-Phase App` はスタック 06（ECS）〜 07（監視）のみをデプロイする。Phase 1 の完了と、Phase 3〜4 の
+ECR プッシュが前提。
+
 API キーは ECS タスク定義の環境変数 `ORCAROUTER_API_KEY` として直接注入される（Secrets Manager はコスト削減のため不使用。未設定時は backend が安全にフォールバック動作）。
 
-または個別デプロイ：
+#### Phase 6: デプロイ確認
 
-```bash
-# 依存順
-aws cloudformation deploy --template-file infra/cloudformation/00-github-oidc.yaml --stack-name smartwater-guardian-github-oidc --region ap-northeast-1 --capabilities CAPABILITY_NAMED_IAM
-
-aws cloudformation deploy --template-file infra/cloudformation/01-network.yaml --stack-name smartwater-guardian-network --region ap-northeast-1 --parameter-overrides VpcCidr=10.0.0.0/16 NatGatewayCount=1
-
-# ... 以下同様
-```
-
-#### 5. デプロイ確認
-
-ALB DNS 名取得：
-```bash
-aws elbv2 describe-load-balancers \
-  --query 'LoadBalancers[0].DNSName' \
-  --region ap-northeast-1
-```
-
-ブラウザで `http://<ALB-DNS-NAME>` にアクセス。
+ブラウザで `http://<ALB-DNS-NAME>` にアクセス（ALB が `/api/v1/*` を backend、それ以外を frontend へルーティング）。
 
 ECS サービス状態確認：
 ```bash
-aws ecs describe-services \
-  --cluster smartwater-guardian-dev \
-  --services smartwater-guardian-backend smartwater-guardian-frontend \
+aws ecs describe-services `
+  --cluster smartwater-guardian-dev `
+  --services smartwater-guardian-backend smartwater-guardian-frontend `
   --region ap-northeast-1
+```
+
+#### 個別デプロイ（deploy.ps1 不使用時）
+
+`deploy.ps1` を使わずスタック単位でデプロイする場合も、**ALB（04）→ ALB DNS 取得 → frontend ビルド → ECR プッシュ → ECS（06）** の順を守る。スタック名は `-Environment dev` に合わせ `smartwater-guardian-dev-*` とし、Cross-Stack 参照のため各スタックの `NetworkStackName` / `SecurityStackName` / `EcrStackName` / `AlbStackName` を一致させること。
+
+```bash
+# 00: GitHub OIDC
+aws cloudformation deploy --template-file infra/cloudformation/00-github-oidc.yaml --stack-name smartwater-guardian-dev-github-oidc --region ap-northeast-1 --capabilities CAPABILITY_NAMED_IAM
+
+# 01: Network
+aws cloudformation deploy --template-file infra/cloudformation/01-network.yaml --stack-name smartwater-guardian-dev-network --region ap-northeast-1 --parameter-overrides VpcCidr=10.0.0.0/16 NatGatewayCount=1
+
+# 02: Security
+aws cloudformation deploy --template-file infra/cloudformation/02-security.yaml --stack-name smartwater-guardian-dev-security --region ap-northeast-1 --parameter-overrides NetworkStackName=smartwater-guardian-dev-network --capabilities CAPABILITY_NAMED_IAM
+
+# 03: ECR
+aws cloudformation deploy --template-file infra/cloudformation/03-ecr.yaml --stack-name smartwater-guardian-dev-ecr --region ap-northeast-1
+
+# 04: ALB（ここで ALB DNS 名が生成される → Phase 2 のコマンドで取得 → frontend をビルド・ECR プッシュ）
+aws cloudformation deploy --template-file infra/cloudformation/04-alb.yaml --stack-name smartwater-guardian-dev-alb --region ap-northeast-1 --parameter-overrides NetworkStackName=smartwater-guardian-dev-network SecurityStackName=smartwater-guardian-dev-security
+
+# 06: ECS
+aws cloudformation deploy --template-file infra/cloudformation/06-ecs.yaml --stack-name smartwater-guardian-dev-ecs --region ap-northeast-1 --parameter-overrides NetworkStackName=smartwater-guardian-dev-network SecurityStackName=smartwater-guardian-dev-security EcrStackName=smartwater-guardian-dev-ecr AlbStackName=smartwater-guardian-dev-alb BackendImageTag=latest FrontendImageTag=latest
+
+# 07: Monitoring
+aws cloudformation deploy --template-file infra/cloudformation/07-monitoring.yaml --stack-name smartwater-guardian-dev-monitoring --region ap-northeast-1 --parameter-overrides EcsStackName=smartwater-guardian-dev-ecs AlbStackName=smartwater-guardian-dev-alb
 ```
 
 ### 更新デプロイ（コード変更後）
 
-1. 対象イメージをビルド・ECR にプッシュ
+ALB DNS 名（= `NEXT_PUBLIC_API_BASE_URL`）が変わらない限り、frontend イメージを**再ビルドせずに**デプロイできる。
+
+1. 対象イメージをビルド・ECR にプッシュ（API 接続先が変わらない場合は既存イメージのタグを指定し直すだけでもよい）
 2. GitHub Actions ワークフロー実行（`workflow_dispatch`）またはローカルで `deploy.ps1` 実行
 3. ECS がタスク定義を更新し、ローリングデプロイを開始
+
+> `NEXT_PUBLIC_API_BASE_URL` はビルド時固定のため、ALB DNS 名やカスタムドメインを変更する場合は
+> frontend イメージの**再ビルドが必要**（→「既知の制約・リスク」の「ビルド時埋め込み」を参照）。
 
 ## 概算コスト（デモ向け最小構成、NAT Gateway 1台・東京リージョン）
 
@@ -212,14 +256,14 @@ aws ecs describe-services \
 
 **NAT Gateway 2台構成の場合: +$45/月（デモでは1台を推奨）**
 
-## To-Be 構成（本番向け・従来設計）
+## To-Be 構成（本番向け・将来設計）
 
 デモ（1日）向けコスト最小化のため現行構成からは廃止した、**INFRA-1 当初の本番向け設計（To-Be）**。
 デモ後の本番運用・HA・セキュリティ要件に備えて、設計内容とコスト目安をここに記録する。
 
 > 現行（As-Is）は「[アーキテクチャ概要](#アーキテクチャ概要)」のデモ向け最小構成。To-Be は WAF 適用・API キーの Secrets Manager 管理・2タスクHA を求める本番移行時の目標構成。
 
-### アーキテクチャ図（従来設計）
+### アーキテクチャ図（将来設計）
 
 ```
 Internet (HTTP)
@@ -253,7 +297,7 @@ Internet (HTTP)
   └─ ロール引き受け、ECR push、ECS タスク定義更新
 ```
 
-### 構成要素（従来設計）
+### 構成要素（将来設計）
 
 | 要素 | 内容 |
 |-----|------|
@@ -265,7 +309,7 @@ Internet (HTTP)
 | **VPC Flow Logs** | `01-network.yaml`（REJECT のみ・CloudWatch Logs へ・保持7日） |
 | **ログ保持** | `/ecs/*` ロググループは **30日** |
 
-### コスト目安（従来設計・月額・東京リージョン）
+### コスト目安（将来設計・月額・東京リージョン）
 
 | 項目 | 月額（USD） |
 |-----|-----------|

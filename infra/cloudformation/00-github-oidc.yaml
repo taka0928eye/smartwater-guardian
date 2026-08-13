@@ -48,7 +48,7 @@ Resources:
   GitHubActionsDeployRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub 'smartwater-guardian-github-deploy-${AWS::StackName}'
+      RoleName: smartwater-guardian-github-deploy-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:

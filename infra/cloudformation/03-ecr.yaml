@@ -7,8 +7,6 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: smartwater-guardian-backend
-      ScanningConfiguration:
-        ScanOnPush: true
       ImageTagMutability: IMMUTABLE
       LifecyclePolicy:
         LifecyclePolicyText: |
@@ -36,8 +34,6 @@ Resources:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: smartwater-guardian-frontend
-      ScanningConfiguration:
-        ScanOnPush: true
       ImageTagMutability: IMMUTABLE
       LifecyclePolicy:
         LifecyclePolicyText: |

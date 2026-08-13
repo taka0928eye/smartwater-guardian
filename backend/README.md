@@ -13,6 +13,7 @@
 - ✅ **BE-7**: 防災モード・被害エリアクラスタリング（`app/routers/disaster.py`）
 - ✅ **BE-8**: KPIサマリ「推定削減コスト」算定（`app/routers/kpi.py`）
 - ✅ **FR-6**: LLM 原価計測・可視化（`app/services/llm_cost.py`）
+- ✅ **DEMO-1**: デモ初期状態の投入（`app/routers/demo.py`・深刻度を意図レベルに確定）
 
 **環境**: Windows PowerShell / Python 3.12 / FastAPI 0.141
 
@@ -42,18 +43,25 @@ backend/
 │   ├── data/
 │   │   ├── __init__.py
 │   │   ├── hydrants.json      # 消火栓マスタ（BE-2）
-│   │   └── pipes.json         # 疑似GIS配管台帳（BE-4・10路線）
+│   │   ├── pipes.json         # 疑似GIS配管台帳（BE-4・10路線）
+│   │   └── repair_parts.json  # 補修部材マスタ（BE-5 フォールバック WorkOrder 用）
+│   ├── models/
+│   │   ├── leak_svm_v1.joblib        # 学習済み SVM（BE-3）
+│   │   └── leak_svm_v1.metadata.json # モデルメタ（SHA-256・学習パラメータ）
 │   ├── schemas/                # Pydantic v2 モデル（API契約）
 │   │   ├── __init__.py
 │   │   ├── telemetry.py       # TelemetryRequest / Response / AnalysisResult 等
 │   │   ├── alert.py           # AlertSummary / Detail / SensorInfo / GeoJSON 等
 │   │   ├── pipe.py            # PipeRecord / PipeInfo（BE-4）
-│   │   └── kpi.py             # KpiSummary（BE-8。is_estimate / assumption_doc で試算値を明示）
+│   │   ├── kpi.py             # KpiSummary（BE-8。is_estimate / assumption_doc で試算値を明示）
+│   │   ├── work_order.py      # WorkOrder / RepairPart（BE-5・FR-6 原価フィールド）
+│   │   ├── disaster.py        # DisasterCluster / Summary / Simulate（BE-7）
+│   │   └── demo.py            # DemoSeedRequest（DEMO-1。TelemetryRequest + level）
 │   ├── services/                # ビジネスロジック集約（router は薄く保つ）
 │   │   ├── __init__.py
-│   │   ├── audio.py           # FFT 解析 + SVM リーク判定（BE-3。486行、カバレッジ84%）
+│   │   ├── audio.py           # FFT 解析 + SVM リーク判定（BE-3。379行、カバレッジ84%）
 │   │   ├── ledger.py          # 疑似GIS配管台帳の照合（BE-4: find_pipe_by_hydrant / find_nearest_pipe）
-│   │   ├── orcarouter.py      # LLM 自動起票・リトライ分類・キャッシング（BE-5。159行、カバレッジ100%）
+│   │   ├── orcarouter.py      # LLM 自動起票・リトライ分類・キャッシング（BE-5。442行、カバレッジ100%）
 │   │   ├── llm_cost.py        # LLM 原価計測（FR-6。token→JPY 変換）
 │   │   ├── prompts.py         # Orcarouter API 用プロンプトビルダー
 │   │   └── kpi.py             # KPI「推定削減コスト」算定（BE-8。定数は docs/business-model.md §3.2 準拠）
@@ -72,22 +80,28 @@ backend/
 │   ├── check_disaster.py      # 防災モード API の E2E検証（シミュレーション投入→クラスタリング）
 │   ├── check_ledger.py        # 配管台帳照合ロジックの検証（BE-4）
 │   ├── check_orcarouter.py    # Orcarouter LLM 統合の検証（リトライ・フォールバック）
+│   ├── seed_demo.py           # デモ初期状態の投入スクリプト（DEMO-1）
 │   ├── simulate_sensor.py     # 疑似音響センサーCLI（BE-2。WAVリプレイモード対応）
 │   └── train_leak_svm.py      # SVM モデル学習・保存スクリプト（BE-3）
-├── tests/                      # pytest テスト（254 件、カバレッジ 95.94%）
+├── tests/                      # pytest テスト（297 件、カバレッジ 94%・行+branch 各 80% ゲート）
 │   ├── conftest.py            # TestClient / ストアリセット フィクスチャ
-│   ├── test_telemetry.py      # BE-1 の正常系・異常系（66 件）
+│   ├── fixtures/              # テスト共有フィクスチャ
+│   ├── test_telemetry.py      # BE-1 の正常系・異常系（238 行）
 │   ├── test_store.py          # インメモリストア単体（maxlen / 並行性）
 │   ├── test_alerts.py         # 参照 API 統合（GeoJSON）
-│   ├── test_audio.py          # FFT 解析・SVM 推論（BE-3）
+│   ├── test_audio.py          # FFT 解析・SVM 推論（BE-3。486 行）
 │   ├── test_hydrants.py       # 消火栓マスタロード
 │   ├── test_pipes.py          # 配管台帳
 │   ├── test_ledger.py         # 台帳サービス統合（BE-4）
 │   ├── test_kpi.py            # KPI 算定・API（BE-8）
-│   ├── test_orcarouter.py     # LLM 統合・リトライ・キャッシング（BE-5。716 件）
+│   ├── test_orcarouter.py     # LLM 統合・リトライ・キャッシング（BE-5。716 行）
 │   ├── test_llm_cost.py       # 原価計測（FR-6）
+│   ├── test_prompts.py        # プロンプトビルダー（BE-5）
 │   ├── test_secrets.py        # シークレット非露出検証（NFR-4。敵対的テスト）
-│   ├── test_disaster.py       # 防災モード・クラスタリング（BE-7。6 件）
+│   ├── test_disaster.py       # 防災モード・クラスタリング（BE-7）
+│   ├── test_seed_demo.py      # デモシード投入（DEMO-1）
+│   ├── test_cors_config.py    # CORS 環境変数構成（INFRA-1）
+│   ├── test_exception_handling.py # 例外→502 / 500（構造化）ハンドラ
 │   ├── test_dependencies.py   # 依存性注入
 │   └── test_simulate_sensor.py # 疑似センサーCLI
 ├── main.py                    # FastAPI アプリ本体（router 登録・CORS）
@@ -245,6 +259,7 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 | GET | `/api/v1/alerts` | アラート一覧（`?level=` / `?limit=`） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/alerts/{telemetry_id}` | アラート詳細（配管情報含む） | BE-6 | ✅ 実装済み |
 | POST | `/api/v1/alerts/{telemetry_id}/work-order` | LLM自動起票・部材選定・見積（リトライ分類・キャッシング） | BE-5 | ✅ 実装済み |
+| POST | `/api/v1/alerts/seed` | E2E 用シード投入（実在マスタ HYD-001〜010 へ L3×3 / L2×3 / L1×3 / L0×1） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/sensors` | センサー状態一覧（`?format=geojson`） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/kpi/summary` | KPIサマリ（監視数・Level別件数・推定削減コスト） | BE-8 | ✅ 実装済み |
 | POST | `/api/v1/demo/seed` | デモ初期状態の1件投入（実スペクトル算出 + 深刻度を意図レベルに確定） | DEMO-1 | ✅ 実装済み |
@@ -276,18 +291,19 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
   "hydrant_id": "HYD-001",
   "recorded_at": "2026-08-10T06:00:00Z",
   "location": { "latitude": 35.7022, "longitude": 139.7448 },
-  "sample_rate_hz": 16000,
-  "duration_sec": 2.0,
+  "sample_rate_hz": 8000,
+  "duration_sec": 1.0,
   "audio_base64": "<PCM16LE モノラル音声のBase64>",
   "battery_pct": 87
 }
 ```
 
-**BE-3 FFT解析の内容:**
-- NumPy/SciPy による 16kHz PCM 信号の FFT → 周波数スペクトル抽出
-- 正規化（mean/std）+ HighPass フィルタ（100Hz以下カット）
-- scikit-learn SVM モデル（joblib 로드）で漏水レベル判定（0〜3）
-- レイテンシ実測: 平均 0.8秒/2秒音声（NFR-1: 3秒以内達成）
+**BE-3 FFT解析の内容（MVP 契約: 8000Hz・1.0秒・8000 PCM16 samples）:**
+- NumPy/SciPy による 8kHz PCM 信号の FFT（Welch PSD・hann 窓・nperseg=1024）→ 周波数スペクトル抽出
+- 4次 Butterworth SOS の HighPass フィルタ（100Hz以下カット）
+- 14 次元特徴量（500-1500Hz 漏水帯域ほか 9 帯域エネルギー比 + RMS / スペクトル重心 / 平坦度 / エントロピー / 尖度）
+- scikit-learn SVM モデル（joblib ロード・SHA-256 検証・`train_leak_svm.py` で学習: 71 サンプル）
+  → 漏水判定（0/1）→ `band_energy_ratio` の DSP 閾値で Level 0〜3 分類（>=0.60→3 / >=0.30→2 / それ以外→1）
 - テスト: `test_audio.py`（486行、カバレッジ84%）。エラーパス（model load失敗等）の一部未カバー。
 
 **Pydantic v2 検証:**
@@ -318,5 +334,6 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 - プロジェクト規約: [../CLAUDE.md](../CLAUDE.md)
 - 要件定義: [../docs/PRD.md](../docs/PRD.md)
 - 事業モデル・KPI算定根拠: [../docs/business-model.md](../docs/business-model.md)
+- LLM 原価（FR-6）: [../docs/llm-cost.md](../docs/llm-cost.md)
 - GitHub Issues 概要: [../docs/issues-summary.md](../docs/issues-summary.md)
 - バックエンドの設計・実装規約（`app/services/audio.py` への解析ロジック集約など）は `CLAUDE.md §5` を参照。

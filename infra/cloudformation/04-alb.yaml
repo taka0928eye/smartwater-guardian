@@ -31,6 +31,7 @@ Parameters:
 Conditions:
   HasCustomDomain: !Not [!Equals [!Ref DomainName, '']]
   EnableHttpsCondition: !Equals [!Ref EnableHttps, 'true']
+  DisableHttpsCondition: !Equals [!Ref EnableHttps, 'false']
   CreateRoute53Record: !And
     - !Condition HasCustomDomain
     - !Not [!Equals [!Ref HostedZoneId, '']]
@@ -113,21 +114,12 @@ Resources:
       Port: 80
       Protocol: HTTP
       DefaultActions:
-        - Type: !If [EnableHttpsCondition, redirect, forward]
-          RedirectConfig: !If
-            - EnableHttpsCondition
-            - Protocol: HTTPS
-              Port: '443'
-              StatusCode: HTTP_301
-            - !Ref AWS::NoValue
-          TargetGroupArn: !If
-            - EnableHttpsCondition
-            - !Ref AWS::NoValue
-            - !GetAtt FrontendTargetGroup.TargetGroupArn
+        - Type: forward
+          TargetGroupArn: !GetAtt FrontendTargetGroup.TargetGroupArn
 
   HttpApiRule:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
-    Condition: !Not [!Condition EnableHttpsCondition]
+    Condition: DisableHttpsCondition
     Properties:
       ListenerArn: !Ref HttpListener
       Priority: 1

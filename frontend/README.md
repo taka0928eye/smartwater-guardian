@@ -4,7 +4,9 @@
 「SmartWater Guardian」のダッシュボード Web アプリ（Next.js / TypeScript）。
 
 - **現状のスコープ**: FE-2（深刻度共通ユーティリティ）/ FE-3（Leaflet センサー地図）/
-  FE-5（アラート一覧・詳細ドロワー）/ FE-7（KPIサマリの実データ連携・「試算値」注記）まで実装済み。
+  FE-4（音響スペクトル・波形チャート）/ FE-5（アラート一覧・詳細ドロワー）/
+  FE-6（AI 自動起票 UI・WorkOrderModal）/ FE-7（KPIサマリの実データ連携・「試算値」注記）まで実装済み。
+  さらに BE-7（防災モード）の被災エリア描画（`DisasterOverlay`）とデモのシミュレーション投入 UI を配線済み。
 - **バックエンド連携**: [`../backend`](../backend)（FastAPI）が別プロセスで起動している前提。
   未応答時はフォールバック表示に切り替わり、画面を白紙にしない。
 
@@ -33,29 +35,39 @@ frontend/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx              # ルートレイアウト
-│   │   ├── page.tsx                # ダッシュボードルート（Server Component / force-dynamic）
+│   │   ├── page.tsx                # ダッシュボードルート（Server Component / force-dynamic。モック KPI 撤去済み）
+│   │   ├── api/docs/business-model/route.ts  # docs/business-model.md 配信（Route Handler。FE-7）
 │   │   └── __tests__/
 │   │       └── page.test.tsx
 │   ├── components/
 │   │   ├── dashboard/
 │   │   │   ├── Header.tsx          # ヘッダー
-│   │   │   ├── DashboardClient.tsx # ダッシュボード本体（Client Component。KPI/アラート/地図/選択状態を束ねる）
-│   │   │   ├── KpiSummary.tsx      # KPI サマリ 5 カード（表示専用。FE-7）
+│   │   │   ├── DashboardClient.tsx # ダッシュボード本体（Client Component。アラート/KPI/センサー/防災のポーリングと選択状態を束ねる）
+│   │   │   ├── KpiSummary.tsx      # KPI サマリ 5 カード（表示専用・実データ。FE-7）
+│   │   │   ├── BusinessModelDocLink.tsx # 「前提: docs/business-model.md」モーダル表示（FE-7）
 │   │   │   └── __tests__/
 │   │   ├── alert/
 │   │   │   ├── AlertList.tsx           # アラート一覧（FE-5）
-│   │   │   ├── AlertDetailDrawer.tsx   # アラート詳細ドロワー（FE-5）
+│   │   │   ├── AlertDetailDrawer.tsx   # アラート詳細ドロワー（FE-5。音響チャート + AI 自動起票ボタン）
 │   │   │   └── __tests__/
+│   │   ├── chart/
+│   │   │   ├── SpectrumChart.tsx       # 周波数スペクトル（Recharts・漏水帯域ハイライト。FE-4）
+│   │   │   └── WaveformChart.tsx       # 時間波形（ダウンサンプリング。FE-4）
 │   │   ├── map/
 │   │   │   ├── SensorMap.tsx       # Leaflet ラッパー（next/dynamic で SSR 無効化。FE-3）
 │   │   │   ├── SensorMapInner.tsx  # 実描画（'use client'）
+│   │   │   ├── DisasterOverlay.tsx # 防災被災エリア描画（GeoJSON クラスタ。BE-7）
 │   │   │   └── __tests__/
+│   │   ├── workorder/
+│   │   │   └── WorkOrderModal.tsx      # AI 自動起票結果モーダル（FE-6。FR-6 原価フッター）
 │   │   └── common/
 │   │       ├── SeverityBadge.tsx   # 深刻度バッジ（severity.ts のメタ情報を利用）
 │   │       └── __tests__/
 │   ├── hooks/
 │   │   ├── useAlertPolling.ts      # アラート一覧の 5 秒ポーリング（失敗時は最終状態を据え置き）
 │   │   ├── useKpiPolling.ts        # KPI サマリの 5 秒ポーリング（失敗時は再スケルトンへ戻す。FE-7）
+│   │   ├── useSensorPolling.ts     # センサー GeoJSON のポーリング（地図マーカー更新）
+│   │   ├── useDisasterSummary.ts   # 防災サマリのポーリング + 即時 refresh（BE-7）
 │   │   └── __tests__/
 │   ├── lib/
 │   │   ├── api.ts                  # axios クライアント（snake_case→camelCase 変換はここで1回だけ）
@@ -64,9 +76,15 @@ frontend/
 │   │   └── __tests__/
 │   ├── types/
 │   │   ├── api.ts                  # API 契約型（SeverityLevel は severity.ts から re-export）
-│   │   └── sensor.ts               # GeoJSON 型（SensorFeatureCollection 等）
+│   │   ├── sensor.ts               # GeoJSON 型（SensorFeatureCollection 等）
+│   │   └── disaster.ts             # 防災クラスタ型（DisasterCluster 等。BE-7）
 │   └── test/
 │       └── setup.ts                # jest-dom マッチャーのセットアップ
+├── tests/e2e/                       # Playwright E2E（global-setup・8 spec・pages）
+│   ├── global-setup.ts            # バックエンド起動確認 + POST /alerts/seed でシード投入
+│   ├── alerts.spec.ts / dashboard.spec.ts / map.spec.ts / workorder.spec.ts / offline.spec.ts / disaster.spec.ts
+│   └── pages/DashboardPage.ts     # Page Object Model
+├── playwright.config.ts             # webServer（backend + frontend）・projects（main → disaster）
 ├── vitest.config.mts                # coverage.thresholds（80%）の単一ソース
 ├── eslint.config.mjs
 ├── next.config.ts
@@ -152,8 +170,19 @@ npm run lint
 |---|---|---|
 | センサー地図（GeoJSON マーカー・深刻度色分け） | `components/map/SensorMap*` | 実装済み（FE-3） |
 | アラート一覧・詳細ドロワー | `components/alert/AlertList` / `AlertDetailDrawer` | 実装済み（FE-5・5秒ポーリング） |
+| 音響スペクトル・波形チャート | `components/chart/SpectrumChart` / `WaveformChart` | 実装済み（FE-4・Recharts） |
 | KPI サマリ（監視センサー数 / Level 1〜3件数 / 推定削減コスト） | `components/dashboard/KpiSummary` | 実装済み（FE-7・実データ連携） |
-| 補修部材選定・見積の自動起票 | — | 未実装（バックエンド BE-5 待ち。呼び出すと 501） |
+| 補修部材選定・見積の自動起票 | `components/alert/AlertDetailDrawer` + `components/workorder/WorkOrderModal` | 実装済み（FE-6・`POST /alerts/{id}/work-order` 連携） |
+| 防災モード（被災エリア描画・シミュレーション） | `components/map/DisasterOverlay` + `DashboardClient` のシミュレーションボタン | 実装済み（BE-7・`useDisasterSummary` ポーリング） |
+
+### 自動起票（FE-6）と防災モード（BE-7）の補足
+
+- **自動起票**: アラート詳細の「AI自動起票」ボタンで `POST /alerts/{id}/work-order`（BE-5）を呼び、
+  補修部材・概算見積・作業指示書を `WorkOrderModal` に表示する。バックエンドが LLM 未設定・失敗時は
+  `source: "fallback"` で表示し、可用性を担保する。FR-6 の原価（`cost_yen` / `latency_ms`）もフッターに表示。
+- **防災モード**: `POST /api/v1/disaster/simulate`（バックエンド BE-7）で Level 3 アラートを一括投入し、
+  `GET /api/v1/disaster/summary` のクラスタリング結果（被災エリア・想定断水世帯・優先閉栓バルブ）を
+  `DisasterOverlay` で地図上に描画する。Level 3 が 0 件のときは何も描画しない。
 
 ### KPI サマリの表示仕様（FE-7）
 

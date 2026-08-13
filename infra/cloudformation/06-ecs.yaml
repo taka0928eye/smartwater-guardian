@@ -29,11 +29,11 @@ Parameters:
   BackendDesiredCount:
     Type: Number
     Default: 1
-    Description: Desired number of backend tasks (デモ向け最小構成 = 1)
+    Description: Desired number of backend tasks (minimum 1 for demo)
   FrontendDesiredCount:
     Type: Number
     Default: 1
-    Description: Desired number of frontend tasks (デモ向け最小構成 = 1)
+    Description: Desired number of frontend tasks (minimum 1 for demo)
   BackendCpu:
     Type: String
     Default: '256'
@@ -66,7 +66,7 @@ Parameters:
   OrcaRouterApiKey:
     Type: String
     Default: ''
-    Description: Orcarouter API key（環境変数で直接注入。Secrets Manager はデモコスト削減のため不使用）
+    Description: Orcarouter API key (injected via environment variable, Secrets Manager not used for demo)
   AllowedOrigins:
     Type: String
     Default: 'http://localhost:3000'
@@ -240,7 +240,7 @@ Resources:
 Outputs:
   ClusterArn:
     Description: ECS Cluster ARN
-    Value: !GetAtt EcsCluster.ClusterArn
+    Value: !GetAtt EcsCluster.Arn
     Export:
       Name: !Sub '${AWS::StackName}-cluster-arn'
   ClusterName:
