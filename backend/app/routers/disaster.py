@@ -22,7 +22,6 @@ from app.store import StoredTelemetry, get_store
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
 CACHE_FILE = Path("/tmp/disaster_simulated_items.json")
-_SIMULATED_FLAG = False
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -101,35 +100,25 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    global _SIMULATED_FLAG
-
-    # シミュレーション未実行時は初期状態として 0 件を返す (Pytest 対応)
-    if not _SIMULATED_FLAG and not CACHE_FILE.exists():
-        return DisasterSummaryResponse(
-            total_clusters=0,
-            total_affected_households=0,
-            clusters=[],
-        )
-
     store = get_store()
+    raw_items = store.get_all() if hasattr(store, "get_all") else []
+
+    # store 内に TEL-DISASTER- データが存在するか確認
+    store_has_sim = any("TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items)
+
     disaster_alerts: list[Any] = []
 
-    # ディスクキャッシュから復元 (プロセス分離型 BE-7 対応)
-    if CACHE_FILE.exists():
+    if store_has_sim:
+        disaster_alerts.extend([x for x in raw_items if "TEL-DISASTER-" in _get_item_telemetry_id(x)])
+    elif CACHE_FILE.exists():
+        # 別プロセス経由で投入された場合
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
-                if isinstance(cached_data, list):
+                if isinstance(cached_data, list) and cached_data:
                     disaster_alerts.extend(cached_data)
         except Exception:
             pass
-
-    # store 内のシミュレーション投入データも追加 (インメモリ型 BE-7 対応)
-    if hasattr(store, "get_all"):
-        for item in store.get_all():
-            t_id = _get_item_telemetry_id(item)
-            if "TEL-DISASTER-" in t_id:
-                disaster_alerts.append(item)
 
     if not disaster_alerts:
         return DisasterSummaryResponse(
@@ -185,9 +174,6 @@ async def get_disaster_summary(
 @router.post("/simulate", response_model=DisasterSimulateResponse)
 async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
-    global _SIMULATED_FLAG
-    _SIMULATED_FLAG = True
-
     try:
         store = get_store()
         now = datetime.now(timezone.utc)
