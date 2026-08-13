@@ -19,9 +19,6 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# シミュレーション投入データのプロセス共有バッファ
-_DISASTER_STORE_BUFFER: list[Any] = []
-
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """2点間の大円距離(メートル)を計算。"""
@@ -93,39 +90,15 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
-    # store 内部の _telemetry または _alerts を確認
-    store_telemetry = getattr(store, "_telemetry", None)
-    store_alerts = getattr(store, "_alerts", None)
-
-    # store が明示的にクリアされている(空リスト)場合は 0 件を返す
-    if store_telemetry == [] or store_alerts == []:
-        return DisasterSummaryResponse(
-            total_clusters=0,
-            total_affected_households=0,
-            clusters=[],
-        )
-
     all_items: list[Any] = []
     if hasattr(store, "get_all"):
-        all_items.extend(store.get_all())
+        all_items = store.get_all()
+    elif hasattr(store, "_telemetry"):
+        all_items = getattr(store, "_telemetry", [])
 
-    all_items.extend(_DISASTER_STORE_BUFFER)
-
-    # 重複排除
-    seen_ids = set()
-    unique_items = []
-    for item in all_items:
-        t_id = _get_telemetry_id(item)
-        if t_id:
-            if t_id not in seen_ids:
-                seen_ids.add(t_id)
-                unique_items.append(item)
-        else:
-            unique_items.append(item)
-
-    # TEL-DISASTER- を含むシミュレーション投入データのみを抽出
+    # TEL-DISASTER- を含むシミュレーション投入データのみを抽出対象とする
     disaster_alerts = [
-        item for item in unique_items if "TEL-DISASTER-" in _get_telemetry_id(item)
+        item for item in all_items if "TEL-DISASTER-" in _get_telemetry_id(item)
     ]
 
     if not disaster_alerts:
@@ -184,8 +157,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
-        _DISASTER_STORE_BUFFER.clear()
-
         for i in range(count):
             item = StoredTelemetry(
                 telemetry_id=f"TEL-DISASTER-{i+1:03d}",
@@ -207,8 +178,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
 
             if hasattr(store, "add"):
                 store.add(item)
-
-            _DISASTER_STORE_BUFFER.append(item)
 
         return DisasterSimulateResponse(
             inserted_count=count,
