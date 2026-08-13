@@ -78,7 +78,7 @@ def make_pipe() -> PipeRecord:
 
 
 def _run_async(coro: Any) -> Any:
-    """async 関数を同期的に実行するヘルパー（test_orcarouter.py の _run_with_handler と同パターン）。"""
+    """async 関数を同期的に実行するヘルパー。"""
     return asyncio.run(coro)
 
 

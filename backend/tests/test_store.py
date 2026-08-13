@@ -163,7 +163,8 @@ class TestSortAndFilter:
     def test_limit(self):
         store = InMemoryStore()
         for i in range(5):
-            store.add(make_record(f"tlm_{i}", severity=1, received_at=BASE_AT + timedelta(minutes=i)))
+            recorded_at = BASE_AT + timedelta(minutes=i)
+            store.add(make_record(f"tlm_{i}", severity=1, received_at=recorded_at))
         result = store.list_alerts(limit=2)
         assert len(result) == 2
         assert result[0].telemetry_id == "tlm_4"
@@ -262,7 +263,7 @@ class TestGetHydrants:
         assert isinstance(hydrants[0].latitude, float)
 
     def test_raises_on_missing_file(self, monkeypatch):
-        from app.store import HYDRANTS_PATH, get_hydrants
+        from app.store import HYDRANTS_PATH, _get_hydrants_from_file, get_hydrants
 
         # 存在しないパスを指すように差し替え、キャッシュ済みマスタを破棄して
         # 「サイレント空台帳にせず例外を上げる」設計を検証する。
@@ -270,7 +271,7 @@ class TestGetHydrants:
             "app.store.HYDRANTS_PATH",
             HYDRANTS_PATH.parent / "missing.json",
         )
-        get_hydrants.cache_clear()
+        _get_hydrants_from_file.cache_clear()
         with pytest.raises(RuntimeError):
             get_hydrants()
-        get_hydrants.cache_clear()  # 後続テストで本来のパスを読み直す
+        _get_hydrants_from_file.cache_clear()  # 後続テストで本来のパスを読み直す

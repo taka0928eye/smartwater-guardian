@@ -248,10 +248,10 @@ class TestCreateWorkOrder:
     def test_invalid_usage_falls_back_without_500(
         self, monkeypatch, caplog, usage
     ):
-        """usage が不正（非数値・キー欠落・負値・非 dict）でも 500 にせずフォールバック（Major #1）。
+        """usage 不正でも 500 にせずフォールバック（Major #1）。
 
-        llm_cost.calculate_and_enrich_cost() の int() 変換に不正値が届くと未捕捉の
-        ValueError → 500 になるため、orcarouter 側で検証してフォールバックへ落とす。
+        非数値・キー欠落・負値・非 dict 時に不正値がint()変換で
+        ValueError→500 になるため、orcarouter側で検証してフォールバック。
         """
         monkeypatch.setenv("ORCAROUTER_API_KEY", "sk-test")
 
@@ -336,8 +336,14 @@ class TestFallback:
     @pytest.mark.parametrize(
         "response_factory",
         [
-            pytest.param(lambda: httpx.Response(200, json={"unexpected": True}), id="missing_choices"),
-            pytest.param(lambda: httpx.Response(200, json={"choices": []}), id="empty_choices"),
+            pytest.param(
+                lambda: httpx.Response(200, json={"unexpected": True}),
+                id="missing_choices",
+            ),
+            pytest.param(
+                lambda: httpx.Response(200, json={"choices": []}),
+                id="empty_choices",
+            ),
             pytest.param(
                 lambda: httpx.Response(200, json={"choices": [{"message": "oops"}]}),
                 id="non_dict_message",
@@ -380,7 +386,7 @@ class TestFallback:
         assert "応答パース失敗" in caplog.text
 
     def test_t5_fallback_content_from_repair_parts(self, monkeypatch):
-        """フォールバックでも部材・見積合計・手順・文面が repair_parts.json 由来で生成される（受入9）。"""
+        """フォールバック時も部材・見積合計・手順・文面が repair_parts.json 由来（受入9）。"""
         monkeypatch.delenv("ORCAROUTER_API_KEY", raising=False)
         order, _ = _run_create(_success_response, "TLM-001", make_alert(), make_pipe())
 
@@ -574,7 +580,11 @@ class TestBuildFallbackWorkOrder:
             "required_workers": 1,
             "estimated_duration_hours": 1.0,
         }
-        partial = {"entries": {"ductile_iron": {"150": entry}}, "default": {**entry, "required_workers": 3}}
+        default_entry = {**entry, "required_workers": 3}
+        partial = {
+            "entries": {"ductile_iron": {"150": entry}},
+            "default": default_entry,
+        }
         monkeypatch.setattr(orcarouter, "_load_repair_parts", lambda: partial)
 
         # steel / 75 の組合わせはマスタに存在しない → default（required_workers=3）が使われる
@@ -609,11 +619,15 @@ class TestBuildFallbackWorkOrder:
         assert order.source == "fallback"
 
     def test_urgency_from_severity(self):
-        """深刻度 Level から緊急度が導出される（3→critical / 2→high / 1→medium / 0→low）。"""
-        assert build_fallback_work_order(make_alert(severity_level=3), make_pipe()).urgency == "critical"
-        assert build_fallback_work_order(make_alert(severity_level=2), make_pipe()).urgency == "high"
-        assert build_fallback_work_order(make_alert(severity_level=1), make_pipe()).urgency == "medium"
-        assert build_fallback_work_order(make_alert(severity_level=0), make_pipe()).urgency == "low"
+        """深刻度 Level から緊急度が導出される。"""
+        level3_order = build_fallback_work_order(make_alert(severity_level=3), make_pipe())
+        assert level3_order.urgency == "critical"
+        level2_order = build_fallback_work_order(make_alert(severity_level=2), make_pipe())
+        assert level2_order.urgency == "high"
+        level1_order = build_fallback_work_order(make_alert(severity_level=1), make_pipe())
+        assert level1_order.urgency == "medium"
+        level0_order = build_fallback_work_order(make_alert(severity_level=0), make_pipe())
+        assert level0_order.urgency == "low"
 
 
 class TestRepairPartsLoader:
@@ -673,10 +687,15 @@ class TestRepairPartsLoader:
         材質エントリがオブジェクトでない破損マスタでもローダーは TypeError にせず、
         ``_lookup_repair_parts`` が default へ落とす挙動と整合させる。
         """
+        part = {
+            "name": "仮部材",
+            "spec": "X",
+            "quantity": 1,
+            "unit_price_yen": 100,
+            "subtotal_yen": 100,
+        }
         valid_entry = {
-            "parts": [
-                {"name": "仮部材", "spec": "X", "quantity": 1, "unit_price_yen": 100, "subtotal_yen": 100}
-            ],
+            "parts": [part],
             "work_steps": ["仮作業"],
             "required_workers": 1,
             "estimated_duration_hours": 1.0,
@@ -695,10 +714,15 @@ class TestRepairPartsLoader:
 
     def test_non_dict_diameter_entry_ignored_by_loader(self, monkeypatch, tmp_path):
         """非 dict の口径エントリはローダー検証をスキップする（_lookup が default へ落とす）。"""
+        part = {
+            "name": "仮部材",
+            "spec": "X",
+            "quantity": 1,
+            "unit_price_yen": 100,
+            "subtotal_yen": 100,
+        }
         valid_entry = {
-            "parts": [
-                {"name": "仮部材", "spec": "X", "quantity": 1, "unit_price_yen": 100, "subtotal_yen": 100}
-            ],
+            "parts": [part],
             "work_steps": ["仮作業"],
             "required_workers": 1,
             "estimated_duration_hours": 1.0,

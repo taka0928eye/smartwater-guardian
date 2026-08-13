@@ -8,7 +8,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.store import get_store, reset_store, clear_runtime_sensors
+from app.store import clear_runtime_sensors, get_store, reset_store
 from main import app
 
 

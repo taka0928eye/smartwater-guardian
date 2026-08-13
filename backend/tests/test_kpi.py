@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from app.schemas.kpi import KpiSummary
 from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
 from app.services.kpi import KPI_ASSUMPTION_DOC, calculate_kpi_summary, expected_cost_saved
-from app.store import StoredTelemetry, get_hydrants, register_runtime_sensors, clear_runtime_sensors
+from app.store import StoredTelemetry, clear_runtime_sensors, get_hydrants, register_runtime_sensors
 
 # シードで使うスペクトル点数（test_alerts.py と同じ）
 N_SPECTRUM = 128

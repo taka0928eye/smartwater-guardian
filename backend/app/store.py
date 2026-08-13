@@ -18,6 +18,7 @@ from collections import deque
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -148,10 +149,10 @@ def reset_store() -> None:
 
 # --- 消火栓マスタローダー ---
 
-_runtime_sensors: list[dict] = []
+_runtime_sensors: list[dict[str, Any]] = []
 
 
-def register_runtime_sensors(sensors: list[dict]) -> None:
+def register_runtime_sensors(sensors: list[dict[str, Any]]) -> None:
     """防災シミュレーション用のランタイムセンサーを登録する。
 
     シミュレーションで新しいセンサーが追加された場合、``get_hydrants()``
@@ -206,7 +207,6 @@ def initialize_sensors(store: InMemoryStore) -> None:
     from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
 
     now = datetime.now(timezone.utc)
-    hydrants = get_hydrants()
 
     # hydrants.json の実データ分のみ初期化（ランタイムセンサー除外）
     base_hydrants = _get_hydrants_from_file()

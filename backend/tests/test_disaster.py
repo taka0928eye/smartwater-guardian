@@ -1,7 +1,7 @@
 """防災モード API (GET /summary, POST /simulate) のテスト。"""
 
-from app.store import get_store, reset_store, clear_runtime_sensors
 from app.services.kpi import calculate_kpi_summary
+from app.store import clear_runtime_sensors, get_store, reset_store
 
 
 def test_simulate_disaster_creates_level3_alerts(client):
@@ -18,7 +18,8 @@ def test_simulate_disaster_creates_level3_alerts(client):
     # ストア確認: Level 3 アラートが count 件以上追加されたか
     store = get_store()
     level3_alerts = store.list_alerts(level=3)
-    assert len(level3_alerts) >= count, f"Expected at least {count} Level 3 alerts, got {len(level3_alerts)}"
+    actual_count = len(level3_alerts)
+    assert actual_count >= count, f"Expected at least {count} Level 3 alerts, got {actual_count}"
 
 
 def test_simulate_disaster_summary_includes_simulated_alerts(client):

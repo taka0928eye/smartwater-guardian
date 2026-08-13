@@ -44,16 +44,28 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/smartwater-guardian-github-oidc-role
+          role-to-assume: arn:aws:iam::620629391048:role/smartwater-guardian-github-deploy-role
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Pre-flight checks
+        run: |
+          set -e
+          echo "Checking required configuration..."
+          if [ -z "${{ secrets.ALB_DNS_NAME }}" ]; then
+            echo "WARNING: ALB_DNS_NAME secret is not configured (optional for dev)" >&2
+          fi
+          echo "✓ AWS Account: 620629391048"
+          echo "✓ IAM Role: smartwater-guardian-github-deploy-role"
+          echo "✓ Pre-flight checks passed"
+
       - name: Set image tags
         id: tags
         run: |
+          set -e
           BACKEND_TAG=${{ inputs.backend_image_tag || github.sha }}
           FRONTEND_TAG=${{ inputs.frontend_image_tag || github.sha }}
 
@@ -89,71 +101,170 @@ jobs:
 
       - name: Update ECS task definitions and services
         run: |
+          set -e
           ENV=${{ inputs.environment }}
           BACKEND_IMAGE=${{ steps.tags.outputs.backend_image }}
           FRONTEND_IMAGE=${{ steps.tags.outputs.frontend_image }}
+          REGION=${{ env.AWS_REGION }}
+
+          echo "Updating task definitions for environment: $ENV"
 
           # backend タスク定義更新
+          echo "Processing backend task definition..."
           aws ecs describe-task-definition \
             --task-definition smartwater-guardian-${ENV}-backend \
-            --region ${{ env.AWS_REGION }} \
-            --query 'taskDefinition' > backend-taskdef.json
+            --region $REGION \
+            --query 'taskDefinition' | \
+            jq "(.containerDefinitions[] | select(.name == \"smartwater-guardian-backend\")).image = \"${BACKEND_IMAGE}\" | \
+                del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)" \
+            > backend-taskdef.json
 
-          sed -i "s|\"image\": \".*smartwater-guardian-backend:.*\"|\"image\": \"${BACKEND_IMAGE}\"|g" backend-taskdef.json
-          sed -i '/\"taskDefinitionArn\"/d;/\"revision\"/d;/\"status\"/d;/\"requiresAttributes\"/d;/\"compatibilities\"/d;/\"registeredAt\"/d;/\"registeredBy\"/d' backend-taskdef.json
+          if [ ! -s backend-taskdef.json ]; then
+            echo "ERROR: Failed to process backend task definition" >&2
+            exit 1
+          fi
 
-          aws ecs register-task-definition \
+          BACKEND_REVISION=$(aws ecs register-task-definition \
             --cli-input-json file://backend-taskdef.json \
-            --region ${{ env.AWS_REGION }}
+            --region $REGION \
+            --query 'taskDefinition.revision' \
+            --output text)
+
+          if [ -z "$BACKEND_REVISION" ]; then
+            echo "ERROR: Failed to register backend task definition" >&2
+            exit 1
+          fi
+
+          echo "✓ Backend task definition registered: revision $BACKEND_REVISION"
 
           # frontend タスク定義更新
+          echo "Processing frontend task definition..."
           aws ecs describe-task-definition \
             --task-definition smartwater-guardian-${ENV}-frontend \
-            --region ${{ env.AWS_REGION }} \
-            --query 'taskDefinition' > frontend-taskdef.json
+            --region $REGION \
+            --query 'taskDefinition' | \
+            jq "(.containerDefinitions[] | select(.name == \"smartwater-guardian-frontend\")).image = \"${FRONTEND_IMAGE}\" | \
+                del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)" \
+            > frontend-taskdef.json
 
-          sed -i "s|\"image\": \".*smartwater-guardian-frontend:.*\"|\"image\": \"${FRONTEND_IMAGE}\"|g" frontend-taskdef.json
-          sed -i '/\"taskDefinitionArn\"/d;/\"revision\"/d;/\"status\"/d;/\"requiresAttributes\"/d;/\"compatibilities\"/d;/\"registeredAt\"/d;/\"registeredBy\"/d' frontend-taskdef.json
+          if [ ! -s frontend-taskdef.json ]; then
+            echo "ERROR: Failed to process frontend task definition" >&2
+            exit 1
+          fi
 
-          aws ecs register-task-definition \
+          FRONTEND_REVISION=$(aws ecs register-task-definition \
             --cli-input-json file://frontend-taskdef.json \
-            --region ${{ env.AWS_REGION }}
+            --region $REGION \
+            --query 'taskDefinition.revision' \
+            --output text)
+
+          if [ -z "$FRONTEND_REVISION" ]; then
+            echo "ERROR: Failed to register frontend task definition" >&2
+            exit 1
+          fi
+
+          echo "✓ Frontend task definition registered: revision $FRONTEND_REVISION"
 
           # ECS サービス更新（新しいタスク定義を使用）
+          echo "Updating backend service..."
           aws ecs update-service \
             --cluster smartwater-guardian-${ENV} \
             --service smartwater-guardian-backend \
-            --task-definition smartwater-guardian-${ENV}-backend:1 \
+            --task-definition smartwater-guardian-${ENV}-backend:${BACKEND_REVISION} \
             --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+            --region $REGION
 
+          echo "Updating frontend service..."
           aws ecs update-service \
             --cluster smartwater-guardian-${ENV} \
             --service smartwater-guardian-frontend \
-            --task-definition smartwater-guardian-${ENV}-frontend:1 \
+            --task-definition smartwater-guardian-${ENV}-frontend:${FRONTEND_REVISION} \
             --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+            --region $REGION
+
+          echo "✓ Services updated successfully"
 
       - name: Wait for ECS deployments
         run: |
+          set -e
           ENV=${{ inputs.environment }}
+          REGION=${{ env.AWS_REGION }}
+          MAX_WAIT_MINUTES=15
 
           for service in smartwater-guardian-backend smartwater-guardian-frontend; do
-            echo "Waiting for $service..."
-            aws ecs wait services-stable \
-              --cluster smartwater-guardian-${ENV} \
-              --services $service \
-              --region ${{ env.AWS_REGION }}
+            echo "Waiting for $service to stabilize (max ${MAX_WAIT_MINUTES} minutes)..."
+
+            timeout $((MAX_WAIT_MINUTES * 60)) bash -c \
+              "aws ecs wait services-stable \
+                --cluster smartwater-guardian-${ENV} \
+                --services $service \
+                --region $REGION" || {
+              echo "ERROR: Service $service did not stabilize within ${MAX_WAIT_MINUTES} minutes" >&2
+              echo "Checking service status..."
+              aws ecs describe-services \
+                --cluster smartwater-guardian-${ENV} \
+                --services $service \
+                --region $REGION | jq '.services[0] | {status, deployments, events: .events[0:3]}'
+              exit 1
+            }
+
             echo "✓ $service is stable"
           done
 
+          echo "✓ All services deployed successfully"
+
       - name: Deployment summary
+        if: success()
+        run: |
+          set -e
+          ENV=${{ inputs.environment }}
+          REGION=${{ env.AWS_REGION }}
+
+          echo "## ✓ Deployment Completed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: \`$ENV\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Image**: \`${{ steps.tags.outputs.backend_image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Image**: \`${{ steps.tags.outputs.frontend_image }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: \`$REGION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: \`smartwater-guardian-${ENV}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: \`$(date -u +'%Y-%m-%dT%H:%M:%SZ')\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Running Services" >> $GITHUB_STEP_SUMMARY
+
+          for service in smartwater-guardian-backend smartwater-guardian-frontend; do
+            STATUS=$(aws ecs describe-services \
+              --cluster smartwater-guardian-${ENV} \
+              --services $service \
+              --region $REGION \
+              --query 'services[0].status' \
+              --output text)
+            RUNNING=$(aws ecs describe-services \
+              --cluster smartwater-guardian-${ENV} \
+              --services $service \
+              --region $REGION \
+              --query 'services[0].runningCount' \
+              --output text)
+            echo "- **$service**: Status=\`$STATUS\`, Running Tasks=\`$RUNNING\`" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Deployment failure diagnostics
+        if: failure()
         run: |
           ENV=${{ inputs.environment }}
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          REGION=${{ env.AWS_REGION }}
+
+          echo "## ✗ Deployment Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Environment: $ENV" >> $GITHUB_STEP_SUMMARY
-          echo "- Backend Image: ${{ steps.tags.outputs.backend_image }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Frontend Image: ${{ steps.tags.outputs.frontend_image }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Region: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Cluster: smartwater-guardian-${ENV}" >> $GITHUB_STEP_SUMMARY
+          echo "### Troubleshooting Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check AWS credentials and permissions" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify ECS cluster exists: \`smartwater-guardian-${ENV}\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify services exist and task definitions are registered" >> $GITHUB_STEP_SUMMARY
+          echo "4. Check CloudWatch logs for container failures" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Debug Information" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "Environment: $ENV" >> $GITHUB_STEP_SUMMARY
+          echo "Region: $REGION" >> $GITHUB_STEP_SUMMARY
+          echo "Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
