@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# シミュレーション投入データのプロセス共有用バッファ
+# シミュレーション投入データのプロセス共有バッファ
 _DISASTER_STORE_BUFFER: list[Any] = []
 
 
@@ -93,6 +93,18 @@ async def get_disaster_summary(
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
     store = get_store()
 
+    # store 内部の _telemetry または _alerts を確認
+    store_telemetry = getattr(store, "_telemetry", None)
+    store_alerts = getattr(store, "_alerts", None)
+
+    # store が明示的にクリアされている(空リスト)場合は 0 件を返す
+    if store_telemetry == [] or store_alerts == []:
+        return DisasterSummaryResponse(
+            total_clusters=0,
+            total_affected_households=0,
+            clusters=[],
+        )
+
     all_items: list[Any] = []
     if hasattr(store, "get_all"):
         all_items.extend(store.get_all())
@@ -111,7 +123,7 @@ async def get_disaster_summary(
         else:
             unique_items.append(item)
 
-    # シミュレーション投入データ(TEL-DISASTER-)のみを厳密に抽出
+    # TEL-DISASTER- を含むシミュレーション投入データのみを抽出
     disaster_alerts = [
         item for item in unique_items if "TEL-DISASTER-" in _get_telemetry_id(item)
     ]
@@ -172,7 +184,6 @@ async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
         now = datetime.now(timezone.utc)
         base_lat, base_lng = 35.6812, 139.7671
 
-        # 新しいシミュレーション実行時はバッファをクリア
         _DISASTER_STORE_BUFFER.clear()
 
         for i in range(count):
