@@ -5,11 +5,14 @@ import os
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.schemas.alert import AlertDetail
 from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.services import orcarouter
 
 
+@pytest.mark.asyncio
 async def test_llm_is_called_when_enabled():
     """ORCAROUTER_ENABLED=true と API キーが設定されている場合、LLM が呼ばれることを確認"""
     

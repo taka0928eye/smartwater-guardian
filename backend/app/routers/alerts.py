@@ -8,16 +8,35 @@ LLM 呼び出しは ``app.services.orcarouter`` にカプセル化する（CLAUD
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from typing import Literal
+from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 
 from app.dependencies import HttpClientDep
 from app.schemas.alert import AlertDetail, AlertSummary, PipeInfo
+from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.schemas.work_order import WorkOrder
 from app.services import orcarouter
 from app.services.ledger import find_pipe_by_hydrant, get_pipe_age
 from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])
+
+
+class SeedRequest(BaseModel):
+    """E2E テスト用シードリクエスト。"""
+
+    count: int = 3
+
+
+class SeedResponse(BaseModel):
+    """E2E テスト用シードレスポンス。"""
+
+    inserted_count: int
+    message: str
 
 
 def _build_pipe_info(hydrant_id: str) -> PipeInfo | None:
@@ -122,3 +141,57 @@ async def create_work_order(telemetry_id: str, client: HttpClientDep) -> WorkOrd
     )
     pipe = find_pipe_by_hydrant(record.hydrant_id)
     return await orcarouter.create_work_order(client, telemetry_id, alert, pipe)
+
+
+@router.post(
+    "/alerts/seed",
+    response_model=SeedResponse,
+    status_code=status.HTTP_200_OK,
+    summary="E2E テスト用デモシード投入",
+)
+def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
+    """E2E テスト用にデモアラートをストアへ投入する。
+
+    Level 1, 2, 3 を各 count/3 件ずつ投入する（合計 count 件）。
+    global-setup.ts から呼び出され、テスト開始前の初期状態を準備する。
+    """
+    store = get_store()
+    now = datetime.now(UTC)
+    base_lat, base_lng = 35.6812, 139.7671
+    levels_per_type = payload.count // 3 if payload.count >= 3 else 1
+
+    inserted = 0
+    severity_levels: list[Literal[1, 2, 3]] = [3, 2, 1]
+    for level in severity_levels:
+        for i in range(levels_per_type):
+            telemetry_id = f"tlm_e2e_{level}_{i}_{uuid4().hex[:8]}"
+            hydrant_id = f"HYD-{(level * 100 + i):03d}"
+            sensor_id = f"SEN-{(level * 100 + i):03d}"
+
+            cur_lat = base_lat + (i * 0.0001)
+            cur_lng = base_lng + (i * 0.0001)
+
+            stored_telemetry = StoredTelemetry(
+                telemetry_id=telemetry_id,
+                sensor_id=sensor_id,
+                hydrant_id=hydrant_id,
+                recorded_at=now,
+                received_at=now,
+                location=GeoLocation(
+                    latitude=cur_lat,
+                    longitude=cur_lng,
+                ),
+                analysis=AnalysisResult(
+                    severity_level=level,
+                    leak_confidence=90.0 + level * 2,
+                    dominant_freq_hz=100 + level * 20,
+                    band_energy_ratio=0.8 + level * 0.1,
+                ),
+            )
+            store.add(stored_telemetry)
+            inserted += 1
+
+    return SeedResponse(
+        inserted_count=inserted,
+        message=f"E2E テスト用シード投入完了: {inserted} 件のアラートをストアへ追加しました",
+    )
