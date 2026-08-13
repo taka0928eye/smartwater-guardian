@@ -18,6 +18,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import React from "react";
 
 import type { AlertDetail, AlertSummary } from "@/types/api";
+import type { DisasterSummary } from "@/types/disaster";
 import type { SensorFeatureCollection } from "@/types/sensor";
 
 // --- モック共通の記録領域（vi.mock より先に初期化されるため vi.hoisted） ---
@@ -84,16 +85,34 @@ vi.mock("@/lib/api", () => ({
       },
     ],
   }),
+  // BE-7: DashboardClient が useDisasterSummary 経由で呼ぶ。既存テストを壊さないよう
+  // デフォルトで空クラスタ（0 件）を返す（オーバーレイ非表示）。
+  fetchDisasterSummary: vi.fn().mockResolvedValue({
+    totalClusters: 0,
+    totalAffectedHouseholds: 0,
+    clusters: [],
+  }),
+  // BE-7: 防災シミュレーションボタンで呼ぶ。デフォルトは未解決（テストごとに設定）。
+  simulateDisaster: vi.fn(),
 }));
 
 // --- API モックの参照（vi.mock の後で取得する） ---
-import { fetchAlertDetail, fetchAlerts, fetchKpiSummary, fetchSensorsGeoJson } from "@/lib/api";
+import {
+  fetchAlertDetail,
+  fetchAlerts,
+  fetchDisasterSummary,
+  fetchKpiSummary,
+  fetchSensorsGeoJson,
+  simulateDisaster,
+} from "@/lib/api";
 import DashboardClient from "../DashboardClient";
 
 const mockedFetchAlerts = vi.mocked(fetchAlerts);
 const mockedFetchAlertDetail = vi.mocked(fetchAlertDetail);
 const mockedFetchKpiSummary = vi.mocked(fetchKpiSummary);
 const mockedFetchSensorsGeoJson = vi.mocked(fetchSensorsGeoJson);
+const mockedFetchDisasterSummary = vi.mocked(fetchDisasterSummary);
+const mockedSimulateDisaster = vi.mocked(simulateDisaster);
 
 /** DashboardClient に渡す最小の GeoJSON（FE-3 型）。 */
 const FEATURES: SensorFeatureCollection = {
@@ -409,5 +428,141 @@ describe("DashboardClient", () => {
     expect(
       rowsWithoutLevel0.some((row) => row.getAttribute("data-alert-id") === "t0"),
     ).toBe(false);
+  });
+});
+
+describe("防災モード（BE-7）", () => {
+  /** BE-7 契約フィクスチャ（クラスタ 1 件・世帯数 170）。 */
+  const DISASTER_SUMMARY: DisasterSummary = {
+    totalClusters: 1,
+    totalAffectedHouseholds: 170,
+    clusters: [
+      {
+        clusterId: "CLS-001",
+        centerLat: 35.6812,
+        centerLng: 139.7671,
+        affectedSensorIds: ["SEN-DISASTER-001"],
+        affectedPipeIds: ["PIPE-1"],
+        estimatedHouseholds: 170,
+        priorityValveHydrantId: "HYD-001",
+        geometry: {
+          type: "Polygon",
+          coordinates: [
+            [
+              [139.7671, 35.6812],
+              [139.7691, 35.6832],
+              [139.7671, 35.6812],
+            ],
+          ],
+        },
+      },
+    ],
+  };
+
+  it("初期表示では SensorMap の disasterSummary が空（0 クラスタ）である", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    // 初回ポーリングで空クラスタが取得され、SensorMap へ渡る
+    const props = captured.sensorMapProps.at(-1) as {
+      disasterSummary?: { totalClusters: number } | null;
+    };
+    expect(props.disasterSummary?.totalClusters).toBe(0);
+    // 防災シミュレーションボタンが表示される
+    expect(
+      screen.getByTestId("disaster-simulate-button"),
+    ).toHaveTextContent("防災シミュレーション");
+  });
+
+  it("防災シミュレーションボタンで simulate API（count=6）が呼ばれ、クラスタが地図に反映される", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedFetchDisasterSummary.mockResolvedValue(DISASTER_SUMMARY);
+    mockedSimulateDisaster.mockResolvedValue({
+      insertedCount: 6,
+      message: "震災モードシミュレーション: Level 3 アラートを 6 件一括追加しました",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("disaster-simulate-button"));
+
+    // simulate API が固定件数（DISASTER_SIMULATE_COUNT = 6）で呼ばれる
+    await waitFor(() => expect(mockedSimulateDisaster).toHaveBeenCalledWith(6));
+
+    // simulate 後の refresh で fetchDisasterSummary が再取得され、SensorMap へクラスタが渡る
+    await waitFor(() => {
+      const props = captured.sensorMapProps.at(-1) as {
+        disasterSummary?: { totalClusters: number } | null;
+      };
+      expect(props.disasterSummary?.totalClusters).toBe(1);
+    });
+
+    // 成功メッセージが表示される
+    expect(screen.getByTestId("disaster-simulate-message")).toHaveTextContent(
+      /6 件/,
+    );
+  });
+
+  it("シミュレーション中はボタンが disabled になり「シミュレーション中…」を表示する", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    // simulate を保留させ、pending 中のボタン表示を検証する
+    let resolveSimulate!: (value: {
+      insertedCount: number;
+      message: string;
+    }) => void;
+    mockedSimulateDisaster.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSimulate = resolve;
+        }),
+    );
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    const button = screen.getByTestId("disaster-simulate-button");
+    fireEvent.click(button);
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("シミュレーション中…");
+
+    // 保留を解決して終了
+    await act(async () => {
+      resolveSimulate({
+        insertedCount: 6,
+        message: "震災モードシミュレーション: Level 3 アラートを 6 件一括追加しました",
+      });
+    });
+  });
+
+  it("simulate 失敗時は控えめなエラー表示に留まり、画面は壊れない", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedSimulateDisaster.mockRejectedValue(new Error("backend down"));
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("disaster-simulate-button"));
+
+    expect(
+      await screen.findByTestId("disaster-simulate-error"),
+    ).toHaveTextContent("防災シミュレーションに失敗しました");
+    // 地図は壊れず表示される
+    expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
+  });
+
+  it("被災エリア取得失敗時は控えめにエラー表示し、画面は壊れない", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedFetchDisasterSummary.mockRejectedValue(new Error("down"));
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+
+    expect(await screen.findByTestId("disaster-error")).toHaveTextContent(
+      "被災エリアの取得に失敗しました",
+    );
+    expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
   });
 });

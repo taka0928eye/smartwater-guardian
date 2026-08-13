@@ -97,4 +97,25 @@ export class DashboardPage {
   get mapDrawnMarkers(): Locator {
     return this.page.locator('path.leaflet-interactive:not([d="M0 0"])');
   }
+
+  // --- 防災モード（BE-7） ---
+
+  /** 「防災シミュレーション」実行ボタン（Level 3 を一括投入する）。 */
+  get simulateDisasterButton(): Locator {
+    return this.page.getByTestId("disaster-simulate-button");
+  }
+
+  /**
+   * 被災エリアクラスタの Polygon（SVG path）。
+   * DisasterOverlay の clusterStyle が `className: "disaster-cluster"` を付与するため、
+   * `path.disaster-cluster` で特定できる。
+   */
+  get disasterClusters(): Locator {
+    return this.page.locator("path.disaster-cluster");
+  }
+
+  /** クラスタ Polygon クリックで開くポップアップ本文。 */
+  get disasterPopup(): Locator {
+    return this.page.locator(".leaflet-popup-content");
+  }
 }

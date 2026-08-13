@@ -59,6 +59,22 @@ export default defineConfig({
     ["list"],
     ["html", { open: "never" }],
   ],
+  // プロジェクト分離: 防災シミュレーション（シナリオ 9）は simulate で Level 3 アラートを
+  // インメモリストアへ追加するため、既存シナリオの厳密カウント検証
+  // （KPI の Level 3 件数・alertRow('HYD-003') の部分一致など）と衝突する。
+  // main（シナリオ 1〜8）を先に並列実行し、その完了後に disaster（シナリオ 9）を
+  // 直列実行する。disaster の simulate が後続テストに影響しないことを保証する。
+  projects: [
+    {
+      name: "main",
+      testIgnore: /disaster\.spec\.ts/,
+    },
+    {
+      name: "disaster",
+      testMatch: /disaster\.spec\.ts/,
+      dependencies: ["main"],
+    },
+  ],
   use: {
     ...devices["Desktop Chrome"],
     baseURL: BASE_URL,

@@ -26,13 +26,18 @@ import KpiSummary, {
   KPI_GRID_CLASS,
 } from "@/components/dashboard/KpiSummary";
 import { useAlertPolling } from "@/hooks/useAlertPolling";
+import { useDisasterSummary } from "@/hooks/useDisasterSummary";
 import { useKpiPolling } from "@/hooks/useKpiPolling";
 import { useSensorPolling } from "@/hooks/useSensorPolling";
+import { simulateDisaster } from "@/lib/api";
 import SensorMap from "@/components/map/SensorMap";
 import type { SensorFeatureCollection } from "@/types/sensor";
 
 /** アラート・KPI のポーリング間隔（ミリ秒）。 */
 export const ALERT_POLL_INTERVAL_MS = 5000;
+
+/** 防災シミュレーションで投入する Level 3 の件数（BE-7 / POST /simulate）。 */
+export const DISASTER_SIMULATE_COUNT = 6;
 
 export interface DashboardClientProps {
   /** サーバー側（page.tsx）で取得済みのセンサー GeoJSON（初期表示用。以後は useSensorPolling が引き継ぐ）。 */
@@ -52,6 +57,33 @@ export default function DashboardClient({
     ALERT_POLL_INTERVAL_MS,
   );
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+
+  // BE-7: 被災エリアクラスタのポーリング（5 秒間隔）。simulate 直後は refresh() で即時反映する。
+  const {
+    disasterSummary,
+    error: disasterError,
+    refresh: refreshDisaster,
+  } = useDisasterSummary(ALERT_POLL_INTERVAL_MS);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulateMessage, setSimulateMessage] = useState<string | null>(null);
+  const [simulateError, setSimulateError] = useState<string | null>(null);
+
+  /** 「防災シミュレーション」ボタン押下: Level 3 を一括投入してクラスタを即時反映する。
+   *  useCallback で refreshDisaster の変化時のみ参照を更新する。 */
+  const handleSimulateDisaster = useCallback(async (): Promise<void> => {
+    setIsSimulating(true);
+    setSimulateError(null);
+    try {
+      const response = await simulateDisaster(DISASTER_SIMULATE_COUNT);
+      setSimulateMessage(response.message);
+      await refreshDisaster();
+    } catch {
+      // 画面は壊さず、ボタン横に控えめなエラー表示に留める。
+      setSimulateError("防災シミュレーションに失敗しました");
+    } finally {
+      setIsSimulating(false);
+    }
+  }, [refreshDisaster]);
 
   const selectedAlert =
     alerts.find((alert) => alert.telemetryId === selectedAlertId) ?? null;
@@ -102,16 +134,55 @@ export default function DashboardClient({
 
       {/* 既存 3 列グリッド（地図 / アラート一覧 / 詳細ドロワー） */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* GIS マップ（FE-3: Leaflet センサー地図）。マーカー選択は selectedAlertId と連動 */}
+        {/* GIS マップ（FE-3: Leaflet センサー地図）。マーカー選択は selectedAlertId と連動。
+            BE-7: ヘッダーに防災シミュレーションボタンを置き、Level 3 破裂クラスタを描画する */}
         <section className="rounded-xl bg-white p-4 lg:col-span-2">
-          <h2 className="mb-2 text-sm font-semibold text-slate-500">
-            センサー地図
-          </h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-500">
+              センサー地図
+            </h2>
+            <button
+              type="button"
+              data-testid="disaster-simulate-button"
+              onClick={handleSimulateDisaster}
+              disabled={isSimulating}
+              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSimulating
+                ? "シミュレーション中…"
+                : "防災シミュレーション"}
+            </button>
+          </div>
           <SensorMap
             data={sensorFeatures}
             selectedAlertId={selectedAlertId}
             onSelectMarker={handleSelectMarker}
+            disasterSummary={disasterSummary}
           />
+          {simulateMessage ? (
+            <p
+              data-testid="disaster-simulate-message"
+              className="mt-2 text-xs text-slate-600"
+            >
+              {simulateMessage}
+            </p>
+          ) : null}
+          {simulateError ? (
+            <p
+              data-testid="disaster-simulate-error"
+              className="mt-2 text-xs text-red-600"
+            >
+              {simulateError}
+            </p>
+          ) : null}
+          {disasterError ? (
+            <p
+              data-testid="disaster-error"
+              className="mt-2 text-xs text-amber-600"
+            >
+              {disasterError}
+            </p>
+          ) : null}
         </section>
 
         {/* アラート一覧 */}

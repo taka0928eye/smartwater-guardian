@@ -17,7 +17,9 @@ import L from "leaflet";
 import { GeoJSON, MapContainer, TileLayer } from "react-leaflet";
 
 import { getSeverityColor, getSeverityLabel } from "@/lib/severity";
+import type { DisasterSummary } from "@/types/disaster";
 import type { SensorFeature, SensorFeatureCollection } from "@/types/sensor";
+import DisasterOverlay from "./DisasterOverlay";
 
 export interface SensorMapInnerProps {
   /** BE-6 の GET /api/v1/sensors?format=geojson レスポンス。 */
@@ -26,6 +28,8 @@ export interface SensorMapInnerProps {
   selectedAlertId?: string | null;
   /** マーカークリック時に呼ばれる。引数はセンサー ID（FE-5 の地図連動）。 */
   onSelectMarker?: (sensorId: string) => void;
+  /** BE-7: 被災エリアクラスタ（null なら非表示）。DashboardClient から渡される。 */
+  disasterSummary?: DisasterSummary | null;
 }
 
 /** 地図の初期ビュー。center は Leaflet[緯度, 経度] の順。 */
@@ -118,7 +122,11 @@ export function onEachFeature(feature: SensorFeature, layer: L.Layer): void {
   );
 }
 
-export default function SensorMapInner({ data, onSelectMarker }: SensorMapInnerProps) {
+export default function SensorMapInner({
+  data,
+  onSelectMarker,
+  disasterSummary = null,
+}: SensorMapInnerProps) {
   const view = calculateMapView(data); // Leaflet[lat, lng] の中心
   const layerKey = buildLayerKey(data);
   return (
@@ -150,6 +158,9 @@ export default function SensorMapInner({ data, onSelectMarker }: SensorMapInnerP
           },
         }}
       />
+      {/* BE-7: 被災エリアクラスタ（Level 3 破裂）をセンサー地図に重ねて描画する。
+          クラスタ 0 件時は DisasterOverlay が何も描画しないため、通常表示を壊さない */}
+      <DisasterOverlay summary={disasterSummary} />
     </MapContainer>
   );
 }

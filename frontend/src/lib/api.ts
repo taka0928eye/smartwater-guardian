@@ -16,6 +16,10 @@ import type {
   SeverityLevel,
   WorkOrder,
 } from "../types/api";
+import type {
+  DisasterSimulateResponse,
+  DisasterSummary,
+} from "../types/disaster";
 import type { SensorFeatureCollection } from "../types/sensor";
 
 /** NEXT_PUBLIC_API_BASE_URL はクライアントバンドルに載るため、機密情報は置かない（CLAUDE.md §5.1）。 */
@@ -143,4 +147,20 @@ export function createWorkOrder(telemetryId: string): Promise<WorkOrder> {
  *  unwrap により snake_case 7 フィールドを camelCase へ変換して返す。 */
 export function fetchKpiSummary(): Promise<KpiSummary> {
   return unwrap<KpiSummary>(apiClient.get("/api/v1/kpi/summary"));
+}
+
+/** 防災モードの被災エリアクラスタ（BE-7: GET /api/v1/disaster/summary）を取得する。
+ *  unwrap により snake_case を camelCase へ変換して返す（cluster_id -> clusterId 等）。
+ *  geometry（GeoJSON Polygon）の座標は [経度, 緯度] 順のまま保持される。 */
+export function fetchDisasterSummary(): Promise<DisasterSummary> {
+  return unwrap<DisasterSummary>(apiClient.get("/api/v1/disaster/summary"));
+}
+
+/** デモ用に Level 3 アラートを一括投入する（BE-7: POST /api/v1/disaster/simulate）。 */
+export function simulateDisaster(
+  count: number,
+): Promise<DisasterSimulateResponse> {
+  return unwrap<DisasterSimulateResponse>(
+    apiClient.post("/api/v1/disaster/simulate", null, { params: { count } }),
+  );
 }
