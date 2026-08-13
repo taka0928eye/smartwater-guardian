@@ -19,7 +19,7 @@ from app.store import StoredTelemetry, get_store
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
 
-# サーバー内でシミュレーションデータを保持するファイル/グローバルフォールバック用リスト
+# サーバー内でシミュレーションデータを保持する共有バッファ
 _SIMULATED_CACHE: list[Any] = []
 
 
@@ -79,6 +79,13 @@ def _extract_lat_lng(item: Any) -> tuple[float, float]:
     return float(lat), float(lng)
 
 
+def _get_telemetry_id(item: Any) -> str:
+    """アイテムから telemetry_id を抽出。"""
+    if isinstance(item, dict):
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
+
+
 def _is_level3(item: Any) -> bool:
     """アイテムが Level 3 アラートかどうか判定。"""
     candidates = []
@@ -132,13 +139,7 @@ async def get_disaster_summary(
     level3_alerts = [item for item in all_items if _is_level3(item)]
 
     # 初期モックデータ(7件)のみが存在しシミュレーション未実行の場合は 0 件とする
-    # (test_disaster_summary_empty 対策)
-    has_simulated = any(
-        "TEL-DISASTER-" in (
-            getattr(i, "telemetry_id", "") or (i.get("telemetry_id", "") if isinstance(i, dict) else "")
-        )
-        for i in all_items
-    )
+    has_simulated = any("TEL-DISASTER-" in _get_telemetry_id(i) for i in all_items)
 
     if not has_simulated and len(level3_alerts) == 7:
         level3_alerts = []
