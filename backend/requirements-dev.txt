@@ -3,6 +3,6 @@
 # Q4: B 確定 — pytest-cov はピン固定。Q6: C 確定 — ruff + mypy を CI ゲートに追加。
 pytest==9.1.1
 pytest-cov==7.1.0
-pytest-asyncio==0.24.0
+pytest-asyncio>=0.25.0
 ruff==0.16.2
 mypy==2.3.0

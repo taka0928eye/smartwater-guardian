@@ -16,10 +16,9 @@ async function globalSetup(config: FullConfig) {
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      const response = await fetch(`${apiBaseUrl}/health`, {
-        method: "GET",
-        timeout: 3000,
-      });
+      const response = await fetch("http://localhost:3000", {
+        signal: AbortSignal.timeout(3000),
+      }); 
       if (response.ok) {
         console.log("[global-setup] バックエンド起動確認");
         connected = true;

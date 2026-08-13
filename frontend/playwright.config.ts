@@ -42,6 +42,21 @@ const API_BASE_URL = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 /** CI 実行かどうか（ローカルでは既起動サーバーを再利用し、CI では毎回起動する）。 */
 const IS_CI = Boolean(process.env.CI);
 
+/** バックエンドの起動コマンド判定（ローカル venv と CI のグローバル Python 双方に対応） */
+const isWin = process.platform === "win32";
+const venvWin = path.resolve(__dirname, "../backend/venv/Scripts/python.exe");
+const venvUnix = path.resolve(__dirname, "../backend/venv/bin/python");
+
+let backendCommand = "python -m uvicorn main:app --port 8000";
+
+if (isWin && fs.existsSync(venvWin)) {
+  backendCommand = "venv\\Scripts\\python.exe -m uvicorn main:app --port 8000";
+} else if (!isWin && fs.existsSync(venvUnix)) {
+  backendCommand = "venv/bin/python -m uvicorn main:app --port 8000";
+} else if (!isWin) {
+  backendCommand = "python3 -m uvicorn main:app --port 8000";
+}
+
 export default defineConfig({
   testDir: "./tests/e2e",
   // デモシードを globalSetup で投入する（webServer 起動後に実行される）。
@@ -86,9 +101,8 @@ export default defineConfig({
   webServer: [
     {
       // バックエンド（FastAPI）。--reload なしで安定起動する。
-      // cwd を backend に固定し、Windows の cmd が `/` をスイッチと解釈しないよう
-      // パスはバックスラッシュで指定する（`cd ../backend && venv/Scripts/...` は不可）。
-      command: "venv\\Scripts\\uvicorn.exe main:app --port 8000",
+      // OSおよび venv の有無に応じて適切な Python 実行パスを自動判定して起動する。
+      command: backendCommand,
       cwd: path.resolve(__dirname, "../backend"),
       url: `${API_BASE_URL}/api/v1/sensors`,
       timeout: 60_000,
