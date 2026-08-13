@@ -93,10 +93,13 @@ async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
     """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
+    store = get_store()
+    raw_store_items = store.get_all() if hasattr(store, "get_all") else []
+
     disaster_alerts: list[Any] = []
 
-    # シミュレーションファイルが存在する場合のみ読み込む
-    if CACHE_FILE.exists():
+    # store 内のアイテム数が初期モック状態(7件)の場合は未シミュレーション状態とみなす
+    if len(raw_store_items) != 7 and CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
@@ -104,6 +107,13 @@ async def get_disaster_summary(
                     disaster_alerts.extend(cached_data)
         except Exception:
             pass
+
+    # store に直接追加されたシミュレーションデータ(TEL-DISASTER-)がある場合
+    if len(raw_store_items) > 7:
+        for item in raw_store_items:
+            t_id = item.get("telemetry_id") if isinstance(item, dict) else getattr(item, "telemetry_id", "")
+            if "TEL-DISASTER-" in str(t_id):
+                disaster_alerts.append(item)
 
     if not disaster_alerts:
         return DisasterSummaryResponse(
