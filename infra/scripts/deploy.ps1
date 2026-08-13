@@ -26,9 +26,9 @@ param(
     [string]$GitHubRepo = "smartwater-guardian",
     [string]$VpcCidr = "10.0.0.0/16",
     [int]$NatGatewayCount = 1,
-    [string]$OrcaRouterBaseUrl = "",
-    [string]$OrcaRouterModel = "gpt-4",
-    [string]$OrcaRouterEnabled = "false",
+    [string]$OrcaRouterBaseUrl = "https://api.orcarouter.ai/v1",
+    [string]$OrcaRouterModel = "openai/gpt-4o-mini",
+    [string]$OrcaRouterEnabled = "true",
     [string]$OrcaRouterApiKey = "",
     [string]$AllowedOrigins = "http://localhost:3000"
 )

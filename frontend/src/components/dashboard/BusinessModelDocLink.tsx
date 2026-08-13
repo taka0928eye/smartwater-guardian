@@ -48,7 +48,8 @@ export default function BusinessModelDocLink() {
       role="dialog"
       aria-modal="true"
       aria-label="docs/business-model.md"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-black/40 p-4"
+      style={{ zIndex: 10000 }}
       onClick={closeModal}
     >
       <div

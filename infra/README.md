@@ -96,9 +96,9 @@ infra/
 | `FrontendImageTag` | String | `latest` | frontend ECR イメージタグ |
 | `BackendDesiredCount` | Number | `1` | backend タスク数（デモ向け最小構成=1） |
 | `FrontendDesiredCount` | Number | `1` | frontend タスク数（デモ向け最小構成=1） |
-| `OrcaRouterBaseUrl` | String | `` | Orcarouter API ベース URL |
-| `OrcaRouterModel` | String | `gpt-4` | Orcarouter モデル名 |
-| `OrcaRouterEnabled` | String | `false` | Orcarouter 有効化 |
+| `OrcaRouterBaseUrl` | String | `https://api.orcarouter.com` | Orcarouter API ベース URL |
+| `OrcaRouterModel` | String | `gpt-4-turbo` | Orcarouter モデル名 |
+| `OrcaRouterEnabled` | String | `true` | Orcarouter 有効化 |
 | `OrcaRouterApiKey` | String | `` | Orcarouter API キー（環境変数で直接注入。Secrets Manager はコスト削減のため不使用） |
 | `AllowedOrigins` | String | `http://localhost:3000` | CORS 許可オリジン |
 
