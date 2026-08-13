@@ -88,6 +88,13 @@ def _get_hydrant_id(item: Any, fallback: str) -> str:
     return str(getattr(item, "hydrant_id", fallback))
 
 
+def _get_item_telemetry_id(item: Any) -> str:
+    """telemetry_id を取得。"""
+    if isinstance(item, dict):
+        return str(item.get("telemetry_id", ""))
+    return str(getattr(item, "telemetry_id", ""))
+
+
 @router.get("/summary", response_model=DisasterSummaryResponse)
 async def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
@@ -111,8 +118,8 @@ async def get_disaster_summary(
     # store に直接追加されたシミュレーションデータ(TEL-DISASTER-)がある場合
     if len(raw_store_items) > 7:
         for item in raw_store_items:
-            t_id = item.get("telemetry_id") if isinstance(item, dict) else getattr(item, "telemetry_id", "")
-            if "TEL-DISASTER-" in str(t_id):
+            t_id = _get_item_telemetry_id(item)
+            if "TEL-DISASTER-" in t_id:
                 disaster_alerts.append(item)
 
     if not disaster_alerts:
