@@ -120,7 +120,7 @@ infra/
 
 OIDC / VPC / SG / ECR / ALB をデプロイする（この時点では frontend イメージは不要）。
 
-```powershell
+```bash
 cd infra/scripts
 .\deploy.ps1 -Phase Infra -Environment dev -Region ap-northeast-1
 ```
@@ -193,8 +193,8 @@ API キーは ECS タスク定義の環境変数 `ORCAROUTER_API_KEY` として�
 ECS サービス状態確認：
 ```bash
 aws ecs describe-services `
-  --cluster smartwater-guardian-dev `
-  --services smartwater-guardian-backend smartwater-guardian-frontend `
+  --cluster smartwater-guardian-cluster `
+  --services smartwater-guardian-backend-service smartwater-guardian-frontend-service `
   --region ap-northeast-1
 ```
 
@@ -202,7 +202,7 @@ aws ecs describe-services `
 
 `deploy.ps1` を使わずスタック単位でデプロイする場合も、**ALB（04）→ ALB DNS 取得 → frontend ビルド → ECR プッシュ → ECS（06）** の順を守る。スタック名は `-Environment dev` に合わせ `smartwater-guardian-dev-*` とし、Cross-Stack 参照のため各スタックの `NetworkStackName` / `SecurityStackName` / `EcrStackName` / `AlbStackName` を一致させること。
 
-```bash
+```powershell
 # 00: GitHub OIDC
 aws cloudformation deploy --template-file infra/cloudformation/00-github-oidc.yaml --stack-name smartwater-guardian-dev-github-oidc --region ap-northeast-1 --capabilities CAPABILITY_NAMED_IAM
 
@@ -374,13 +374,26 @@ NAT Gateway 2台構成の場合: +$45/月
 
 CloudWatch Logs を確認：
 ```bash
-aws logs tail /ecs/smartwater-guardian-dev/backend --follow --region ap-northeast-1
+aws logs tail /ecs/smartwater-guardian-backend --follow --region ap-northeast-1
+aws logs tail /ecs/smartwater-guardian-frontend --follow --region ap-northeast-1
 ```
 
 タスク定義や IAM ロールを確認：
 ```bash
 aws ecs describe-task-definition \
-  --task-definition smartwater-guardian-dev-backend \
+  --task-definition smartwater-guardian-backend \
+  --region ap-northeast-1
+
+aws ecs describe-task-definition \
+  --task-definition smartwater-guardian-frontend \
+  --region ap-northeast-1
+```
+
+サービス状態を確認：
+```bash
+aws ecs describe-services \
+  --cluster smartwater-guardian-cluster \
+  --services smartwater-guardian-backend-service smartwater-guardian-frontend-service \
   --region ap-northeast-1
 ```
 

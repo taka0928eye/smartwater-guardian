@@ -93,6 +93,19 @@ Resources:
                   - ecs:DescribeTaskDefinition
                   - ecs:RegisterTaskDefinition
                 Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/smartwater-guardian-*'
+        - PolicyName: ECSServiceUpdate
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:UpdateService
+                Resource: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/smartwater-guardian-cluster/*'
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:DescribeClusters
+                Resource: '*'
         - PolicyName: CloudFormationStackUpdate
           PolicyDocument:
             Version: '2012-10-17'
