@@ -36,6 +36,7 @@ describe('WorkOrderModal Component', () => {
   it('モーダルの基本情報（タイトル・見積合計・緊急度）が描画されること', () => {
     render(<WorkOrderModal isOpen={true} onClose={() => {}} workOrder={mockWorkOrder as unknown as WorkOrder} />);
 
+    expect(screen.getByRole('dialog')).toHaveClass('z-[2100]');
     expect(screen.getByText(/作業指示書/)).toBeInTheDocument();
     expect(screen.getByText(/15,000/)).toBeInTheDocument();
     expect(screen.getByText(/緊急度/)).toBeInTheDocument();
