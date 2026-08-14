@@ -4,9 +4,7 @@
  * バックエンドサーバー起動後、デモシード（アラート）をインメモリストアに投入する。
  * このセットアップ完了後に全テストが並列・直列で実行される。
  */
-import { FullConfig } from "@playwright/test";
-
-async function globalSetup(config: FullConfig) {
+async function globalSetup() {
   const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
 
   // バックエンド起動を HTTP ポーリングで確認（最大 30 秒）

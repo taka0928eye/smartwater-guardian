@@ -99,8 +99,12 @@ def clear_demo() -> DemoClearResponse:
     # 防災シミュレーションで追加されたランタイムセンサーもクリアして、
     # 地図表示とKPI集計をリセット
     clear_runtime_sensors()
+    message = (
+        f"{cleared_count} 件のアラートをクリアし、"
+        "センサー地図・KPI サマリをリセットしました"
+    )
     return DemoClearResponse(
         status="cleared",
         cleared_count=cleared_count,
-        message=f"{cleared_count} 件のアラートをクリアし、センサー地図・KPI サマリをリセットしました",
+        message=message,
     )

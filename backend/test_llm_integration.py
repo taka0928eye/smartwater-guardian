@@ -29,21 +29,29 @@ async def test_llm_is_called_when_enabled():
             "choices": [{
                 "message": {
                     "content": json.dumps({
-                        "parts": [{"name": "パイプ", "spec": "100mm", "quantity": 1, "unit_price_yen": 5000, "subtotal_yen": 5000}],
+                        "parts": [
+                            {
+                                "name": "パイプ",
+                                "spec": "100mm",
+                                "quantity": 1,
+                                "unit_price_yen": 5000,
+                                "subtotal_yen": 5000,
+                            }
+                        ],
                         "total_estimate_yen": 50000,
                         "work_steps": ["修理"],
                         "required_workers": 2,
                         "estimated_duration_hours": 4.0,
                         "urgency": "high",
-                        "notification_text": "テスト"
+                        "notification_text": "テスト",
                     })
                 }
             }],
             "model": "gpt-4",
             "usage": {
                 "prompt_tokens": 100,
-                "completion_tokens": 50
-            }
+                "completion_tokens": 50,
+            },
         }
 
         mock_client = AsyncMock()

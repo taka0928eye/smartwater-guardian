@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prebuild": "node build-env.js",
+    "prebuild": "node build-env.mjs",
     "build": "next build",
-    "dev": "node build-env.js && next dev",
+    "dev": "node build-env.mjs && next dev",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

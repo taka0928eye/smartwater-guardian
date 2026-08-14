@@ -420,10 +420,9 @@ def test_clear_endpoint_clears_all_telemetry(client) -> None:
 
 def test_clear_endpoint_clears_runtime_sensors(client) -> None:
     """クリアエンドポイントがランタイムセンサーもクリアし、センサー地図に反映される。"""
-    from app.store import get_store, register_runtime_sensors
+    from app.store import register_runtime_sensors
 
     # 防災シミュレーションで追加されるランタイムセンサーをシミュレート（HydrantMaster の完全な構造）
-    store = get_store()
     runtime_sensor = {
         "sensor_id": "SNS-RUNTIME-001",
         "hydrant_id": "HYD-RUNTIME-001",

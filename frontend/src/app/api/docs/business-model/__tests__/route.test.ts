@@ -5,7 +5,7 @@
  * 環境変数 BUSINESS_MODEL_CONTENT から docs/business-model.md の内容を返し、
  * 環境変数が未設定の場合は 404 と error を返すことを検証する。
  */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { GET } from "../route";
 
 describe("GET /api/docs/business-model", () => {
