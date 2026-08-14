@@ -393,3 +393,98 @@ def test_seed_endpoint_rejects_all_zero_audio(client) -> None:
     payload["audio_base64"] = encode_audio(np.zeros(SEED_SAMPLE_RATE_HZ, dtype=np.int16))
     response = client.post("/api/v1/demo/seed", json=payload)
     assert response.status_code == 422
+
+
+# --- クリアAPI（DELETE /api/v1/demo/clear）---
+
+
+def test_clear_endpoint_clears_all_telemetry(client) -> None:
+    """クリアエンドポイントが全テレメトリをストアから削除する。"""
+    # 先にシードデータを投入
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=1))
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=2))
+    alerts = client.get("/api/v1/alerts").json()
+    assert len(alerts) == 2
+
+    # クリアを実行
+    response = client.delete("/api/v1/demo/clear")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "cleared"
+    assert body["cleared_count"] == 2
+
+    # クリア後、アラート一覧が空になる
+    alerts_after = client.get("/api/v1/alerts").json()
+    assert len(alerts_after) == 0
+
+
+def test_clear_endpoint_clears_runtime_sensors(client) -> None:
+    """クリアエンドポイントがランタイムセンサーもクリアし、センサー地図に反映される。"""
+    from app.store import get_store, register_runtime_sensors
+
+    # 防災シミュレーションで追加されるランタイムセンサーをシミュレート（HydrantMaster の完全な構造）
+    store = get_store()
+    runtime_sensor = {
+        "sensor_id": "SNS-RUNTIME-001",
+        "hydrant_id": "HYD-RUNTIME-001",
+        "name": "ランタイムテスト消火栓",
+        "latitude": 35.7022,
+        "longitude": 139.7448,
+        "pipe_id": "P-RUNTIME-001",
+    }
+    register_runtime_sensors([runtime_sensor])
+
+    # シードデータを投入
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=1))
+
+    # クリア前の状態を確認
+    sensors_before = client.get("/api/v1/sensors?format=json").json()
+    # 実マスタのセンサー数 + ランタイムセンサー 1 件
+    base_sensor_count = len(sensors_before) - 1
+
+    # クリアを実行
+    response = client.delete("/api/v1/demo/clear")
+    assert response.status_code == 200
+
+    # クリア後、ランタイムセンサーが削除される
+    sensors_after = client.get("/api/v1/sensors?format=json").json()
+    assert len(sensors_after) == base_sensor_count
+
+
+def test_clear_endpoint_resets_kpi_summary(client) -> None:
+    """クリアエンドポイント後、KPI サマリがリセット（監視センサー数も0）される。"""
+    # シードデータを投入（複数レベル）
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=1, hydrant_id="HYD-001"))
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=2, hydrant_id="HYD-002"))
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=3, hydrant_id="HYD-003"))
+
+    kpi_before = client.get("/api/v1/kpi/summary").json()
+    assert kpi_before["level1_count"] == 1
+    assert kpi_before["level2_count"] == 1
+    assert kpi_before["level3_count"] == 1
+    assert kpi_before["estimated_cost_saved_yen"] > 0
+
+    # クリアを実行
+    response = client.delete("/api/v1/demo/clear")
+    assert response.status_code == 200
+
+    # クリア後、KPI サマリが全て 0 にリセット
+    kpi_after = client.get("/api/v1/kpi/summary").json()
+    assert kpi_after["level1_count"] == 0
+    assert kpi_after["level2_count"] == 0
+    assert kpi_after["level3_count"] == 0
+    assert kpi_after["estimated_cost_saved_yen"] == 0
+
+
+def test_clear_endpoint_message_indicates_reset_complete(client) -> None:
+    """クリアエンドポイントのメッセージに地図・サマリのリセットが含まれる。"""
+    # データを投入
+    client.post("/api/v1/demo/seed", json=_build_seed_request(level=1))
+
+    # クリアを実行
+    response = client.delete("/api/v1/demo/clear")
+    assert response.status_code == 200
+    body = response.json()
+
+    # メッセージが「地図・KPI サマリをリセット」を含む
+    assert "リセット" in body["message"]

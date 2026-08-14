@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.schemas.demo import DemoSeedRequest
 from app.schemas.telemetry import TelemetryResponse
 from app.services.audio import AudioValidationError, analyze_audio
-from app.store import StoredTelemetry, get_store
+from app.store import StoredTelemetry, clear_runtime_sensors, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["demo"])
 
@@ -81,20 +81,26 @@ def seed_demo(payload: DemoSeedRequest) -> TelemetryResponse:
     "/demo/clear",
     response_model=DemoClearResponse,
     status_code=status.HTTP_200_OK,
-    summary="デモシード状態をクリア（全アラート削除）",
+    summary="デモシード状態をクリア（全アラート・地図・KPI サマリをリセット）",
 )
 def clear_demo() -> DemoClearResponse:
-    """デモシード状態をクリアする。
+    """デモシード状態を完全にクリアする。
 
-    ストア内の全アラート・分析結果をリセットし、初期状態（空のストア）に戻す。
-    バックエンド再起動不要。デモリハーサル中に「正常状態 → Level 1 検知」を
-    何度も実演するには、このエンドポイントを呼び出してから再度シード投入する。
+    - ストア内の全アラート・分析結果をリセット
+    - 防災シミュレーション時に登録されたランタイムセンサーをクリア
+
+    これにより、地図に表示されるセンサー数が 0 になり、KPI サマリの
+    監視センサー数・検知件数・削減コストもすべて 0 にリセットされる。
+    バックエンド再起動不要。
     """
     store = get_store()
     cleared_count = len(store)
     store.clear()
+    # 防災シミュレーションで追加されたランタイムセンサーもクリアして、
+    # 地図表示とKPI集計をリセット
+    clear_runtime_sensors()
     return DemoClearResponse(
         status="cleared",
         cleared_count=cleared_count,
-        message=f"{cleared_count} 件のアラートをクリアしました",
+        message=f"{cleared_count} 件のアラートをクリアし、センサー地図・KPI サマリをリセットしました",
     )
