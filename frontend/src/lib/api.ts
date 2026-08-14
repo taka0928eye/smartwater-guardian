@@ -136,6 +136,12 @@ export function fetchAlertDetail(telemetryId: string): Promise<AlertDetail> {
   );
 }
 
+/** 選択したアラートの受信音響（WAV）URLを返す。 */
+export function getAlertAudioUrl(telemetryId: string): string {
+  const baseUrl = BASE_URL.replace(/\/$/, "");
+  return `${baseUrl}/api/v1/alerts/${encodeURIComponent(telemetryId)}/audio`;
+}
+
 /** AI 自動起票を実行し、WorkOrder を取得する。 */
 export function createWorkOrder(telemetryId: string): Promise<WorkOrder> {
   return unwrap<WorkOrder>(

@@ -10,7 +10,7 @@ Level 0（正常）との対比を、決定的なシーケンスで1コマンド
   用いる。実 no-leak 音は SVM が自然に severity 0 を返す「正しい正常」になる。
 - 投入内訳は ``docs/business-model.md`` §3.4 のデモ既定値
   （Level 1×8 / Level 2×3 / Level 3×1）。
-- Level 0（正常）ベースラインを先頭に投入し、「AIだけが気づいた」対比を成立させる。
+- Level 0（正常）は既存ベースライン1件に正常専用センサー10件を追加する。
 - 同一 ``--seed`` で同一シーケンスを再現する（デモの再現性）。
 - 深刻度は ``POST /api/v1/demo/seed``（デモシード専用エンドポイント）で意図レベルに
   確定する。実スペクトルは ``analyze_audio()`` で算出され、実 leak 音は SVM でも
@@ -61,6 +61,9 @@ DEMO_COMPOSITION: dict[int, int] = {1: 8, 2: 3, 3: 1}
 # Level 0（正常）ベースラインの件数（PRD §6.1 の対比用）
 BASELINE_LEVEL = 0
 BASELINE_COUNT = 1
+ADDITIONAL_LEVEL0_COUNT = 10
+# 既存の異常デモで使う消火栓（HYD-001〜010）の件数。
+ALERT_HYDRANT_COUNT = 10
 # タイムライン表現用の相対秒（録音時刻にデモの進行を反映する）
 BASELINE_INTERVAL_SEC = 8
 STEP_INTERVAL_SEC = 4
@@ -176,21 +179,31 @@ def build_demo_sequence(
 ) -> list[DemoStep]:
     """デモ初期状態の投入シーケンスを決定的に組み立てる（純粋関数）。
 
-    - 先頭に Level 0（正常）ベースラインを置き、続いて Level 1×8 / Level 2×3 /
-      Level 3×1（§3.4 のデモ既定値）。
+    - 先頭に Level 0（正常）ベースライン1件と追加10件を置き、続いて
+      Level 1×8 / Level 2×3 / Level 3×1（§3.4 のデモ既定値）。
     - 同一 ``seed`` で同一シーケンス（再現性）。Level 1 は Level 3 より必ず先に出現。
     - 消火栓はマスタから seed でシャッフルして割り当て、件数超過時は循環させる。
     """
     if hydrants is None:
         hydrants = load_hydrants()
-    if len(hydrants) < 2:
+    required_count = ALERT_HYDRANT_COUNT + ADDITIONAL_LEVEL0_COUNT
+    if len(hydrants) < required_count:
         raise SimulationError(
             "消火栓マスタが少なすぎます。"
-            "Level 0 ベースラインと内訳投入には2件以上必要です"
+            f"正常専用10件を含むデモ投入には{required_count}件以上必要です"
         )
-    hydrant_ids = [hydrant["hydrant_id"] for hydrant in hydrants]
+    alert_hydrant_ids = [
+        hydrant["hydrant_id"] for hydrant in hydrants[:ALERT_HYDRANT_COUNT]
+    ]
+    additional_level0_ids = [
+        hydrant["hydrant_id"]
+        for hydrant in hydrants[
+            ALERT_HYDRANT_COUNT : ALERT_HYDRANT_COUNT + ADDITIONAL_LEVEL0_COUNT
+        ]
+    ]
     rng = random.Random(seed)
-    rng.shuffle(hydrant_ids)
+    rng.shuffle(alert_hydrant_ids)
+    rng.shuffle(additional_level0_ids)
 
     levels: list[int] = []
     for level, count in sorted(DEMO_COMPOSITION.items()):
@@ -200,13 +213,20 @@ def build_demo_sequence(
     offset = 0
     # Level 0 ベースラインは先頭の1件に投入し、後続ステップでは再利用しない
     # （再投入すると最新状態が上書きされ、画面上の「正常」対比が消えるため）。
-    baseline_id = hydrant_ids[0]
+    baseline_id = alert_hydrant_ids[0]
     steps.append(
         DemoStep(level=BASELINE_LEVEL, hydrant_id=baseline_id, offset_sec=offset)
     )
     offset += BASELINE_INTERVAL_SEC
+    for hydrant_id in additional_level0_ids:
+        steps.append(
+            DemoStep(level=BASELINE_LEVEL, hydrant_id=hydrant_id, offset_sec=offset)
+        )
+        offset += STEP_INTERVAL_SEC
     for index, level in enumerate(levels, start=1):
-        hydrant_id = hydrant_ids[1 + ((index - 1) % (len(hydrant_ids) - 1))]
+        hydrant_id = alert_hydrant_ids[
+            1 + ((index - 1) % (len(alert_hydrant_ids) - 1))
+        ]
         steps.append(
             DemoStep(level=level, hydrant_id=hydrant_id, offset_sec=offset)
         )
@@ -267,7 +287,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI 引数を解釈する。``--seed`` は必須（再現性担保のため）。"""
     parser = argparse.ArgumentParser(
         description="デモ初期状態を1コマンドで投入します"
-        "（Level 0 ベースライン + Level 1×8 / Level 2×3 / Level 3×1）。"
+        "（Level 0×11 + Level 1×8 / Level 2×3 / Level 3×1）。"
         "音源は実音響WAVの replay（BE-2 load_audio_file）。"
     )
     parser.add_argument(

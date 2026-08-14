@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 
 from scripts.seed_demo import (
+    ADDITIONAL_LEVEL0_COUNT,
     BASELINE_LEVEL,
     DEFAULT_AUDIO_DIR,
     DEMO_COMPOSITION,
@@ -48,7 +49,7 @@ SEED_SAMPLE_RATE_HZ = 8_000
 SEED_DURATION_SEC = 1.0
 
 # デモ既定値（docs/business-model.md §3.4）: Level 1×8 / Level 2×3 / Level 3×1
-EXPECTED_STEP_COUNT = 1 + sum(DEMO_COMPOSITION.values())
+EXPECTED_STEP_COUNT = 1 + ADDITIONAL_LEVEL0_COUNT + sum(DEMO_COMPOSITION.values())
 
 
 def _write_wav(path: Path, samples: np.ndarray, rate: int = 8_000) -> None:
@@ -87,10 +88,10 @@ def test_sequence_starts_with_level0_baseline() -> None:
 
 
 def test_sequence_composition_matches_demo_defaults() -> None:
-    """内訳が Level 1×8 / Level 2×3 / Level 3×1 になる。"""
+    """既存1件+追加10件のLevel 0と、異常レベルの既定内訳になる。"""
     steps = build_demo_sequence(seed=42)
     counts = Counter(step.level for step in steps)
-    assert counts[0] == 1  # Level 0 ベースライン
+    assert counts[0] == 11
     for level, expected in DEMO_COMPOSITION.items():
         assert counts[level] == expected
 
@@ -131,6 +132,17 @@ def test_baseline_hydrant_is_not_reused() -> None:
     steps = build_demo_sequence(seed=42)
     baseline_id = steps[0].hydrant_id
     assert all(step.hydrant_id != baseline_id for step in steps[1:])
+
+
+def test_ten_additional_level0_sensors_are_unique_and_not_reused() -> None:
+    """追加した正常10台は固有IDを持ち、異常イベントで上書きされない。"""
+    steps = build_demo_sequence(seed=42)
+    additional_level0 = [step for step in steps if step.level == 0][1:]
+    abnormal_ids = {step.hydrant_id for step in steps if step.level > 0}
+
+    assert len(additional_level0) == ADDITIONAL_LEVEL0_COUNT == 10
+    assert len({step.hydrant_id for step in additional_level0}) == 10
+    assert all(step.hydrant_id not in abnormal_ids for step in additional_level0)
 
 
 # --- replay ファイル解決（BE-2 load_audio_file 再利用）---
@@ -253,7 +265,7 @@ def test_run_seed_posts_all_steps_with_level_field(audio_dir: Path) -> None:
     assert len(captured) == EXPECTED_STEP_COUNT
 
     levels = [payload["level"] for _, payload, _ in captured]
-    assert Counter(levels) == {0: 1, **DEMO_COMPOSITION}
+    assert Counter(levels) == {0: 11, **DEMO_COMPOSITION}
     # 先頭は Level 0 ベースライン
     assert captured[0][1]["level"] == BASELINE_LEVEL
     # 実音響（replay）が使われる: MVP 契約の WAV を読み込んだ値になる

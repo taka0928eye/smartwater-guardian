@@ -101,4 +101,62 @@ test.describe("詳細ドロワー表示（シナリオ 4）", () => {
     await dashboard.drawer.getByTestId("drawer-close").click();
     await expect(dashboard.drawer).not.toBeVisible();
   });
+
+  test("選択したアラートの受信音響をWAVとして読み込める", async ({
+    page,
+    request,
+    apiBaseUrl,
+  }) => {
+    const sampleRateHz = 8_000;
+    const pcm = Buffer.alloc(sampleRateHz * 2);
+    for (let index = 0; index < sampleRateHz; index += 1) {
+      const sample = Math.round(
+        Math.sin((2 * Math.PI * 900 * index) / sampleRateHz) * 12_000,
+      );
+      pcm.writeInt16LE(sample, index * 2);
+    }
+
+    const seedResponse = await request.post(`${apiBaseUrl}/api/v1/demo/seed`, {
+      data: {
+        level: 1,
+        sensor_id: "SNS-AUDIO",
+        hydrant_id: "HYD-AUDIO",
+        recorded_at: "2026-08-14T10:00:00+09:00",
+        location: { latitude: 35.7019, longitude: 139.7444 },
+        sample_rate_hz: sampleRateHz,
+        duration_sec: 1.0,
+        audio_base64: pcm.toString("base64"),
+        battery_pct: 90,
+      },
+    });
+    expect(seedResponse.ok()).toBeTruthy();
+    const seeded = (await seedResponse.json()) as { telemetry_id: string };
+
+    const detailResponse = await request.get(
+      `${apiBaseUrl}/api/v1/alerts/${seeded.telemetry_id}`,
+    );
+    expect(detailResponse.ok()).toBeTruthy();
+    const detail = (await detailResponse.json()) as {
+      analysis: { spectrum: unknown[] };
+      waveform: unknown[];
+    };
+    expect(detail.analysis.spectrum).toHaveLength(128);
+    expect(detail.waveform).toHaveLength(256);
+
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await dashboard.openAlert("HYD-AUDIO");
+
+    const player = dashboard.drawer.getByTestId("alert-audio-player");
+    await expect(player).toBeVisible();
+    const expectedUrl = `${apiBaseUrl}/api/v1/alerts/${seeded.telemetry_id}/audio`;
+    await expect(player).toHaveAttribute("src", expectedUrl);
+
+    const audioResponse = await request.get(expectedUrl);
+    expect(audioResponse.ok()).toBeTruthy();
+    expect(audioResponse.headers()["content-type"]).toBe("audio/wav");
+    expect((await audioResponse.body()).subarray(0, 4).toString("ascii")).toBe(
+      "RIFF",
+    );
+  });
 });

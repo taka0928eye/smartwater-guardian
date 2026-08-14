@@ -78,5 +78,85 @@
     "latitude": 35.6355,
     "longitude": 139.7048,
     "pipe_id": "P-010"
+  },
+  {
+    "hydrant_id": "HYD-011",
+    "sensor_id": "SNS-011",
+    "name": "千代田区丸の内1丁目 消火栓",
+    "latitude": 35.6812,
+    "longitude": 139.7671,
+    "pipe_id": "P-003"
+  },
+  {
+    "hydrant_id": "HYD-012",
+    "sensor_id": "SNS-012",
+    "name": "中央区銀座4丁目 消火栓",
+    "latitude": 35.6717,
+    "longitude": 139.7649,
+    "pipe_id": "P-004"
+  },
+  {
+    "hydrant_id": "HYD-013",
+    "sensor_id": "SNS-013",
+    "name": "中央区築地4丁目 消火栓",
+    "latitude": 35.6655,
+    "longitude": 139.7707,
+    "pipe_id": "P-004"
+  },
+  {
+    "hydrant_id": "HYD-014",
+    "sensor_id": "SNS-014",
+    "name": "港区六本木6丁目 消火栓",
+    "latitude": 35.6628,
+    "longitude": 139.7314,
+    "pipe_id": "P-006"
+  },
+  {
+    "hydrant_id": "HYD-015",
+    "sensor_id": "SNS-015",
+    "name": "港区赤坂3丁目 消火栓",
+    "latitude": 35.6745,
+    "longitude": 139.7369,
+    "pipe_id": "P-001"
+  },
+  {
+    "hydrant_id": "HYD-016",
+    "sensor_id": "SNS-016",
+    "name": "新宿区四谷1丁目 消火栓",
+    "latitude": 35.686,
+    "longitude": 139.73,
+    "pipe_id": "P-001"
+  },
+  {
+    "hydrant_id": "HYD-017",
+    "sensor_id": "SNS-017",
+    "name": "台東区浅草2丁目 消火栓",
+    "latitude": 35.7148,
+    "longitude": 139.7967,
+    "pipe_id": "P-007"
+  },
+  {
+    "hydrant_id": "HYD-018",
+    "sensor_id": "SNS-018",
+    "name": "豊島区西池袋1丁目 消火栓",
+    "latitude": 35.7295,
+    "longitude": 139.7109,
+    "pipe_id": "P-008"
+  },
+  {
+    "hydrant_id": "HYD-019",
+    "sensor_id": "SNS-019",
+    "name": "渋谷区恵比寿南1丁目 消火栓",
+    "latitude": 35.6467,
+    "longitude": 139.7101,
+    "pipe_id": "P-010"
+  },
+  {
+    "hydrant_id": "HYD-020",
+    "sensor_id": "SNS-020",
+    "name": "港区高輪3丁目 消火栓",
+    "latitude": 35.6285,
+    "longitude": 139.7387,
+    "pipe_id": "P-009"
   }
 ]

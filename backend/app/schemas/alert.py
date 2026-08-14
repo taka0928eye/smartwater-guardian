@@ -54,11 +54,28 @@ class PipeInfo(BaseModel):
     age_years: int
 
 
+class WaveformPoint(BaseModel):
+    """受信PCMから抽出した時間軸波形の1点。"""
+
+    model_config = ConfigDict(strict=True)
+
+    time_ms: float = Field(ge=0.0)
+    amplitude: float = Field(ge=-1.0, le=1.0)
+
+
 class AlertDetail(AlertSummary):
     """アラート詳細（GET /api/v1/alerts/{telemetry_id}）。"""
 
     location: GeoLocation
     analysis: AnalysisResult
+    has_audio: bool = Field(
+        default=False,
+        description="受信時の実音響をWAVとして再生できるか",
+    )
+    waveform: list[WaveformPoint] = Field(
+        default_factory=list,
+        description="受信PCMから抽出した時間軸波形",
+    )
     pipe_info: PipeInfo | None = Field(
         default=None,
         description="配管台帳情報（該当消火栓が台帳に登録されていれば実データ、未登録時は None）",

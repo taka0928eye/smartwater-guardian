@@ -12,15 +12,15 @@ def load_hydrants() -> list[dict]:
     return json.loads(HYDRANTS_PATH.read_text(encoding="utf-8"))
 
 
-def test_hydrants_json_contains_exactly_10_records():
-    assert len(load_hydrants()) == 10
+def test_hydrants_json_contains_exactly_20_records():
+    assert len(load_hydrants()) == 20
 
 
 def test_hydrant_and_sensor_ids_are_unique():
     hydrants = load_hydrants()
 
-    assert len({hydrant["hydrant_id"] for hydrant in hydrants}) == 10
-    assert len({hydrant["sensor_id"] for hydrant in hydrants}) == 10
+    assert len({hydrant["hydrant_id"] for hydrant in hydrants}) == 20
+    assert len({hydrant["sensor_id"] for hydrant in hydrants}) == 20
 
 
 def test_hydrant_locations_are_valid_lat_lon_ranges():

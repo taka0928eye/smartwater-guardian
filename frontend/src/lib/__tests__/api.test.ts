@@ -20,6 +20,7 @@ import {
   fetchKpiSummary,
   fetchSensors,
   fetchSensorsGeoJson,
+  getAlertAudioUrl,
 } from "../api";
 
 const MOCK_SENSOR = {
@@ -42,6 +43,8 @@ const MOCK_ALERT_SUMMARY = {
 const MOCK_ALERT_DETAIL = {
   ...MOCK_ALERT_SUMMARY,
   location: { latitude: 35.7022, longitude: 139.7448 },
+  has_audio: true,
+  waveform: [{ time_ms: 0.125, amplitude: -0.5 }],
   analysis: {
     leak_confidence: 88,
     severity_level: 3,
@@ -313,6 +316,7 @@ describe("fetchAlertDetail", () => {
       { freqHz: 1200, magnitude: 0.9 },
     ]);
     expect(detail.analysis?.dominantFreqHz).toBe(1200);
+    expect(detail.waveform).toEqual([{ timeMs: 0.125, amplitude: -0.5 }]);
     // pipeInfo も変換されている
     expect(detail.pipeInfo).toEqual({
       pipeId: "P-001",
@@ -331,6 +335,14 @@ describe("fetchAlertDetail", () => {
     const result = await fetchAlertDetail("tlm_001");
     expect(result.pipeInfo).toBeNull();
     expect(result.analysis).toBeNull();
+  });
+});
+
+describe("getAlertAudioUrl", () => {
+  it("telemetry IDをURLエンコードして実音響WAVのURLを返す", () => {
+    expect(getAlertAudioUrl("tlm 001/異常")).toBe(
+      "http://localhost:8000/api/v1/alerts/tlm%20001%2F%E7%95%B0%E5%B8%B8/audio",
+    );
   });
 });
 

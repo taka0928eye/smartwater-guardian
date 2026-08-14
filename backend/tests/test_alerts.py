@@ -12,8 +12,12 @@ FastAPI TestClient で検証する。ストアは ``store`` フィクスチャ�
 
 from __future__ import annotations
 
+import base64
+import io
+import wave
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -191,6 +195,75 @@ class TestAlertDetail:
         assert response.status_code == 404
 
 
+class TestAlertAudio:
+    """GET /api/v1/alerts/{telemetry_id}/audio の実音響WAV。"""
+
+    @staticmethod
+    def _telemetry_payload() -> tuple[dict, bytes]:
+        sample_rate_hz = 8_000
+        time_axis = np.arange(sample_rate_hz, dtype=np.float64) / sample_rate_hz
+        samples = (np.sin(2.0 * np.pi * 900.0 * time_axis) * 12_000).astype("<i2")
+        pcm_bytes = samples.tobytes()
+        return (
+            {
+                "sensor_id": "SNS-001",
+                "hydrant_id": "HYD-001",
+                "recorded_at": "2026-08-14T10:00:00+09:00",
+                "location": {"latitude": 35.7019, "longitude": 139.7444},
+                "sample_rate_hz": sample_rate_hz,
+                "duration_sec": 1.0,
+                "audio_base64": base64.b64encode(pcm_bytes).decode("ascii"),
+                "battery_pct": 90,
+            },
+            pcm_bytes,
+        )
+
+    def test_ingested_audio_is_returned_as_the_same_pcm_in_wav(self, client):
+        payload, expected_pcm = self._telemetry_payload()
+        ingest_response = client.post("/api/v1/telemetry", json=payload)
+        assert ingest_response.status_code == 200
+        telemetry_id = ingest_response.json()["telemetry_id"]
+
+        detail = client.get(f"/api/v1/alerts/{telemetry_id}")
+        assert detail.status_code == 200
+        detail_body = detail.json()
+        assert detail_body["has_audio"] is True
+        waveform = detail_body["waveform"]
+        assert len(waveform) == 256
+        assert waveform[0] == {"time_ms": 0.0, "amplitude": 0.0}
+        assert waveform[-1]["time_ms"] == pytest.approx(999.875)
+        last_sample = int.from_bytes(expected_pcm[-2:], "little", signed=True)
+        assert waveform[-1]["amplitude"] == pytest.approx(last_sample / 32768.0)
+
+        response = client.get(f"/api/v1/alerts/{telemetry_id}/audio")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.headers["cache-control"] == "no-store"
+
+        with wave.open(io.BytesIO(response.content), "rb") as wav_file:
+            assert wav_file.getnchannels() == 1
+            assert wav_file.getsampwidth() == 2
+            assert wav_file.getframerate() == 8_000
+            assert wav_file.readframes(wav_file.getnframes()) == expected_pcm
+
+    def test_existing_alert_without_audio_reports_unavailable(self, client, store):
+        store.add(make_record("tlm_without_audio"))
+
+        detail = client.get("/api/v1/alerts/tlm_without_audio")
+        assert detail.status_code == 200
+        assert detail.json()["has_audio"] is False
+        assert detail.json()["waveform"] == []
+
+        response = client.get("/api/v1/alerts/tlm_without_audio/audio")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "このアラートには音声データがありません"
+
+    def test_unknown_alert_audio_returns_404(self, client):
+        response = client.get("/api/v1/alerts/tlm_not_exist/audio")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "テレメトリ tlm_not_exist は見つかりません"
+
+
 class TestWorkOrder:
     """POST /api/v1/alerts/{telemetry_id}/work-order（BE-5 実装後）。
 
@@ -241,7 +314,7 @@ class TestListSensors:
         assert response.status_code == 200
 
         body = response.json()
-        assert len(body) == 10  # hydrants.json の件数
+        assert len(body) == 20  # hydrants.json の件数
         item = body[0]
         assert set(item.keys()) == {
             "sensor_id",
@@ -296,7 +369,7 @@ class TestListSensors:
         body = response.json()
         assert body["type"] == "FeatureCollection"
         features = body["features"]
-        assert len(features) == 10
+        assert len(features) == 20
         for feature in features:
             assert feature["type"] == "Feature"
             assert feature["geometry"]["type"] == "Point"
