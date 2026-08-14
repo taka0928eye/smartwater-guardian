@@ -13,7 +13,7 @@
         [139.7461, 35.7011]
       ]
     },
-    "hydrant_ids": ["HYD-001"]
+    "hydrant_ids": ["HYD-001", "HYD-015", "HYD-016"]
   },
   {
     "pipe_id": "P-002",
@@ -45,7 +45,7 @@
         [139.776, 35.6806]
       ]
     },
-    "hydrant_ids": ["HYD-003"]
+    "hydrant_ids": ["HYD-003", "HYD-011"]
   },
   {
     "pipe_id": "P-004",
@@ -61,7 +61,7 @@
         [139.7598, 35.6661]
       ]
     },
-    "hydrant_ids": ["HYD-004"]
+    "hydrant_ids": ["HYD-004", "HYD-012", "HYD-013"]
   },
   {
     "pipe_id": "P-005",
@@ -93,7 +93,7 @@
         [139.7019, 35.6591]
       ]
     },
-    "hydrant_ids": ["HYD-006"]
+    "hydrant_ids": ["HYD-006", "HYD-014"]
   },
   {
     "pipe_id": "P-007",
@@ -109,7 +109,7 @@
         [139.7786, 35.7117]
       ]
     },
-    "hydrant_ids": ["HYD-007"]
+    "hydrant_ids": ["HYD-007", "HYD-017"]
   },
   {
     "pipe_id": "P-008",
@@ -125,7 +125,7 @@
         [139.7618, 35.7077]
       ]
     },
-    "hydrant_ids": ["HYD-008"]
+    "hydrant_ids": ["HYD-008", "HYD-018"]
   },
   {
     "pipe_id": "P-009",
@@ -141,7 +141,7 @@
         [139.7246, 35.6257]
       ]
     },
-    "hydrant_ids": ["HYD-009"]
+    "hydrant_ids": ["HYD-009", "HYD-020"]
   },
   {
     "pipe_id": "P-010",
@@ -157,6 +157,6 @@
         [139.7062, 35.6351]
       ]
     },
-    "hydrant_ids": ["HYD-010"]
+    "hydrant_ids": ["HYD-010", "HYD-019"]
   }
 ]

@@ -155,6 +155,7 @@ describe("AlertList", () => {
     );
     fireEvent.click(alertRow("t2")!);
     expect(onSelect).toHaveBeenCalledWith("t2");
+    expect(screen.getByText("55点")).toBeInTheDocument();
   });
 
   it("アラート0件時は例外にならず空状態メッセージを表示する", () => {

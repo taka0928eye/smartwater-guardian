@@ -104,8 +104,8 @@ class TestCalculateKpiSummary:
         assert summary.level2_count == 3
         assert summary.level3_count == 1
         assert summary.estimated_cost_saved_yen == 2_048_400
-        # total_sensors は hydrants.json の実件数（現状10件）と一致（S-3）
-        assert summary.total_sensors == len(get_hydrants()) == 10
+        # total_sensors は hydrants.json の実件数（現状20件）と一致（S-3）
+        assert summary.total_sensors == len(get_hydrants()) == 20
         # 試算値である旨と算定根拠を常時明示
         assert summary.is_estimate is True
         assert summary.assumption_doc == KPI_ASSUMPTION_DOC
@@ -160,7 +160,7 @@ class TestKpiSummaryEndpoint:
         assert body["is_estimate"] is True
 
     def test_empty_store_returns_200_with_zeros(self, client, store) -> None:
-        # S-4: 空ストアでも 200 で全項目0・total_sensors=10（500にしない）
+        # S-4: 空ストアでも 200 で全項目0・total_sensors=20（500にしない）
         response = client.get("/api/v1/kpi/summary")
         assert response.status_code == 200
         body = response.json()
@@ -168,7 +168,7 @@ class TestKpiSummaryEndpoint:
         assert body["level2_count"] == 0
         assert body["level3_count"] == 0
         assert body["estimated_cost_saved_yen"] == 0
-        assert body["total_sensors"] == 10
+        assert body["total_sensors"] == 20
         assert body["assumption_doc"] == KPI_ASSUMPTION_DOC
 
 
@@ -218,9 +218,9 @@ class TestRuntimeSensors:
     """
 
     def test_register_runtime_sensors_increases_total_count(self, store) -> None:
-        # 初期状態: hydrants.json の 10 件
+        # 初期状態: hydrants.json の 20 件
         summary_before = calculate_kpi_summary()
-        assert summary_before.total_sensors == 10
+        assert summary_before.total_sensors == 20
 
         # ランタイムセンサーを 6 件登録
         simulated_sensors = [
@@ -236,14 +236,14 @@ class TestRuntimeSensors:
         ]
         register_runtime_sensors(simulated_sensors)
 
-        # 登録後: 10 + 6 = 16 件になるべき
+        # 登録後: 20 + 6 = 26 件になるべき
         summary_after = calculate_kpi_summary()
-        assert summary_after.total_sensors == 16
+        assert summary_after.total_sensors == 26
 
         # クリア後: 元に戻る
         clear_runtime_sensors()
         summary_cleared = calculate_kpi_summary()
-        assert summary_cleared.total_sensors == 10
+        assert summary_cleared.total_sensors == 20
 
     def test_runtime_sensors_survive_empty_store(self, store) -> None:
         # ストアが空でも登録されたセンサーは有効
@@ -259,33 +259,33 @@ class TestRuntimeSensors:
         ]
         register_runtime_sensors(simulated_sensors)
 
-        # ストアが空でも total_sensors は 11（10 + 1）
+        # ストアが空でも total_sensors は 21（20 + 1）
         summary = calculate_kpi_summary()
-        assert summary.total_sensors == 11
+        assert summary.total_sensors == 21
         assert summary.level1_count == 0
         assert summary.level2_count == 0
         assert summary.level3_count == 0
 
 
 class TestInitialSensorState:
-    """最初の 10 台のセンサの初期正常状態（ユーザー要求）。
+    """マスタ20台のセンサの初期正常状態（ユーザー要求）。
 
     hydrants.json のセンサは初期状態で全て正常（severity_level=0）として初期化される。
     """
 
     def test_initial_sensors_are_normal(self, store) -> None:
-        # アプリ初期化時、hydrants.json の10台は全て正常状態で ストアに登録される
+        # アプリ初期化時、hydrants.json の20台は全て正常状態でストアに登録される
         from app.store import initialize_sensors
         initialize_sensors(store)
 
         # ストアが empty で かつ初期化後
         alerts = store.get_all()
 
-        # 10 件の正常状態レコード（Level 0）が登録されているはず
-        assert len(alerts) == 10
+        # 20 件の正常状態レコード（Level 0）が登録されているはず
+        assert len(alerts) == 20
         for alert in alerts:
             assert alert.analysis.severity_level == 0
-            assert alert.sensor_id in [f"SNS-{i:03d}" for i in range(1, 11)]
+            assert alert.sensor_id in [f"SNS-{i:03d}" for i in range(1, 21)]
 
     def test_kpi_summary_counts_initial_normal_sensors(self, store) -> None:
         # 初期化後、KPI サマリで Level 1-3 はすべて 0
@@ -297,4 +297,4 @@ class TestInitialSensorState:
         assert summary.level2_count == 0
         assert summary.level3_count == 0
         # 正常状態は集計対象外（Level 0）
-        assert summary.total_sensors == 10
+        assert summary.total_sensors == 20

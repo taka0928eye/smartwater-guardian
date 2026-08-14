@@ -3,17 +3,15 @@
  *
  * シナリオ 2（地図操作）: マーカー描画・マーカー選択（詳細ドロワー連動）・ズーム操作。
  *
- * 前提: SSR 取得（GET /api/v1/sensors?format=geojson）で 10 基の消火栓マーカーが描画される。
+ * 前提: SSR 取得（GET /api/v1/sensors?format=geojson）でマスター登録済みの消火栓マーカーが描画される。
  * Leaflet は**画面外のマーカーを `d="M0 0"`（非描画化）**するため、クリック・カウントの
  * 対象は実描画マーカー（`d` が `M0 0` 以外）を `DashboardPage.mapDrawnMarkers` で選ぶ
  * （`d="M0 0"` でもストローク分の境界ボックスが残り Playwright の可視判定を満たすため、
  *  `filter({ visible: true })` では除外できない）。
  *
- * 既定ビュー（全 10 基の重心 = 中心 / zoom 15）では一部のマーカーのみ実描画される。
- * シード（global-setup）は実在マスタ 10 基すべてへアラートを投入するため、
- * どの実描画マーカーをクリックしても詳細ドロワーが開く（FE-5 の地図連動）。
+ * 既定ビュー（全消火栓の重心 = 中心 / zoom 15）では一部のマーカーのみ実描画される。
  *
- * ズーム検証は**ズームアウトで実描画マーカーが増える**ことを使う（画面外 9 基が描画範囲に
+ * ズーム検証は**ズームアウトで実描画マーカーが増える**ことを使う（画面外のマーカーが描画範囲に
  * 入るため決定論的。ズームイン直後の pane transform はアニメーション収束で元に戻るため
  * 不安定で、ズームレベルは DOM から直接読めない）。
  *
@@ -24,15 +22,20 @@ import { test, expect } from "./fixtures";
 import { DashboardPage } from "./pages/DashboardPage";
 
 test.describe("センサー地図（シナリオ 2）", () => {
-  test("マーカーが描画される（10 基の消火栓）", async ({ page }) => {
+  test("マスター登録済みの消火栓マーカーが描画される", async ({ page, request }) => {
     const dashboard = new DashboardPage(page);
+    const response = await request.get(
+      `${process.env.E2E_API_BASE_URL ?? "http://localhost:8000"}/api/v1/sensors`,
+    );
+    expect(response.ok()).toBeTruthy();
+    const sensors = (await response.json()) as unknown[];
     await dashboard.goto();
 
     await expect(dashboard.map).toBeVisible();
-    // GeoJSON から 10 基すべての CircleMarker（SVG path）が生成される
+    // GeoJSON からマスター件数分の CircleMarker（SVG path）が生成される
     await expect
       .poll(async () => dashboard.mapMarkers.count(), { timeout: 10_000 })
-      .toBe(10);
+      .toBe(sensors.length);
     // 既定ビューでは実描画マーカーが存在する（画面外マーカーは d="M0 0" で非描画）
     await expect(dashboard.mapDrawnMarkers.first()).toBeVisible();
   });
@@ -44,8 +47,7 @@ test.describe("センサー地図（シナリオ 2）", () => {
     // マーカー選択はアラート一覧と連動するため、先に一覧の読み込みを待つ
     await dashboard.waitForAlertList();
 
-    // 実描画されたマーカーをクリックする。シードは実在マスタ 10 基すべてへアラートを
-    // 投入済みのため、どの実描画マーカーでも sensor_id が一致しドロワーが開く。
+    // 実描画されたマーカーをクリックし、sensor_id に対応する詳細を開く。
     // マーカー中心がコンテナ下端ギリギリの場合は Playwright の実クリックがヒットテストで
     // 遮られることがあるため、実際のユーザー操作と同じ Leaflet のクリック処理経路
     // （パスの DOM イベント → レンダラー点検出 _getLayerAt → レイヤー click →

@@ -57,6 +57,10 @@ vi.mock("@/components/map/SensorMap", () => ({
 vi.mock("@/lib/api", () => ({
   fetchAlerts: vi.fn(),
   fetchAlertDetail: vi.fn(),
+  getAlertAudioUrl: vi.fn(
+    (telemetryId: string) =>
+      `http://localhost:8000/api/v1/alerts/${telemetryId}/audio`,
+  ),
   // FE-7: DashboardClient が useKpiPolling 経由で呼ぶ。既存テストを壊さないよう
   // デフォルトで BE-8 契約の解決値を返す（FE-7 のカード描画用）。
   fetchKpiSummary: vi.fn().mockResolvedValue({
@@ -167,6 +171,8 @@ const ALERTS: AlertSummary[] = [
 const DETAIL: AlertDetail = {
   ...ALERTS[0]!,
   location: { latitude: 35.7022, longitude: 139.7448 },
+  hasAudio: false,
+  waveform: [],
   analysis: {
     leakConfidence: 88,
     severityLevel: 3,

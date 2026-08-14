@@ -31,6 +31,7 @@ import requests
 BASE_URL = "http://localhost:8000"
 TELEMETRY_ENDPOINT = f"{BASE_URL}/api/v1/telemetry"
 KPI_ENDPOINT = f"{BASE_URL}/api/v1/kpi/summary"
+SENSORS_ENDPOINT = f"{BASE_URL}/api/v1/sensors"
 
 SAMPLE_RATE_HZ = 8_000
 DURATION_SEC = 1.0
@@ -88,6 +89,16 @@ def get_kpi_summary() -> requests.Response:
     return requests.get(KPI_ENDPOINT, timeout=10)
 
 
+def get_sensor_count() -> int:
+    """センサー一覧APIから現在のマスター件数を取得する。"""
+    response = requests.get(SENSORS_ENDPOINT, timeout=10)
+    expect(
+        response.status_code == 200,
+        f"GET /sensors 期待 200 / 実際 {response.status_code}: {response.text}",
+    )
+    return len(response.json())
+
+
 def case_1_kpi_contract() -> None:
     """KPIサマリAPIが200 + 契約どおりのフィールド（7項目）で返る。"""
     response = get_kpi_summary()
@@ -121,9 +132,10 @@ def case_2_deterministic_add() -> None:
 
     - Level 1/2/3 の各件数が +1
     - estimated_cost_saved_yen が +150,000+308,000+121,800 = 579,800 増える
-    - total_sensors は変わらない（hydrants.json 実件数=10）
+    - total_sensors は変わらず、センサー一覧APIの実件数と一致する
     """
     baseline = get_kpi_summary().json()
+    expected_sensor_count = get_sensor_count()
 
     # 3件を登録する前に、それぞれの severity が期待どおり解析されることを確認する
     for (
@@ -166,8 +178,11 @@ def case_2_deterministic_add() -> None:
         f"コスト増分が誤り: 期待 +{expected_delta} / 実際 +{actual_delta}",
     )
     expect(
-        after["total_sensors"] == baseline["total_sensors"] == 10,
-        f"total_sensors は 10 のはず: {after['total_sensors']}",
+        after["total_sensors"]
+        == baseline["total_sensors"]
+        == expected_sensor_count,
+        "total_sensors がセンサー一覧APIの実件数と一致しない: "
+        f"期待 {expected_sensor_count} / 実際 {after['total_sensors']}",
     )
 
 

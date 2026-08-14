@@ -48,6 +48,8 @@ class StoredTelemetry(BaseModel):
     received_at: datetime  # サーバー受信日時（= detected_at）
     location: GeoLocation
     analysis: AnalysisResult
+    audio_pcm16: bytes | None = None
+    sample_rate_hz: int | None = None
 
 
 class InMemoryStore:
@@ -199,7 +201,7 @@ def get_hydrants() -> list[HydrantMaster]:
 
 
 def initialize_sensors(store: InMemoryStore) -> None:
-    """最初の 10 台のセンサを正常状態（Level 0）で初期化する。
+    """マスタ登録済みのセンサを正常状態（Level 0）で初期化する。
 
     hydrants.json のセンサに対して severity_level=0 のレコードを生成し、
     ストアに追加する。アプリ起動時の初期状態を表現する。

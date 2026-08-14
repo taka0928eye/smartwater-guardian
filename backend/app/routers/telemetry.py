@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -50,6 +51,8 @@ def ingest_telemetry(payload: TelemetryRequest) -> TelemetryResponse:
             received_at=now,
             location=payload.location,
             analysis=analysis,
+            audio_pcm16=base64.b64decode(payload.audio_base64, validate=True),
+            sample_rate_hz=payload.sample_rate_hz,
         )
     )
 

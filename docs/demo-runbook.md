@@ -19,8 +19,8 @@
 ## 2. 事前チェックリスト（事故防止）
 
 - [ ] `backend/` に `venv` が存在し、依存がインストール済み
-- [ ] `backend/dataset/` にデモ用実音響WAV（`*no-leak*_level0.wav` / `*leak*_level{N}.wav`）が配置済み
-      （※ Git 管理外。Zenodo データセットから held-out を切出して配置する）
+- [ ] repo外で受領した `demo_audio/` に、§3記載の実音響WAV 4本が配置済み
+      （※ Git 管理外。Zenodo データセットから切り出したファイルを受領して使用する）
 - [ ] `frontend/` で `npm install` 済み（初回のみ）
 - [ ] `--seed` を固定し、リハーサルと同一の結果が出ることを確認済み（既定 `--seed 42`）
 - [ ] `ORCAROUTER_ENABLED=false` でも完走することを確認済み（§6 オフラインリハーサル）
@@ -38,8 +38,8 @@ venv/Scripts/uvicorn.exe main:app --reload --port 8000
 
 # --- ターミナル 2: デモ初期状態の投入（1コマンド） ---
 cd backend
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42
-#   [OK] 13 件を http://localhost:8000/api/v1/demo/seed へ投入しました
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
+#   [OK] 23 件を http://localhost:8000/api/v1/demo/seed へ投入しました
 
 # --- ターミナル 3: フロントエンド起動 ---
 cd frontend
@@ -47,14 +47,38 @@ npm run dev
 #   http://localhost:3000 をブラウザで開く
 ```
 
+macOS / Linuxでは、ターミナル2を次のように実行する。
+
+```bash
+cd backend
+venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
+```
+
+### 受領する音声ファイル
+
+`--audio-dir`で指定するフォルダには、次の4ファイルを配置する。
+
+```text
+demo_audio/
+├── BE3_demo_no-leak_level0.wav
+├── BE3_demo_leak_level1.wav
+├── BE3_demo_leak_level2.wav
+└── BE3_demo_leak_level3.wav
+```
+
+全ファイル共通の形式は **WAV / mono / PCM16 / 8000Hz / 1.0秒（8000サンプル）**。
+ファイル本体はGit管理せず、受領したローカルフォルダを直接指定する。
+
 ### シード内容（`--seed 42` の投入内訳）
 
 | 内容 | 件数 | 画面での表現 |
 |---|---|---|
-| Level 0（正常）ベースライン | 1 | 地図のグレー（normal）ノード（対比の起点） |
+| Level 0（正常） | 11（既存1＋追加10） | 地図のグレー（normal）ノード（対比の起点） |
 | Level 1（微小漏水） | 8 | 地図の黄緑（watch）＋ アラート一覧上位 |
 | Level 2（進行性漏水） | 3 | 地図のオレンジ（warning） |
 | Level 3（管路破裂） | 1 | 地図の赤（critical・点滅） |
+
+監視センサーは合計20台、投入するデモアラートは合計23件。4種類の音源をLevelに応じて再利用する。
 
 KPI「推定削減コスト」はこの内訳から **2,048,400 円（204.8万円）** になる
 （`docs/business-model.md` §3.4 の式）。
@@ -64,13 +88,13 @@ KPI「推定削減コスト」はこの内訳から **2,048,400 円（204.8万�
 | オプション | 既定 | 説明 |
 |---|---|---|
 | `--seed` | （必須） | シーケンス再現用シード。同一値で同一結果（再現性） |
-| `--audio-dir` | `backend/dataset` | 実音響WAVのディレクトリ（`*_level{N}.wav` の leak / no-leak 規約） |
+| `--audio-dir` | `backend/dataset` | 受領した実音響WAVのディレクトリ（上記4ファイルを推奨） |
 | `--url` | `http://localhost:8000/api/v1/demo/seed` | デモシード API の URL |
 | `--dry-run` | off | 送信せず組み立て結果（内訳・割当・音源ファイル）だけを表示 |
 
 ```powershell
 # 送信せずに確認したい場合
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --dry-run
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio" --dry-run
 ```
 
 ## 4. デモ初期状態の仕様
@@ -81,7 +105,7 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --dry-run
 
 - **音源は「学習未使用の Zenodo 実音響」**（学習データと同ドメインの held-out カット）。
   `generate_signal()` の人工音は実 SVM が意図レベルに分類できないため DEMO-1 で不採用にした。
-  実音響は `--audio-dir`（既定 `backend/dataset`）に配置し、Git 管理外（`.gitignore`）とする
+  実音響はrepo外で受領し、`--audio-dir`でそのフォルダを明示する
 - **ファイル名規約**: `*no-leak*_level{N}.wav` = 正常音 / `*leak*_level{N}.wav` = 漏水音。
   leak / no-leak を判別できないファイル名は投入ミス防止のためエラーにする
 - **音源選定は決定論的**: Level 0 は no-leak 音、Level 1〜3 は leak 音を使い、
@@ -89,7 +113,7 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --dry-run
 - **BE-3 MVP 契約の事前検証**: シードAPIは 8000Hz / 1.0秒 / 8000サンプルの WAV のみ受付可能
   （`validate_mvp_contract`）。契約外の WAV は 422 になる前にエラーで停止する
 - 各ステップの `hydrant_id` は `hydrants.json` に実在するIDから決定論的に選定
-- Level 0 ベースラインの消火栓は後続ステップで再利用しない
+- Level 0の既存ベースライン1台と追加正常10台は異常ステップで再利用しない
   （最新状態が上書きされると「正常」対比が消えるため）
 - Level 1 のステップは Level 3 より**必ず先**に投入される（山場は Level 1）
 - **深刻度の確定方式**: デモシード専用 API（`POST /api/v1/demo/seed`）が
@@ -141,10 +165,10 @@ cd backend
 venv/Scripts/python.exe scripts/clear_demo.py
 
 # 出力例:
-# [OK] 13 件のアラートをクリアしました
+# [OK] 23 件のアラートをクリアしました
 
 # --- 別シード、または同じシード 42 で再度投入 ---
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
 ```
 
 ### クリア後の状態
@@ -179,7 +203,7 @@ echo "ORCAROUTER_ENABLED=false" >> backend/.env
 # バックエンドを再起動してから、シード → フロント
 cd backend
 venv/Scripts/uvicorn.exe main:app --reload --port 8000
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
 cd ..\frontend; npm run dev
 ```
 
@@ -192,7 +216,7 @@ cd ..\frontend; npm run dev
 | 症状 | 対処 | 備考 |
 |---|---|---|
 | アラート・地図が空 / 状態がおかしい | **バックエンド再起動** → ストア（インメモリ）がクリアされる | `Ctrl+C` → uvicorn 再起動 |
-| シードをやり直したい | **シード再投入**: `seed_demo.py --seed 42` を再実行 | 同一シードで同一状態に復元 |
+| シードをやり直したい | **クリア後に再投入**: `seed_demo.py --seed 42 --audio-dir <受領フォルダ>` | 同一シード・音源で同一状態に復元 |
 | LLM が動かない / 実キーが無い | **フォールバック強制**: `backend/.env` に `ORCAROUTER_ENABLED=false` → 再起動 | §6 と同じ手順 |
 | フロントが描画されない | **フロント再起動**: `npm run dev`（`Ctrl+C` → 再実行） | ポート3000 が空いているか確認 |
 | CORS エラーが出る | `main.py` の `allow_origins` に使用 URL が入っているか確認 | 既定 `http://localhost:3000` |

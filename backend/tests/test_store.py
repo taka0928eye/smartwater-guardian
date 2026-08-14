@@ -256,7 +256,7 @@ class TestGetHydrants:
         from app.store import get_hydrants
 
         hydrants = get_hydrants()
-        assert len(hydrants) == 10
+        assert len(hydrants) == 20
         assert hydrants[0].hydrant_id == "HYD-001"
         assert hydrants[0].sensor_id == "SNS-001"
         assert hydrants[0].pipe_id == "P-001"

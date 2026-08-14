@@ -83,10 +83,18 @@ export interface PipeInfo {
   ageYears: number;
 }
 
+/** 受信PCMから抽出した時間軸波形の1点。 */
+export interface WaveformPoint {
+  timeMs: number;
+  amplitude: number;
+}
+
 /** アラート詳細（GET /api/v1/alerts/{telemetryId}）。 */
 export interface AlertDetail extends AlertSummary {
   location: GeoLocation;
   analysis: AnalysisResult | null;
+  hasAudio: boolean;
+  waveform: WaveformPoint[];
   pipeInfo?: PipeInfo | null;
 }
 

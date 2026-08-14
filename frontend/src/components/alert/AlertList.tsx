@@ -115,7 +115,7 @@ function AlertList({ alerts, selectedAlertId, onSelect }: AlertListProps) {
                   </span>
                   <span className="flex items-center gap-3">
                     <span className="tabular-nums text-xs text-slate-500">
-                      {alert.leakConfidence}%
+                      {alert.leakConfidence}点
                     </span>
                     <time
                       dateTime={alert.detectedAt}

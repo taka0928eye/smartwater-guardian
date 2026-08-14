@@ -8,15 +8,17 @@ LLM 呼び出しは ``app.services.orcarouter`` にカプセル化する（CLAUD
 
 from __future__ import annotations
 
+import io
+import wave
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
 from app.dependencies import HttpClientDep
-from app.schemas.alert import AlertDetail, AlertSummary, PipeInfo
+from app.schemas.alert import AlertDetail, AlertSummary, PipeInfo, WaveformPoint
 from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.schemas.work_order import WorkOrder
 from app.services import orcarouter
@@ -69,6 +71,57 @@ def _to_alert_summary(record: StoredTelemetry) -> AlertSummary:
     )
 
 
+def _has_audio(record: StoredTelemetry) -> bool:
+    """ブラウザ再生に必要なPCM本体とサンプリング周波数が揃っているか返す。"""
+    return record.audio_pcm16 is not None and record.sample_rate_hz is not None
+
+
+def _build_wav(record: StoredTelemetry) -> bytes:
+    """保存済みPCM16LE monoを標準WAVコンテナへ格納する。"""
+    assert record.audio_pcm16 is not None
+    assert record.sample_rate_hz is not None
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(record.sample_rate_hz)
+        wav_file.writeframes(record.audio_pcm16)
+    return output.getvalue()
+
+
+def _build_waveform(record: StoredTelemetry) -> list[WaveformPoint]:
+    """保存済みPCMから描画用の実サンプルを最大256点抽出する。"""
+    if not _has_audio(record):
+        return []
+    assert record.audio_pcm16 is not None
+    assert record.sample_rate_hz is not None
+
+    sample_count = len(record.audio_pcm16) // 2
+    point_count = min(256, sample_count)
+    if point_count == 0:
+        return []
+    indices = (
+        [0]
+        if point_count == 1
+        else [
+            point_index * (sample_count - 1) // (point_count - 1)
+            for point_index in range(point_count)
+        ]
+    )
+    return [
+        WaveformPoint(
+            time_ms=index * 1000.0 / record.sample_rate_hz,
+            amplitude=int.from_bytes(
+                record.audio_pcm16[index * 2 : index * 2 + 2],
+                "little",
+                signed=True,
+            )
+            / 32768.0,
+        )
+        for index in indices
+    ]
+
+
 @router.get(
     "/alerts",
     response_model=list[AlertSummary],
@@ -110,7 +163,34 @@ def get_alert_detail(telemetry_id: str) -> AlertDetail:
         **_to_alert_summary(record).model_dump(),
         location=record.location,
         analysis=record.analysis,
+        has_audio=_has_audio(record),
+        waveform=_build_waveform(record),
         pipe_info=_build_pipe_info(record.hydrant_id),  # BE-4: 配管台帳から照合
+    )
+
+
+@router.get(
+    "/alerts/{telemetry_id}/audio",
+    response_class=Response,
+    summary="アラートの受信音響をWAVで取得",
+)
+def get_alert_audio(telemetry_id: str) -> Response:
+    """指定テレメトリに保存されたPCM16LE monoをWAVとして返す。"""
+    record = get_store().get(telemetry_id)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"テレメトリ {telemetry_id} は見つかりません",
+        )
+    if not _has_audio(record):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="このアラートには音声データがありません",
+        )
+    return Response(
+        content=_build_wav(record),
+        media_type="audio/wav",
+        headers={"Cache-Control": "no-store"},
     )
 
 

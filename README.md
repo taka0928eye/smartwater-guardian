@@ -81,13 +81,35 @@ npm run dev
 
 ### デモシード投入
 
-```powershell
-cd backend
-venv\Scripts\python.exe scripts/seed_demo.py
+受領した音声フォルダに、次の4ファイルを配置する（WAV、mono、PCM16、8000Hz、1秒）。
+
+```text
+demo_audio/
+├── BE3_demo_no-leak_level0.wav
+├── BE3_demo_leak_level1.wav
+├── BE3_demo_leak_level2.wav
+└── BE3_demo_leak_level3.wav
 ```
 
-消火栓 HYD-001 ～ HYD-010 へ Level 3×3 / Level 2×3 / Level 1×3 / Level 0×1 を投入。
+Windows（PowerShell）:
+
+```powershell
+cd backend
+venv\Scripts\python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
+```
+
+macOS / Linux:
+
+```bash
+cd backend
+venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
+```
+
+監視センサー20台へ Level 0×11 / Level 1×8 / Level 2×3 / Level 3×1、合計23件を投入する。
+成功時は `[OK] 23 件を ... へ投入しました` と表示される。
 フロントエンドをリロードすると、センサー地図・アラート一覧・KPI が反映される。
+
+詳細な手順と再投入方法は [`docs/demo-runbook.md`](docs/demo-runbook.md) を参照。
 
 ---
 
@@ -625,4 +647,3 @@ WAF・Secrets Manager・HA（タスク数 2）・Auto Scaling を復元：
 **最終更新**: 2026-08-13  
 **プロジェクト段階**: Construction（デモ準備中）  
 **デモ予定**: 2026-08-10 ～ 08-15
-

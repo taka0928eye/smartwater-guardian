@@ -257,7 +257,8 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 | GET | `/` | ヘルスチェック | - | ✅ 実装済み |
 | POST | `/api/v1/telemetry` | センサテレメトリ受取・FFT解析・SVM判定 | BE-1/3 | ✅ 実装済み |
 | GET | `/api/v1/alerts` | アラート一覧（`?level=` / `?limit=`） | BE-6 | ✅ 実装済み |
-| GET | `/api/v1/alerts/{telemetry_id}` | アラート詳細（配管情報含む） | BE-6 | ✅ 実装済み |
+| GET | `/api/v1/alerts/{telemetry_id}` | アラート詳細（実波形・音声有無・配管情報含む） | BE-6 | ✅ 実装済み |
+| GET | `/api/v1/alerts/{telemetry_id}/audio` | 受信PCMをWAVとして取得 | BE-6 | ✅ 実装済み |
 | POST | `/api/v1/alerts/{telemetry_id}/work-order` | LLM自動起票・部材選定・見積（リトライ分類・キャッシング） | BE-5 | ✅ 実装済み |
 | POST | `/api/v1/alerts/seed` | E2E 用シード投入（実在マスタ HYD-001〜010 へ L3×3 / L2×3 / L1×3 / L0×1） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/sensors` | センサー状態一覧（`?format=geojson`） | BE-6 | ✅ 実装済み |
@@ -267,8 +268,9 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 > **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
 > 追加した `DemoSeedRequest` を受ける。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
 > 上書きする。音源は**学習未使用の Zenodo 実音響**（`scripts/simulate_sensor.py` の
-> `load_audio_file()` による replay、`backend/dataset`・Git管理外）。実 no-leak 音は SVM が
-> 自然に severity 0（正常）を返す。使い方は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
+> `load_audio_file()` による replay、Git管理外）。受領したWAVフォルダを`--audio-dir`で指定する。
+> 実 no-leak 音は SVM が自然に severity 0（正常）を返す。正確なファイル名・形式・23件の
+> 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
 
 ### 6.2 防災モード（BE-7）
 
@@ -314,7 +316,7 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 
 ```json
 {
-  "total_sensors": 10,
+  "total_sensors": 20,
   "level1_count": 4,
   "level2_count": 2,
   "level3_count": 1,

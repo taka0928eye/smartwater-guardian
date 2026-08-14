@@ -5,15 +5,19 @@
  * FE-6: AI自動起票ボタンおよび WorkOrderModal との結合を追加。
  * FE-4: Recharts による周波数スペクトル・時間波形チャートの表示を追加。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { X, Sparkles, Loader2 } from "lucide-react";
 
 import SeverityBadge from "@/components/common/SeverityBadge";
-import { SpectrumChart, SpectrumDataPoint } from "@/components/chart/SpectrumChart";
-import { WaveformChart, WaveformPoint } from "@/components/chart/WaveformChart";
+import { SpectrumChart } from "@/components/chart/SpectrumChart";
+import { WaveformChart } from "@/components/chart/WaveformChart";
 import { WorkOrderModal } from "@/components/workorder/WorkOrderModal";
-import { fetchAlertDetail, createWorkOrder } from "@/lib/api";
+import {
+  fetchAlertDetail,
+  createWorkOrder,
+  getAlertAudioUrl,
+} from "@/lib/api";
 import type { AlertDetail, AlertSummary, WorkOrder } from "@/types/api";
 
 export interface AlertDetailDrawerProps {
@@ -52,6 +56,19 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <dd className="tabular-nums font-medium text-slate-800">{value}</dd>
     </div>
   );
+}
+
+export function buildSpectrumData(analysis: AlertDetail["analysis"]) {
+  return (
+    analysis?.spectrum?.map((point) => ({
+      freqHz: point.freqHz,
+      power: point.magnitude,
+    })) ?? []
+  );
+}
+
+export function buildWaveformData(waveform: AlertDetail["waveform"] | undefined) {
+  return waveform ?? [];
 }
 
 export default function AlertDetailDrawer({
@@ -101,38 +118,8 @@ export default function AlertDetailDrawer({
     }
   };
 
-  // FE-4: スペクトル用128点データの生成
-  const spectrumData: SpectrumDataPoint[] = useMemo(() => {
-    if (!detail?.analysis) return [];
-    const domFreq = detail.analysis.dominantFreqHz || 800;
-    const points: SpectrumDataPoint[] = [];
-    for (let i = 0; i < 128; i++) {
-      const freq = Math.round((i / 128) * 3000);
-      const dist = Math.abs(freq - domFreq);
-      const basePower = Math.exp(-dist / 200) * 80;
-      const noise = Math.sin(i * 0.5) * 5 + 5;
-      points.push({
-        freqHz: freq,
-        power: Math.max(0, Math.round((basePower + noise) * 10) / 10),
-      });
-    }
-    return points;
-  }, [detail]);
-
-  // FE-4: 時間波形用データの生成
-  const waveformData: WaveformPoint[] = useMemo(() => {
-    if (!detail?.analysis) return [];
-    const points: WaveformPoint[] = [];
-    for (let i = 0; i < 512; i++) {
-      const timeMs = Math.round((i / 512) * 1000);
-      const amp = Math.sin(i * 0.1) * 0.5 + Math.cos(i * 0.25) * 0.3;
-      points.push({
-        timeMs,
-        amplitude: Math.round(amp * 1000) / 1000,
-      });
-    }
-    return points;
-  }, [detail]);
+  const spectrumData = buildSpectrumData(detail?.analysis ?? null);
+  const waveformData = buildWaveformData(detail?.waveform);
 
   return (
     <>
@@ -141,7 +128,7 @@ export default function AlertDetailDrawer({
         role="dialog"
         aria-modal="true"
         aria-label="アラート詳細"
-        className="fixed inset-0 z-50 flex justify-end"
+        className="fixed inset-0 z-[2000] flex justify-end"
       >
         {/* 背面オーバーレイ。クリックで閉じる */}
         <button
@@ -174,7 +161,6 @@ export default function AlertDetailDrawer({
           <dl className="mt-4 space-y-2 text-sm">
             <DetailRow label="センサーID" value={alert.sensorId} />
             <DetailRow label="検知時刻" value={formatDateTime(alert.detectedAt)} />
-            <DetailRow label="漏水確信度" value={`${alert.leakConfidence}%`} />
           </dl>
 
           {/* FE-6: AI自動起票アクションエリア */}
@@ -226,8 +212,8 @@ export default function AlertDetailDrawer({
                 {detail.analysis ? (
                   <dl className="mt-2 space-y-1.5 text-sm">
                     <DetailRow
-                      label="漏水確信度"
-                      value={`${detail.analysis.leakConfidence}%`}
+                      label="AI漏水スコア"
+                      value={`${detail.analysis.leakConfidence}点`}
                     />
                     <DetailRow
                       label="卓越周波数"
@@ -241,6 +227,35 @@ export default function AlertDetailDrawer({
                 ) : (
                   <p className="mt-2 text-sm text-slate-500">
                     解析結果はありません
+                  </p>
+                )}
+              </section>
+
+              <section
+                aria-label="センサー実音響"
+                className="mt-3 rounded-lg border border-slate-200 p-3"
+              >
+                <h3 className="text-xs font-semibold text-slate-500">
+                  センサー実音響
+                </h3>
+                {detail.hasAudio ? (
+                  <>
+                    <p className="mt-1 text-xs text-slate-500">
+                      このアラートの解析に使用した録音です
+                    </p>
+                    <audio
+                      data-testid="alert-audio-player"
+                      className="mt-2 w-full"
+                      controls
+                      preload="metadata"
+                      src={getAlertAudioUrl(alert.telemetryId)}
+                    >
+                      お使いのブラウザは音声再生に対応していません
+                    </audio>
+                  </>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    音声データはありません
                   </p>
                 )}
               </section>
