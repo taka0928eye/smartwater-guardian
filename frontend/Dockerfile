@@ -47,12 +47,6 @@ COPY --from=builder /app/.next/static ./.next/static
 # builder からコピー: public ディレクトリ
 COPY --from=builder /app/public ./public
 
-# INFRA-1: route.ts が process.cwd()/../docs/business-model.md を参照するため、
-# リポジトリルート context でここに docs/business-model.md を relative path で配置
-# → WORKDIR /app/frontend で cwdが合わせられるため、
-#   process.cwd() + ".." + "docs/business-model.md" = /app/docs/business-model.md に解決される
-COPY docs/business-model.md ./docs/business-model.md
-
 # ユーザー切り替え
 USER nextjs
 

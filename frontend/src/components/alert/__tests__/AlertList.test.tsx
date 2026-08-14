@@ -162,4 +162,21 @@ describe("AlertList", () => {
     render(<AlertList alerts={[]} selectedAlertId={null} onSelect={vi.fn()} />);
     expect(screen.getByText("アラートはありません")).toBeInTheDocument();
   });
+
+  it("アラート一覧がスクロール可能な状態（overflow-y-auto と max-h-80）で描画される", () => {
+    render(
+      <AlertList
+        alerts={[
+          makeAlert({ telemetryId: "t1" }),
+          makeAlert({ telemetryId: "t2" }),
+          makeAlert({ telemetryId: "t3" }),
+        ]}
+        selectedAlertId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    const alertList = screen.getByRole("list");
+    expect(alertList).toHaveClass("overflow-y-auto");
+    expect(alertList).toHaveClass("max-h-80");
+  });
 });

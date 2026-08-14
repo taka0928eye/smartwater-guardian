@@ -94,7 +94,7 @@ function AlertList({ alerts, selectedAlertId, onSelect }: AlertListProps) {
             : "表示できるアラートはありません（正常・Level 0 は非表示です）"}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-2 overflow-y-auto max-h-80">
           {visibleAlerts.map((alert) => {
             const selected = selectedAlertId === alert.telemetryId;
             return (

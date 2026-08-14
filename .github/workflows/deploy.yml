@@ -101,6 +101,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Update ECS task definitions and services
+        env:
+          BUSINESS_MODEL_CONTENT: ${{ secrets.BUSINESS_MODEL_CONTENT }}
         run: |
           set -e
           # Note: ECS cluster/services use fixed resource names (defined in 06-ecs.yaml), not environment-specific
@@ -150,8 +152,15 @@ jobs:
             --task-definition $FRONTEND_TASK_DEF \
             --region $REGION \
             --query 'taskDefinition' | \
-            jq "(.containerDefinitions[] | select(.name == \"frontend\")).image = \"${FRONTEND_IMAGE}\" | \
-                del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)" \
+            jq --arg bm_content "$BUSINESS_MODEL_CONTENT" \
+            "(.containerDefinitions[] | select(.name == \"frontend\")).image = \"${FRONTEND_IMAGE}\" | \
+            (.containerDefinitions[] | select(.name == \"frontend\")).environment |= \
+              if any(.name == \"BUSINESS_MODEL_CONTENT\") then \
+                map(if .name == \"BUSINESS_MODEL_CONTENT\" then .value = \$bm_content else . end) \
+              else \
+                . + [{\"name\": \"BUSINESS_MODEL_CONTENT\", \"value\": \$bm_content}] \
+              end | \
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)" \
             > frontend-taskdef.json
 
           if [ ! -s frontend-taskdef.json ]; then
