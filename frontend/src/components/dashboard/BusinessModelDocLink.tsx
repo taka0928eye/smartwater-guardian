@@ -5,13 +5,14 @@
  *
  * クリックで GET /api/docs/business-model から docs/business-model.md の内容を取得し、
  * モーダルに表示する。取得失敗時はモーダル内に控えめなエラーを表示する（画面を壊さない）。
- * マークダウン本文はデモスコープのため raw テキストとして表示する（描画ライブラリ追加は
- * Human-in-the-Loop の承認が必要なため追加しない）。
+ * マークダウン本文は react-markdown ライブラリを使用してリッチに表示する。
  * コメント・docstring は日本語（NFR-4 / FE-7）。
  */
 
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface DocResponse {
   content: string | null;
@@ -79,12 +80,16 @@ export default function BusinessModelDocLink() {
               読み込み中...
             </p>
           ) : (
-            <pre
+            /* <pre> タグの代わりに ReactMarkdown を配置 */
+            <div
               data-testid="bm-doc-content"
-              className="whitespace-pre-wrap font-mono text-xs text-slate-700"
+              className="prose prose-sm max-w-none text-slate-700
+                        prose-table:border-collapse prose-table:w-full
+                        prose-th:border prose-th:border-slate-300 prose-th:bg-slate-100 prose-th:px-3 prose-th:py-2 prose-th:text-xs prose-th:font-semibold
+                        prose-td:border prose-td:border-slate-200 prose-td:px-3 prose-td:py-1.5 prose-td:text-xs"
             >
-              {content}
-            </pre>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
           )}
         </div>
       </div>

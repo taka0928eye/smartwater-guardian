@@ -16,6 +16,7 @@
 8. [本番デプロイ](#本番デプロイ)
 9. [関連ドキュメント](#関連ドキュメント)
 10. [開発規約](#開発規約)
+11. [ソースコード規模（ステップ数）](#ソースコード規模ステップ数)
 
 ---
 
@@ -641,6 +642,24 @@ WAF・Secrets Manager・HA（タスク数 2）・Auto Scaling を復元：
 - **Project Owner**: taka0928eye
 - **開発チーム**: SmartWater Guardian デモチーム
 - **AI-DLC Framework**: Anthropic AI-DLC v2
+
+---
+
+## ソースコード規模（ステップ数）
+
+| レイヤ | 本体コード | テストコード | 合計 |
+|---|---|---|---|
+| バックエンド（Python） | 3,832 行 | 3,717 行 | 7,549 行 |
+| フロントエンド（TypeScript） | 2,357 行 | 3,404 行 | 5,761 行 |
+| **合計** | **6,189 行** | **7,121 行** | **13,310 行** |
+
+計測方法: 各ファイルの物理行数（空行・コメント含む）を合算。vendor / generated / cache
+（`venv`, `node_modules`, `.next`, `__pycache__`, `.pytest_cache`, `coverage` 等）は対象外。
+バックエンドは `backend/app` + `backend/scripts` + `backend/main.py`（本体）/
+`backend/tests` + `backend/test_llm_integration.py`（テスト）。フロントエンドは
+`frontend/src/{app,components,hooks,lib,types}` の `__tests__` 除く（本体）/
+`__tests__` + `frontend/src/test` + `frontend/tests/e2e`（テスト）。
+計測日: 2026-08-14 時点。
 
 ---
 
