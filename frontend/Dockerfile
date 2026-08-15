@@ -21,6 +21,10 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
+# standalone 出力を有効化する（next.config.ts 参照）。ローカル/CI の npm run build /
+# npm run start（E2E 含む）は standalone 非互換のため、この変数を設定しない。
+ENV BUILD_STANDALONE=true
+
 # deps stage からコピー
 COPY --from=deps /app/node_modules ./node_modules
 

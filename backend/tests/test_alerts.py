@@ -23,7 +23,7 @@ from pydantic import ValidationError
 
 from app.schemas.alert import PipeInfo
 from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
-from app.store import StoredTelemetry, get_hydrants
+from app.store import StoredTelemetry, get_hydrants, initialize_sensors
 
 # シードで使うスペクトル点数（FE-4 描画用の固定値。telemetry のモック解析と同じ）
 N_SPECTRUM = 128
@@ -462,7 +462,7 @@ class TestSeedAlertsForE2E:
 
     def test_seed_replaces_startup_records_instead_of_appending(self, client):
         """起動時の23件が存在してもE2Eシードだけの決定的な状態にする。"""
-        from app.store import get_store, initialize_sensors
+        from app.store import get_store
 
         initialize_sensors(get_store())
 

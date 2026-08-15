@@ -6,7 +6,8 @@
 - **現状のスコープ**: FE-2（深刻度共通ユーティリティ）/ FE-3（Leaflet センサー地図）/
   FE-4（音響スペクトル・波形チャート）/ FE-5（アラート一覧・詳細ドロワー）/
   FE-6（AI 自動起票 UI・WorkOrderModal）/ FE-7（KPIサマリの実データ連携・「試算値」注記）まで実装済み。
-  さらに BE-7（防災モード）の被災エリア描画（`DisasterOverlay`）とデモのシミュレーション投入 UI を配線済み。
+  さらに BE-7（防災モード）の被災エリア描画（`DisasterOverlay`）と、DEMO-2 で「シード投入」
+  「シードクリア」「防災シミュレーション」の3操作ボタンをダッシュボード画面に配線済み。
 - **バックエンド連携**: [`../backend`](../backend)（FastAPI）が別プロセスで起動している前提。
   未応答時はフォールバック表示に切り替わり、画面を白紙にしない。
 
@@ -64,20 +65,21 @@ frontend/
 │   │       ├── SeverityBadge.tsx   # 深刻度バッジ（severity.ts のメタ情報を利用）
 │   │       └── __tests__/
 │   ├── hooks/
-│   │   ├── useAlertPolling.ts      # アラート一覧の 5 秒ポーリング（失敗時は最終状態を据え置き）
-│   │   ├── useKpiPolling.ts        # KPI サマリの 5 秒ポーリング（失敗時は再スケルトンへ戻す。FE-7）
-│   │   ├── useSensorPolling.ts     # センサー GeoJSON のポーリング（地図マーカー更新）
+│   │   ├── useAlertPolling.ts      # アラート一覧の 5 秒ポーリング + 即時 refresh（失敗時は最終状態を据え置き。DEMO-2で refresh 追加）
+│   │   ├── useKpiPolling.ts        # KPI サマリの 5 秒ポーリング + 即時 refresh（失敗時は再スケルトンへ戻す。FE-7 / DEMO-2）
+│   │   ├── useSensorPolling.ts     # センサー GeoJSON のポーリング + 即時 refresh（地図マーカー更新。DEMO-2で refresh 追加）
 │   │   ├── useDisasterSummary.ts   # 防災サマリのポーリング + 即時 refresh（BE-7）
 │   │   └── __tests__/
 │   ├── lib/
-│   │   ├── api.ts                  # axios クライアント（snake_case→camelCase 変換はここで1回だけ）
+│   │   ├── api.ts                  # axios クライアント（snake_case→camelCase 変換はここで1回だけ。seedDemoBatch/clearDemo 含む）
 │   │   ├── severity.ts             # SeverityLevel 型 + 表示メタ情報の単一ソース（FE-7 で二重定義を解消）
 │   │   ├── alertSort.ts            # アラート一覧の並び替え
 │   │   └── __tests__/
 │   ├── types/
 │   │   ├── api.ts                  # API 契約型（SeverityLevel は severity.ts から re-export）
 │   │   ├── sensor.ts               # GeoJSON 型（SensorFeatureCollection 等）
-│   │   └── disaster.ts             # 防災クラスタ型（DisasterCluster 等。BE-7）
+│   │   ├── disaster.ts             # 防災クラスタ型（DisasterCluster 等。BE-7）
+│   │   └── demo.ts                 # シード投入/クリア型（DemoSeedBatchResponse / DemoClearResponse。DEMO-2）
 │   └── test/
 │       └── setup.ts                # jest-dom マッチャーのセットアップ
 ├── tests/e2e/                       # Playwright E2E（global-setup・8 spec・pages）
@@ -173,16 +175,24 @@ npm run lint
 | 音響スペクトル・波形チャート | `components/chart/SpectrumChart` / `WaveformChart` | 実装済み（FE-4・Recharts） |
 | KPI サマリ（監視センサー数 / Level 1〜3件数 / 推定削減コスト） | `components/dashboard/KpiSummary` | 実装済み（FE-7・実データ連携） |
 | 補修部材選定・見積の自動起票 | `components/alert/AlertDetailDrawer` + `components/workorder/WorkOrderModal` | 実装済み（FE-6・`POST /alerts/{id}/work-order` 連携） |
-| 防災モード（被災エリア描画・シミュレーション） | `components/map/DisasterOverlay` + `DashboardClient` のシミュレーションボタン | 実装済み（BE-7・`useDisasterSummary` ポーリング） |
+| 防災モード（被災エリア描画・シミュレーション） | `components/map/DisasterOverlay` + `DashboardClient` のシミュレーションボタン | 実装済み（BE-7・DEMO-2で実センサー書換え方式に再設計） |
+| デモ操作（シード投入・シードクリア） | `DashboardClient` のボタン2種 | 実装済み（DEMO-2・`seedDemoBatch` / `clearDemo`） |
 
 ### 自動起票（FE-6）と防災モード（BE-7）の補足
 
 - **自動起票**: アラート詳細の「AI自動起票」ボタンで `POST /alerts/{id}/work-order`（BE-5）を呼び、
   補修部材・概算見積・作業指示書を `WorkOrderModal` に表示する。バックエンドが LLM 未設定・失敗時は
   `source: "fallback"` で表示し、可用性を担保する。FR-6 の原価（`cost_yen` / `latency_ms`）もフッターに表示。
-- **防災モード**: `POST /api/v1/disaster/simulate`（バックエンド BE-7）で Level 3 アラートを一括投入し、
-  `GET /api/v1/disaster/summary` のクラスタリング結果（被災エリア・想定断水世帯・優先閉栓バルブ）を
-  `DisasterOverlay` で地図上に描画する。Level 3 が 0 件のときは何も描画しない。
+- **防災モード**（DEMO-2 で再設計）: 「防災シミュレーション」ボタンが `POST
+  /api/v1/disaster/simulate`（BE-7）を呼び、実在23消火栓のうち無作為6件を信号データごと Level 3 へ
+  変化させる（架空センサーの新規追加はしない。監視センサー数は常に23）。`GET /api/v1/disaster/summary`
+  のクラスタリング結果（被災エリア・想定断水世帯・優先閉栓バルブ）を `DisasterOverlay` で地図上に
+  描画する。シミュレーション未実施時は何も描画しない。
+- **デモ操作**（DEMO-2）: 「シード投入」ボタンが `POST /api/v1/demo/seed-batch` を呼び、23消火栓へ
+  Lv0×11/Lv1×8/Lv2×3/Lv3×1 を一括投入する（`backend/dataset/` の音源が必要。AWS環境で未配置の場合は
+  404で失敗するが画面は壊れない）。「シードクリア」ボタンが `DELETE /api/v1/demo/clear` を呼び、
+  23件Lv0の初期状態に戻す。いずれも押下後、`useAlertPolling` / `useKpiPolling` / `useSensorPolling`
+  （+ シードクリアは `useDisasterSummary`）の `refresh()` を呼び、ポーリング間隔を待たず即時反映する。
 
 ### KPI サマリの表示仕様（FE-7）
 

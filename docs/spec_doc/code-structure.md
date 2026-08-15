@@ -13,17 +13,18 @@
 
 | パス | 分類 | 責務 |
 |------|------|------|
-| `main.py` | ブートストラップ | FastAPI アプリ生成・CORS（`ALLOWED_ORIGINS`）・**6 ルーター**登録・`RuntimeError`→502 / 例外→500 ハンドラ・`GET /` ヘルス |
+| `main.py` | ブートストラップ | FastAPI アプリ生成・**`lifespan`**（起動時 `initialize_sensors()` + 任意でS3データセット同期・DEMO-2）・CORS（`ALLOWED_ORIGINS`）・**6 ルーター**登録・`RuntimeError`→502 / 例外→500 ハンドラ・`GET /` ヘルス |
 | `app/routers/` | API 層 | telemetry / alerts / sensors / kpi / disaster / demo の 6 ルーター |
-| `app/services/` | サービス層 | audio.py（SVM 音響解析・BE-3）・orcarouter.py（LLM 起票・BE-5）・llm_cost.py（原価・FR-6）・ledger.py（台帳照合・BE-4）・kpi.py（KPI 算定・BE-8）・prompts.py（LLM プロンプト管理） |
+| `app/services/` | サービス層 | audio.py（SVM 音響解析・BE-3）・orcarouter.py（LLM 起票・BE-5）・llm_cost.py（原価・FR-6）・ledger.py（台帳照合・BE-4）・kpi.py（KPI 算定・BE-8）・prompts.py（LLM プロンプト管理）・**demo_seed.py（一括シード投入・DEMO-2）**・**disaster_signal.py（合成Level3波形・DEMO-2）**・**dataset_sync.py（AWS向けS3データセット同期・DEMO-2）** |
 | `app/schemas/` | 契約層 | telemetry / alert / pipe / kpi / work_order / disaster / demo の Pydantic v2 スキーマ |
-| `app/store.py` | データ層 | スレッドセーフなインメモリストア・シングルトン・マスタローダー |
-| `app/data/` | マスタデータ | hydrants.json（10 件）・pipes.json（10 路線）・repair_parts.json（補修部材マスタ） |
+| `app/store.py` | データ層 | スレッドセーフなインメモリストア・シングルトン・マスタローダー・`initialize_sensors()` / `register_disaster_sensors()` 等（DEMO-2） |
+| `app/data/` | マスタデータ | hydrants.json（**20 件**）・pipes.json（10 路線）・repair_parts.json（補修部材マスタ） |
 | `app/models/` | 学習済みモデル | leak_svm_v1.joblib + metadata.json（BE-3 SVM・SHA-256 検証付き） |
+| `backend/dataset/` | 実音響データ（**git管理外**） | Zenodo由来のデモ音源4本。ライセンス上再配布不可のため `.gitignore` 対象。シード投入（`demo_seed.py`）が読む |
 | `app/dependencies.py` | DI | `HttpClientDep`（httpx クライアント注入。orcarouter で実使用） |
-| `scripts/` | 運用・検証 | simulate_sensor.py（疑似センサー CLI）・check_telemetry.py / check_kpi.py / check_disaster.py |
-| `tests/` | テスト | pytest（test_audio / test_work_order / test_telemetry / test_alerts / test_kpi / test_store / test_ledger / ...） |
-| `requirements.txt` / `pyproject.toml` | 依存・静的検査 | == ピン固定 / ruff + mypy 設定 |
+| `scripts/` | 運用・検証 | **seed_demo.py（デモ一括投入CLI・`POST /demo/seed-batch` を叩く薄いラッパー・DEMO-2）・clear_demo.py（シードクリアCLI）**・simulate_sensor.py（疑似センサー CLI）・check_telemetry.py / check_kpi.py / check_disaster.py |
+| `tests/` | テスト | pytest（test_audio / test_work_order / test_telemetry / test_alerts / test_kpi / test_store / test_ledger / test_disaster / **test_demo_seed_service / test_disaster_signal / test_dataset_sync / test_main / test_seed_demo_cli**（DEMO-2）/ ...） |
+| `requirements.txt` / `pyproject.toml` | 依存・静的検査 | == ピン固定（**boto3/botocore 等 AWS SDK を DEMO-2 で追加**） / ruff + mypy 設定 |
 
 ### ファイル分類と役割
 
@@ -43,9 +44,9 @@
 | `components/chart/` | チャート | SpectrumChart・WaveformChart（Recharts・FE-4） |
 | `components/common/` | 共通 UI | SeverityBadge |
 | `components/map/` | 地図 | SensorMap（dynamic ssr:false）・SensorMapInner（Leaflet）・DisasterOverlay（防災クラスタ・BE-7） |
-| `hooks/` | カスタムフック | useAlertPolling・useKpiPolling・useSensorPolling・useDisasterSummary |
+| `hooks/` | カスタムフック | useAlertPolling・useKpiPolling・useSensorPolling・useDisasterSummary（いずれも `refresh()` 保有・DEMO-2） |
 | `lib/` | ユーティリティ | api.ts・severity.ts・alertSort.ts |
-| `types/` | 契約型 | api.ts（API レスポンス 1:1）・sensor.ts（GeoJSON）・disaster.ts（防災） |
+| `types/` | 契約型 | api.ts（API レスポンス 1:1）・sensor.ts（GeoJSON）・disaster.ts（防災）・**demo.ts（シード投入/クリア・DEMO-2）** |
 | `test/` | テスト設定 | setup.ts（vitest 設定） |
 | `tests/e2e/` | E2E テスト | Playwright（global-setup・spec・fixtures・pages/DashboardPage） |
 
@@ -61,7 +62,8 @@
 ### 1. snake_case → camelCase 境界（lib/api.ts）
 バックエンドは snake_case（Pydantic v2）、フロントは camelCase。`unwrap()` が再帰的にキー変換し、
 `ApiError` へ例外変換する。型契約は `types/*.ts` の camelCase のみを公開する（変換は API 境界で「1 回だけ」）。
-`fetchKpiSummary` / `fetchDisasterSummary` / `simulateDisaster` / `createWorkOrder` もここで実装済み。
+`fetchKpiSummary` / `fetchDisasterSummary` / `simulateDisaster` / `createWorkOrder` /
+`seedDemoBatch` / `clearDemo`（DEMO-2）もここで実装済み。
 
 ### 2. `@lru_cache` マスタローダー（store.py / ledger.py / orcarouter.py）
 `get_hydrants()` / `get_pipes()` / `_load_repair_parts()` は `@lru_cache(maxsize=1)` で初回呼び出し時に
@@ -101,15 +103,28 @@ LLM 失敗時は `build_fallback_work_order()` で規定ルールによる算出
 算出し、`calculate_and_enrich_cost()` が WorkOrder に `prompt_tokens` / `completion_tokens` / `cost_yen` /
 `model` / `latency_ms` / `is_estimated` を付与 + JSON 構造化ログを出す。WorkOrderModal がフッターに表示。
 
-### 9. 防災モード（BE-7・routers/disaster.py）
-Level 3 センサーを距離閾値（`threshold_meters` デフォルト 300m）でクラスタリングし、被災エリア Polygon を
-GeoJSON で返す。`POST /disaster/simulate` は疑似被災レコード（`count` 1〜20）を生成して再集計。
-`CACHE_FILE=/tmp/disaster_simulated_items.json` にシミュレーション投入分を永続化（テスト分離に配慮）。
+### 9. 防災モード（BE-7 / DEMO-2 再設計・routers/disaster.py）
+`POST /disaster/simulate` は実在23消火栓のうち無作為 `count` 件（既定6）を選び、
+`disaster_signal.generate_level3_signal()`（外部ファイル非依存の合成波形）を
+`analyze_audio()` で解析して Level 3 に確定する。非選出分は現在の状態を保持したまま
+ストアを23件に一括再構築（重複を作らない）。選出 sensor_id は
+`store.register_disaster_sensors()` に累積記録される。`GET /disaster/summary` は
+**その記録分のみ**を距離閾値（`threshold_meters` デフォルト 300m）でクラスタリングし、
+被災エリア Polygon を GeoJSON で返す（通常検知の Level 3 は対象外）。旧実装の
+「東京駅周辺への架空センサー追加」「`TEL-DISASTER-*` プレフィックス判定」
+「`/tmp/disaster_simulated_items.json` キャッシュ」は DEMO-2 で廃止した。
 
-### 10. デモシード（DEMO-1・routers/demo.py + routers/alerts.py）
+### 10. デモシード（DEMO-1/DEMO-2・routers/demo.py + routers/alerts.py）
 - `POST /api/v1/alerts/seed`: E2E 用シード。実在マスタ（HYD-001〜010）へ L3×3 / L2×3 / L1×3 / L0×1 を決定論的投入
-- `POST /api/v1/demo/seed`: デモ用。`DemoSeedRequest` の `level` 上書きで実音声の `analyze_audio` を実行後に
-  `model_copy(update={"severity_level": payload.level})`
+- `POST /api/v1/demo/seed`: デモ用単体投入。`DemoSeedRequest` の `level` 上書きで実音声の
+  `analyze_audio` を実行後に `model_copy(update={"severity_level": payload.level})`
+- `POST /api/v1/demo/seed-batch`（DEMO-2）: `demo_seed.build_seed_batch()` が23消火栓へ
+  ちょうど1レベルを重複なく割当て（Lv0×11/Lv1×8/Lv2×3/Lv3×1）、`backend/dataset/` の
+  実音響WAVをreplayして一括投入。既存レコードを破棄してから書き直すため重複しない
+- `DELETE /api/v1/demo/clear`（DEMO-2で契約変更）: クリア後に `initialize_sensors()` を
+  呼び直し、**23件Lv0の初期状態に戻す**（旧: 0件へリセット）
+- `main.py` の `lifespan` が起動時に `initialize_sensors()` を呼び、常に「初期表示=23件
+  Lv0」を保証する
 
 ## 命名規則
 

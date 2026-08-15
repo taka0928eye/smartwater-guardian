@@ -101,6 +101,51 @@ infra/
 | `OrcaRouterEnabled` | String | `true` | Orcarouter 有効化 |
 | `OrcaRouterApiKey` | String | `` | Orcarouter API キー（環境変数で直接注入。Secrets Manager はコスト削減のため不使用） |
 | `AllowedOrigins` | String | `http://localhost:3000` | CORS 許可オリジン |
+| `DemoDatasetEnabled` | String | `false` | デモ「シード投入」用データセットのS3同期を有効化するか。`true` にする前に下記「デモ音源データセットのAWS配置」の手動アップロードが必須 |
+
+## デモ音源データセットのAWS配置（DEMO-2）
+
+「シード投入」機能（`POST /api/v1/demo/seed-batch`）は `backend/dataset/` の実音響
+WAV（Zenodo 由来）を読み込む。この音源は **ライセンス上 git 経由の再配布が禁止**
+されているため（`.gitignore` 参照）、リポジトリにもコンテナイメージにも含まれない。
+AWS 上で「シード投入」ボタンを実際に動かすには、以下の手順で**手動・一度だけ**
+プライベート S3 バケットへアップロードする（git/CI を一切経由しない）。
+
+### 手順
+
+1. `02-security.yaml`（Infra フェーズ）をデプロイ済みであること。これにより
+   プライベートバケット `smartwater-guardian-demo-dataset-<AccountId>` が作成される
+   （`PublicAccessBlockConfiguration` で完全非公開）。バケット名を確認:
+   ```bash
+   aws cloudformation describe-stacks \
+     --stack-name smartwater-guardian-dev-security \
+     --query "Stacks[0].Outputs[?OutputKey=='DemoDatasetBucketName'].OutputValue" \
+     --output text --region ap-northeast-1
+   ```
+2. ライセンスに従って入手した WAV ファイル（`backend/dataset/*.wav`、
+   `*_level{N}.wav` の leak / no-leak 命名規約）を、権限を持つ運用者のローカル
+   環境から直接アップロードする（git には一切コミットしない）:
+   ```bash
+   aws s3 cp backend/dataset/ s3://smartwater-guardian-demo-dataset-<AccountId>/dataset/ \
+     --recursive --region ap-northeast-1
+   ```
+3. ECS スタック（App フェーズ）を `DemoDatasetEnabled=true` でデプロイ（または再デプロイ）する:
+   ```bash
+   .\deploy.ps1 -Phase App -Environment dev -Region ap-northeast-1 -DemoDatasetEnabled true `
+     -OrcaRouterApiKey '<ACTUAL_ORCAROUTER_API_KEY>'
+   ```
+   これにより backend タスクの環境変数 `DEMO_DATASET_S3_URI` が
+   `s3://smartwater-guardian-demo-dataset-<AccountId>/dataset/` に設定され、
+   起動時（`lifespan`）に `backend/app/services/dataset_sync.py` が S3 から
+   コンテナのローカルディレクトリへ同期する。
+
+### 未設定・失敗時の挙動
+
+- `DemoDatasetEnabled=false`（既定）または S3 同期に失敗した場合も、アプリ起動は
+  継続する（500 にしない）。「シード投入」ボタンは 404 で失敗するのみで、他の
+  機能（初期表示・防災シミュレーション・シードクリア）には影響しない。
+- 「防災シミュレーション」は合成波形生成（`app/services/disaster_signal.py`）を
+  使うため、このデータセットに依存せず AWS 上でも常に動作する。
 
 ## デプロイ手順
 

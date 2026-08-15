@@ -1,4 +1,5 @@
-﻿import os
+﻿import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -8,10 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routers import alerts, demo, disaster, kpi, sensors, telemetry
+from app.services.dataset_sync import DatasetSyncError, sync_dataset_from_s3
+from app.services.demo_seed import DEFAULT_AUDIO_DIR
 from app.store import get_store, initialize_sensors
 
 # .env ファイルを読み込み、環境変数を設定する（BE-5: Orcarouter LLM API 接続用）
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -20,7 +25,26 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     「初期表示時は23件・全てLv0」という要求を満たす。``@app.on_event`` は
     非推奨のため ``lifespan`` を使う。
+
+    ``DEMO_DATASET_S3_URI`` が設定されている場合（AWS環境向け）、
+    ``backend/dataset/``（Zenodo由来・ライセンス上git管理外）をプライベート
+    S3バケットから同期してから初期化する。未設定時（ローカル開発の既定）は
+    何もしない。同期に失敗しても起動は継続する（「シード投入」は404で失敗
+    するのみで、アプリ全体は壊さない）。
     """
+    s3_uri = os.environ.get("DEMO_DATASET_S3_URI", "").strip()
+    if s3_uri:
+        try:
+            count = sync_dataset_from_s3(s3_uri, DEFAULT_AUDIO_DIR)
+            logger.info("デモ音源データセットをS3から同期しました: %d件 (%s)", count, s3_uri)
+        except DatasetSyncError:
+            logger.warning(
+                "デモ音源データセットのS3同期に失敗しました"
+                "（シード投入は404で失敗しますが、起動は継続します）: %s",
+                s3_uri,
+                exc_info=True,
+            )
+
     initialize_sensors(get_store())
     yield
 

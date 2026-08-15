@@ -71,6 +71,19 @@ Parameters:
     Type: String
     Default: 'http://localhost:3000'
     Description: Comma-separated list of allowed CORS origins
+  DemoDatasetEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Enable S3 dataset sync for the seed-batch ("シード投入") feature. Set to
+      'true' only after the licensed WAV dataset has been manually uploaded
+      to the DemoDatasetBucket (see infra/README.md — never via git/CI).
+      When 'false' (default), the seed-batch button fails gracefully (404)
+      since no dataset is present.
+
+Conditions:
+  IsDemoDatasetEnabled: !Equals [!Ref DemoDatasetEnabled, 'true']
 
 Resources:
   # CloudWatch Log Groups
@@ -133,6 +146,14 @@ Resources:
               Value: !Ref OrcaRouterEnabled
             - Name: ORCAROUTER_API_KEY
               Value: !Ref OrcaRouterApiKey
+            - Name: DEMO_DATASET_S3_URI
+              Value: !If
+                - IsDemoDatasetEnabled
+                - !Sub
+                  - 's3://${BucketName}/dataset/'
+                  - BucketName:
+                      Fn::ImportValue: !Sub '${SecurityStackName}-demo-dataset-bucket-name'
+                - ''
           LogConfiguration:
             LogDriver: awslogs
             Options:

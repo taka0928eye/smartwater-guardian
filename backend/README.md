@@ -268,7 +268,8 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 > **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
 > 追加した `DemoSeedRequest` を受ける。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
 > 上書きする。音源はプロジェクト管理者から正規に受領し、`backend/dataset/`へ手動配置する
-> 実音響WAV（Git管理外・自動ダウンロードなし）。画面の「シード投入」ボタンから投入できる。
+> 実音響WAV（Git管理外・公開Webからの自動取得なし）。画面の「シード投入」ボタンから投入できる。
+> AWS環境では `DEMO_DATASET_S3_URI` 設定時のみ、管理されたプライベートS3から同じ4本を同期する。
 > `--audio-dir`はCLI・テストで別フォルダを使う場合のみ指定する。
 > 実 no-leak 音は SVM が自然に severity 0（正常）を返す。正確なファイル名・形式・23件の
 > 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。23台へ1件ずつ割り当て、

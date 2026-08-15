@@ -17,8 +17,10 @@
 | python-dotenv | 1.2.2 | .env 読込 | main.py・orcarouter |
 | pytest | 9.1.1 | テスト | tests/* |
 | requests | 2.34.2 | 検証スクリプト | scripts/check_*.py 等 |
+| boto3 | 1.43.72 | AWS SDK（S3クライアント） | services/dataset_sync.py（DEMO-2・AWS向けデータセット同期） |
+| botocore | 1.43.72 | boto3 の低レベル実装 | boto3 の推移的依存（明示ピン） |
 
-（annotated-doc / anyio / certifi / click 等は上記の推移的依存）
+（annotated-doc / anyio / certifi / click / jmespath / python-dateutil / s3transfer / six 等は上記の推移的依存）
 
 ### npm（frontend/package.json）
 
@@ -47,14 +49,16 @@ page.tsx (Server Component)
 DashboardClient.tsx (Client)
   -> useKpiPolling / useAlertPolling / useSensorPolling / useDisasterSummary
   -> SensorMap / DisasterOverlay / AlertList / AlertDetailDrawer / KpiSummary
-useKpiPolling -> lib/api(fetchKpiSummary)
-useAlertPolling -> lib/api(fetchAlerts)
-useSensorPolling -> lib/api(fetchSensorsGeoJson)
-useDisasterSummary -> lib/api(fetchDisasterSummary)
+  -> lib/api(seedDemoBatch, clearDemo)  # DEMO-2: シード投入・シードクリアボタン
+useKpiPolling -> lib/api(fetchKpiSummary)  # refresh() あり（DEMO-2）
+useAlertPolling -> lib/api(fetchAlerts)  # refresh() あり（DEMO-2）
+useSensorPolling -> lib/api(fetchSensorsGeoJson)  # refresh() あり（DEMO-2）
+useDisasterSummary -> lib/api(fetchDisasterSummary)  # refresh() あり
 lib/api
   -> types/api (AlertSummary, AlertDetail, SensorInfo, WorkOrder, KpiSummary, ...)
   -> types/sensor (SensorFeatureCollection)
   -> types/disaster (DisasterSummary, DisasterCluster, ...)
+  -> types/demo (DemoSeedBatchResponse, DemoClearResponse)  # DEMO-2
 KpiSummary -> lib/severity (getSeverityMeta) / BusinessModelDocLink / props KpiSummary
 BusinessModelDocLink -> app/api/docs/business-model/route.ts (fetch)
 AlertList -> lib/alertSort / SeverityBadge
@@ -68,10 +72,13 @@ DisasterOverlay -> types/disaster / react-leaflet
 ```
 main.py
   -> routers/telemetry | alerts | sensors | kpi | disaster | demo
+  -> services/dataset_sync (sync_dataset_from_s3)  # lifespan: DEMO_DATASET_S3_URI 設定時のみ（DEMO-2）
+  -> store(initialize_sensors)  # lifespan: 起動時に23件Lv0構築（DEMO-2）
 routers/telemetry
   -> services/audio (analyze_audio, AudioValidationError) / schemas/telemetry / store
 routers/demo
-  -> services/audio (analyze_audio) / schemas/demo (DemoSeedRequest) / schemas/telemetry / store
+  -> services/audio (analyze_audio) / services/demo_seed (run_seed_batch, DemoSeedError)  # DEMO-2
+  -> schemas/demo (DemoSeedRequest, DemoSeedBatchResponse) / schemas/telemetry / store
 routers/alerts
   -> schemas/alert / store / services/ledger / services/orcarouter (create_work_order)
 routers/sensors
@@ -79,9 +86,16 @@ routers/sensors
 routers/kpi
   -> schemas/kpi / services/kpi(calculate_kpi_summary)
 routers/disaster
-  -> schemas/disaster / store / schemas/telemetry
+  -> services/audio (analyze_audio) / services/disaster_signal (generate_level3_signal)  # DEMO-2
+  -> schemas/disaster / store(get_hydrants, register_disaster_sensors, get_disaster_sensor_ids) / schemas/telemetry
 services/audio
   -> schemas/telemetry(AnalysisResult, SpectrumPoint) / models/leak_svm_v1.joblib / scipy / sklearn / joblib
+services/demo_seed
+  -> services/audio(analyze_audio) / store(get_hydrants, clear_disaster_state) / backend/dataset/（DEMO-2）
+services/disaster_signal
+  -> numpy（DEMO-2・外部ファイル非依存）
+services/dataset_sync
+  -> boto3 / botocore（DEMO-2）
 services/orcarouter
   -> schemas/work_order(WorkOrder, RepairPart) / schemas/alert / schemas/pipe / services/prompts
   -> services/llm_cost (calculate_and_enrich_cost) / app/dependencies(HttpClientDep)
@@ -113,9 +127,10 @@ schemas/pipe -> schemas/telemetry(STRICT_INPUT_CONFIG)
 
 | ファイル | 内容 | 読込元 | キャッシュ |
 |----------|------|--------|------------|
-| `backend/app/data/hydrants.json` | 消火栓マスタ（10 件） | store.get_hydrants() | `@lru_cache(maxsize=1)` |
+| `backend/app/data/hydrants.json` | 消火栓マスタ（20 件） | store.get_hydrants() | `@lru_cache(maxsize=1)` |
 | `backend/app/data/pipes.json` | 配管台帳（10 路線・GeoJSON LineString） | ledger.get_pipes() | `@lru_cache(maxsize=1)` |
 | `backend/app/data/repair_parts.json` | 補修部材マスタ（フォールバック WorkOrder 用） | orcarouter._load_repair_parts() | `@lru_cache(maxsize=1)` |
+| `backend/dataset/*.wav`（**git管理外**） | Zenodo由来の実音響4本（no-leak/leak×level1-3） | services/demo_seed.py（シード投入） | なし（ファイル読込のたび） |
 
 ### 学習済みモデル
 
@@ -123,13 +138,15 @@ schemas/pipe -> schemas/telemetry(STRICT_INPUT_CONFIG)
 |----------|------|--------|------|
 | `backend/app/models/leak_svm_v1.joblib` | 漏水判定 SVM | services/audio._load_model() | metadata.json の期待 SHA-256 と照合（不一致は例外） |
 
-### ランタイムデータ（インメモリ + 一時ファイル）
+### ランタイムデータ（インメモリ）
 
 - `Store._records: deque[StoredTelemetry]`（maxlen=500・`threading.Lock` 保護）
 - `Store._index: dict[telemetry_id, StoredTelemetry]` / `Store._sensor_latest: dict[sensor_id, StoredTelemetry]`
+- `Store._disaster_sensor_ids: set[str]`（DEMO-2・防災シミュレーションで選出された sensor_id の累積記録。
+  `/disaster/summary` の対象抽出に使用。旧 `/tmp/disaster_simulated_items.json` 一時ファイルキャッシュは廃止）
 - `orcarouter._work_order_cache`（LLM 成功時のみ・`asyncio.Lock` 直列化）
-- `/tmp/disaster_simulated_items.json`（防災シミュレーション投入分。テスト分離に配慮した一時保持）
-- プロセス再起動で消える（MVP スコープ）
+- プロセス再起動で消える（MVP スコープ）。起動時 `lifespan` が `initialize_sensors()` で
+  23件Lv0の初期状態を自動再構築する（DEMO-2）
 
 ## 依存関係の監査
 
