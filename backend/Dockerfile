@@ -26,6 +26,12 @@ COPY --from=builder /root/.local /home/appuser/.local
 COPY app ./app
 COPY main.py .
 
+# アプリケーションディレクトリの所有権を appuser に変更
+RUN chown -R appuser:appuser /app
+
+# デモ音源ディレクトリを事前作成（S3同期時に書き込み権限が必要）
+RUN mkdir -p /app/dataset && chown -R appuser:appuser /app/dataset
+
 # ユーザー切り替え
 USER appuser
 
