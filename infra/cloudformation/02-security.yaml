@@ -99,9 +99,6 @@ Resources:
                   - ecr:GetDownloadUrlForLayer
                 Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/*'
 
-  # DEMO-2: デモ用実音響データセット（Zenodo由来・ライセンス上git/CI経由の
-  # 再配布不可）を保管するプライベートバケット。中身は運用者が
-  # `aws s3 cp` 等で手動アップロードする（git管理外。infra/README.md 参照）。
   DemoDatasetBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -126,8 +123,6 @@ Resources:
             Principal:
               Service: ecs-tasks.amazonaws.com
             Action: sts:AssumeRole
-      # DEMO-2: シード投入APIが起動時にデータセットを読み取るための最小権限
-      # （対象バケットのみ、GetObject/ListBucket のみ）。
       Policies:
         - PolicyName: DemoDatasetReadPolicy
           PolicyDocument:
@@ -188,7 +183,7 @@ Outputs:
   DemoDatasetBucketName:
     Description: >-
       S3 bucket for the licensed demo audio dataset (Zenodo-sourced; upload
-      manually via `aws s3 cp` — never via git/CI, see infra/README.md)
+      manually via `aws s3 cp` - never via git/CI, see infra/README.md)
     Value: !Ref DemoDatasetBucket
     Export:
       Name: !Sub '${AWS::StackName}-demo-dataset-bucket-name'
