@@ -59,7 +59,7 @@ export class DashboardPage {
   /**
    * 指定した消火栓 ID のアラート行。
    *
-   * DEMO-2: バックエンド起動時の自動初期化（`initialize_sensors()`。20件Lv0）と
+   * DEMO-2: バックエンド起動時の自動初期化（`initialize_sensors()`。23件Lv0）と
    * `global-setup.ts` の `POST /alerts/seed`（実在マスタ HYD-001〜010 を再利用）が
    * 同じセンサーIDに対して別レコードを投入しうるため、同一 hydrantId で複数行が
    * ヒットする場合がある（`list_alerts()` はセンサー単位で重複排除しない設計）。

@@ -29,16 +29,28 @@ def test_run_seed_batch_cli_posts_seed_param() -> None:
 
     def fake_post(url: str, params: dict, timeout: float) -> dict:
         captured.append((url, params, timeout))
-        return {"inserted_count": 20, "level_counts": {"0": 8, "1": 8, "2": 3, "3": 1}}
+        return {"inserted_count": 23, "level_counts": {"0": 11, "1": 8, "2": 3, "3": 1}}
 
     result = run_seed_batch_cli(
         seed=42, url="http://test.local/api/v1/demo/seed-batch", post_func=fake_post
     )
-    assert result["inserted_count"] == 20
+    assert result["inserted_count"] == 23
     assert len(captured) == 1
     url, params, _timeout = captured[0]
     assert url == "http://test.local/api/v1/demo/seed-batch"
     assert params == {"seed": 42}
+
+
+def test_run_seed_batch_cli_passes_external_audio_directory() -> None:
+    """共有されたWAV 4本のフォルダをAPIへ可変指定できる。"""
+    captured: list[dict] = []
+
+    def fake_post(_url: str, params: dict, _timeout: float) -> dict:
+        captured.append(params)
+        return {"inserted_count": 23, "level_counts": {"0": 11, "1": 8, "2": 3, "3": 1}}
+
+    run_seed_batch_cli(seed=42, audio_dir="/shared/demo_audio", post_func=fake_post)
+    assert captured == [{"seed": 42, "audio_dir": "/shared/demo_audio"}]
 
 
 def test_run_seed_batch_cli_wraps_request_failure() -> None:
@@ -62,6 +74,7 @@ def test_parse_args_requires_seed() -> None:
     args = parse_args(["--seed", "42"])
     assert args.seed == 42
     assert args.url == DEFAULT_URL
+    assert args.audio_dir is None
     assert args.dry_run is False
 
 
@@ -90,9 +103,9 @@ def test_main_success_returns_zero(
     monkeypatch.setattr(
         seed_demo_cli,
         "run_seed_batch_cli",
-        lambda seed, url=DEFAULT_URL: {
-            "inserted_count": 20,
-            "level_counts": {"0": 8, "1": 8, "2": 3, "3": 1},
+        lambda seed, url=DEFAULT_URL, audio_dir=None: {
+            "inserted_count": 23,
+            "level_counts": {"0": 11, "1": 8, "2": 3, "3": 1},
         },
     )
     rc = main(["--seed", "42"])
@@ -106,7 +119,7 @@ def test_main_failure_returns_one(
     """API呼び出し失敗時は1で終了する。"""
     import scripts.seed_demo as seed_demo_cli
 
-    def boom(seed: int, url: str = DEFAULT_URL) -> dict:
+    def boom(seed: int, url: str = DEFAULT_URL, audio_dir: str | None = None) -> dict:
         raise SeedBatchCliError("接続できません")
 
     monkeypatch.setattr(seed_demo_cli, "run_seed_batch_cli", boom)

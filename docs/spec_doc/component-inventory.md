@@ -40,15 +40,15 @@
 
 ## Router: disaster.py
 
-- **責務**: 防災モード（BE-7 / DEMO-2 再設計）。`POST /api/v1/disaster/simulate` は実在20消火栓のうち無作為 `count` 件（既定6）を選び、合成Level3波形で信号データごと変化させる。`GET /api/v1/disaster/summary` はその選出分のみをクラスタリングし被災エリアを返す
+- **責務**: 防災モード（BE-7 / DEMO-2 再設計）。`POST /api/v1/disaster/simulate` は実在23消火栓のうち無作為 `count` 件（既定6）を選び、合成Level3波形で信号データごと変化させる。`GET /api/v1/disaster/summary` はその選出分のみをクラスタリングし被災エリアを返す
 - **主要関数**: `haversine_distance()` / `create_circle_polygon()` / `get_disaster_summary()` / `simulate_disaster()`
 - **依存**: schemas/disaster（DisasterCluster / DisasterSummaryResponse / DisasterSimulateResponse / GeoJSONPolygon）、schemas/telemetry（GeoLocation）、services/audio（analyze_audio）、services/disaster_signal（generate_level3_signal / encode_signal_to_base64）、store（get_store / get_hydrants / register_disaster_sensors / get_disaster_sensor_ids / StoredTelemetry）
 - **関連**: BE-7。`threshold_meters`（デフォルト 300m）でクラスタリング。想定断水世帯 = クラスタ内件数 × 120 + 50
-- **注記**: 監視センサー数は常に20のまま増加しない（旧「東京駅周辺への架空センサー追加」方式を廃止）。選出 sensor_id は `register_disaster_sensors()` に累積記録され、`get_disaster_summary()` はこの記録分のみを対象とする（通常検知のLevel3は対象外）。旧 `TEL-DISASTER-*` プレフィックス判定・`/tmp/disaster_simulated_items.json` キャッシュは廃止
+- **注記**: 監視センサー数は常に23のまま増加しない（旧「東京駅周辺への架空センサー追加」方式を廃止）。選出 sensor_id は `register_disaster_sensors()` に累積記録され、`get_disaster_summary()` はこの記録分のみを対象とする（通常検知のLevel3は対象外）。旧 `TEL-DISASTER-*` プレフィックス判定・`/tmp/disaster_simulated_items.json` キャッシュは廃止
 
 ## Router: demo.py
 
-- **責務**: デモ初期状態の投入・クリア（DEMO-1/DEMO-2）。`POST /api/v1/demo/seed` は実音声の `analyze_audio` を実行しつつ深刻度を `payload.level` に確定して1件投入。`POST /api/v1/demo/seed-batch` は20消火栓へLv0×8/Lv1×8/Lv2×3/Lv3×1を一括投入。`DELETE /api/v1/demo/clear` はクリア後に20件Lv0の初期状態へ戻す
+- **責務**: デモ初期状態の投入・クリア（DEMO-1/DEMO-2）。`POST /api/v1/demo/seed` は実音声の `analyze_audio` を実行しつつ深刻度を `payload.level` に確定して1件投入。`POST /api/v1/demo/seed-batch` は23消火栓へLv0×11/Lv1×8/Lv2×3/Lv3×1を一括投入。`DELETE /api/v1/demo/clear` はクリア後に23件Lv0の初期状態へ戻す
 - **主要関数**: `seed_demo()` / `seed_demo_batch()` / `clear_demo()`
 - **依存**: schemas/demo（DemoSeedRequest / DemoSeedBatchResponse）、schemas/telemetry（TelemetryResponse）、services/audio（analyze_audio / AudioValidationError）、services/demo_seed（run_seed_batch / DemoSeedError）、store（get_store / initialize_sensors / clear_disaster_state / StoredTelemetry）
 - **注記**: 実 SVM は合成波形（`generate_signal`）を意図レベルに分類できないため、デモシード専用の補正として深刻度を上書き（`model_copy(update={"severity_level": ...})`）。実録音のリプレイでも深刻度保証。`seed_demo_batch()` はデータセット未配置時に404を返す（500にしない）
@@ -58,14 +58,14 @@
 - **責務**: 解析済みテレメトリを保持するスレッドセーフなインメモリストア（BE-6）
 - **主要要素**: `StoredTelemetry`（Pydantic・frozen / strict / extra=forbid）/ `InMemoryStore`（`deque(maxlen=500)` + `dict` 索引 + `threading.Lock`）/ `get_store()` / `reset_store()` / `get_hydrants()`（`@lru_cache`）
 - **主要メソッド**: `add()` / `get()` / `get_all()` / `list_alerts()` / `latest_sensor_states()` / `clear()`
-- **DEMO-2 追加関数**: `initialize_sensors(store)`（起動時・クリア時に20件Lv0を登録）/ `register_disaster_sensors()` / `get_disaster_sensor_ids()` / `clear_disaster_state()`（防災シミュレーション選出センサーの累積追跡。旧 `register_runtime_sensors`（架空センサー追加）を置き換え）
+- **DEMO-2 追加関数**: `initialize_sensors(store)`（起動時・クリア時に23件Lv0を登録）/ `register_disaster_sensors()` / `get_disaster_sensor_ids()` / `clear_disaster_state()`（防災シミュレーション選出センサーの累積追跡。旧 `register_runtime_sensors`（架空センサー追加）を置き換え）
 - **依存**: schemas/alert（HydrantMaster）、schemas/telemetry（AnalysisResult / GeoLocation）、data/hydrants.json
 - **設計判断**: 満杯時は最古を索引と同期して破棄。`sensor_latest` は破棄しない（デモでマーカーを消さない非対称設計）。`get_all()` は防災クラスタリングで使用
 
 ## Service: demo_seed.py（DEMO-2）
 
 - **責務**: デモ初期状態の一括投入（`POST /demo/seed-batch` / `scripts/seed_demo.py` の両方から呼ばれる単一の実体）
-- **主要関数**: `build_seed_batch(hydrants, seed)`（20消火栓へ1レベルずつ重複なく割当て）/ `resolve_replay_files()` / `select_replay_file()` / `validate_mvp_contract()` / `load_audio_file()` / `run_seed_batch(store, audio_dir, seed)`
+- **主要関数**: `build_seed_batch(hydrants, seed)`（23消火栓へ1レベルずつ重複なく割当て）/ `resolve_replay_files()` / `select_replay_file()` / `validate_mvp_contract()` / `load_audio_file()` / `run_seed_batch(store, audio_dir, seed)`
 - **依存**: services/audio（analyze_audio）、store（get_hydrants / StoredTelemetry / clear_disaster_state）
 - **注記**: `DemoSeedError` はマスタ・音源起因の失敗（ルーターで404に変換）。`run_seed_batch()` は以前の防災シミュレーション選出記録も `clear_disaster_state()` でクリアする（新しいベースラインのため）
 
@@ -288,7 +288,7 @@ AlertDetailDrawer -> lib/api(fetchAlertDetail, createWorkOrder) / SpectrumChart 
 lib/api -> types/api / types/sensor / types/disaster / types/demo（DEMO-2）
 main.py -> routers(telemetry, alerts, sensors, kpi, disaster, demo)
 main.py -> services/dataset_sync（lifespan: DEMO_DATASET_S3_URI 設定時のみ・DEMO-2）
-main.py -> store(initialize_sensors)（lifespan: 起動時に20件Lv0を構築・DEMO-2）
+main.py -> store(initialize_sensors)（lifespan: 起動時に23件Lv0を構築・DEMO-2）
 routers/telemetry -> services/audio / store / schemas/telemetry
 routers/demo -> services/audio / services/demo_seed / store / schemas/demo（DEMO-2）
 routers/alerts -> store / services/ledger / services/orcarouter / schemas/alert
@@ -313,8 +313,8 @@ store -> data/hydrants.json / schemas/alert / schemas/telemetry
 | Router: alerts.py | BE-5 / BE-6 | 実装済み（work-order / seed） |
 | Router: sensors.py | BE-6 | 実装済み |
 | Router: kpi.py | BE-8 | 実装済み |
-| Router: disaster.py | BE-7 / DEMO-2 | 実装済み（実在20消火栓を書き換える方式に再設計） |
-| Router: demo.py | DEMO-1 / DEMO-2 | 実装済み（seed-batch / clear の20件Lv0契約を追加） |
+| Router: disaster.py | BE-7 / DEMO-2 | 実装済み（実在23消火栓を書き換える方式に再設計） |
+| Router: demo.py | DEMO-1 / DEMO-2 | 実装済み（seed-batch / clear の23件Lv0契約を追加） |
 | Store (store.py) | BE-6 / DEMO-2 | 実装済み |
 | Service: ledger.py | BE-4 | 実装済み |
 | Service: kpi.py | BE-8 | 実装済み |

@@ -112,11 +112,11 @@ useSensorPolling / useDisasterSummary が担う（いずれも DEMO-2 で `refre
 「前提: docs/business-model.md」リンクは `app/api/docs/business-model/route.ts` が docs を配信。
 バックエンドは `main.py` → 6 ルーター（telemetry / alerts / sensors / kpi / disaster / demo）。
 telemetry・demo（`POST /demo/seed`）は audio サービス（SVM + FFT）を直接呼び、demo の
-`seed-batch` は `demo_seed.py`（DEMO-2・20消火栓へ1レベルずつ割当て + audio 呼び出し）を、
+`seed-batch` は `demo_seed.py`（DEMO-2・23消火栓へ1レベルずつ割当て + audio 呼び出し）を、
 disaster の `simulate` は `disaster_signal.py`（DEMO-2・外部ファイル非依存の合成Level3波形）を
 経由して audio サービスを呼ぶ。alerts の work-order は orcarouter サービス（LLM + 原価算出）を呼ぶ。
 データ源は `hydrants.json` / `pipes.json` / `repair_parts.json` / `leak_svm_v1.joblib`。
-起動時（`lifespan`）は `initialize_sensors()` で20件Lv0の初期状態を構築し、環境変数
+起動時（`lifespan`）は `initialize_sensors()` で23件Lv0の初期状態を構築し、環境変数
 `DEMO_DATASET_S3_URI` があれば `dataset_sync.py` で AWS 環境向けに `backend/dataset/`
 （Zenodo実音響・ライセンス上git管理外）をプライベートS3から同期する。）
 
@@ -231,8 +231,8 @@ KPI ランドマーク（section / h2 / aria-labelledby / aria-busy）は Dashbo
 
 ### 4. 防災モード（BE-7 / DEMO-2 再設計）
 
-> DEMO-2 で「東京駅周辺に架空センサーを新規追加」方式から「実在20消火栓のうち
-> 無作為6件を書き換える」方式へ再設計した。監視センサー数は常に20のまま増加しない。
+> DEMO-2 で「東京駅周辺に架空センサーを新規追加」方式から「実在23消火栓のうち
+> 無作為6件を書き換える」方式へ再設計した。監視センサー数は常に23のまま増加しない。
 
 ```mermaid
 sequenceDiagram
@@ -246,10 +246,10 @@ sequenceDiagram
 
     U->>API: simulateDisaster(count=6)
     API->>R: POST /api/v1/disaster/simulate
-    R->>R: 実在20消火栓から6件を無作為選出
+    R->>R: 実在23消火栓から6件を無作為選出
     R->>SIG: generate_level3_signal() ×6（外部ファイル非依存の合成波形）
     R->>R: analyze_audio() で実スペクトル算出 + severity_level=3 に確定
-    R->>ST: clear() → 20件を再構築（選出6件=新状態 / 非選出14件=現状維持）
+    R->>ST: clear() → 23件を再構築（選出6件=新状態 / 非選出17件=現状維持）
     R->>ST: register_disaster_sensors(選出sensor_ids) に累積記録
     R-->>API: DisasterSimulateResponse (inserted_count)
     API->>D: refresh() (useDisasterSummary / useAlertPolling / useKpiPolling / useSensorPolling)
@@ -261,10 +261,10 @@ sequenceDiagram
     D->>DIS: DisasterOverlay (GeoJSON Polygon 描画・popup XSS エスケープ)
 ```
 
-（テキスト代替: 防災シミュレーションボタン → `simulateDisaster(6)` が実在20消火栓のうち
+（テキスト代替: 防災シミュレーションボタン → `simulateDisaster(6)` が実在23消火栓のうち
 無作為6件を選び、`disaster_signal.generate_level3_signal()`（合成波形。AWS環境でも
 データセット不要で常に動作する）を `analyze_audio()` で解析して Level 3 に確定 →
-ストアを20件（選出6件=新状態＋非選出14件=現状維持）に一括再構築 → 選出 sensor_id を
+ストアを23件（選出6件=新状態＋非選出17件=現状維持）に一括再構築 → 選出 sensor_id を
 `register_disaster_sensors()` に累積記録 → `refresh()` で即時再取得 →
 `GET /api/v1/disaster/summary` は**その累積記録分のみ**を距離閾値（300m）で
 クラスタリングし、被災エリア Polygon・想定断水世帯・優先閉栓バルブを返す

@@ -158,5 +158,29 @@
     "latitude": 35.6285,
     "longitude": 139.7387,
     "pipe_id": "P-009"
+  },
+  {
+    "hydrant_id": "HYD-021",
+    "sensor_id": "SNS-021",
+    "name": "千代田区神田岩本町 消火栓",
+    "latitude": 35.6914,
+    "longitude": 139.7711,
+    "pipe_id": "P-002"
+  },
+  {
+    "hydrant_id": "HYD-022",
+    "sensor_id": "SNS-022",
+    "name": "新宿区新宿2丁目 消火栓",
+    "latitude": 35.6891,
+    "longitude": 139.7013,
+    "pipe_id": "P-005"
+  },
+  {
+    "hydrant_id": "HYD-023",
+    "sensor_id": "SNS-023",
+    "name": "台東区上野5丁目 消火栓",
+    "latitude": 35.7117,
+    "longitude": 139.7782,
+    "pipe_id": "P-007"
   }
 ]

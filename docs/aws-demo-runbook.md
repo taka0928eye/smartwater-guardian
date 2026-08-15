@@ -74,7 +74,7 @@ Write-Host "Open in browser: http://$ALB_DNS"
 ```
 
 **期待される画面**:
-- 地図に20件のマーカーが表示される（全てグレー＝Lv0・初期状態。DEMO-2でバックエンド
+- 地図に23件のマーカーが表示される（全てグレー＝Lv0・初期状態。DEMO-2でバックエンド
   起動時に自動投入されるため、シード投入前でも0件にはならない）
 - コンソール に API エラーが無い（CORS 等）
 
@@ -149,14 +149,14 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --url "http://$ALB_DNS:80
 ### デモ中のシード状態リセット
 
 「正常状態 → Level 1 検知」を何度も実演したい場合、バックエンド再起動不要で
-20件Lv0の初期状態に戻せる（ダッシュボードの「シードクリア」ボタンでも可）：
+23件Lv0の初期状態に戻せる（ダッシュボードの「シードクリア」ボタンでも可）：
 
 ```powershell
 cd backend
 
 $BACKEND_URL = "http://$ALB_DNS:8000"
 
-# シード状態をクリア（20件Lv0の初期状態に戻る。0件にはならない）
+# シード状態をクリア（23件Lv0の初期状態に戻る。0件にはならない）
 venv/Scripts/python.exe scripts/clear_demo.py `
   --url "$BACKEND_URL/api/v1/demo/clear"
 
@@ -208,4 +208,4 @@ aws logs tail /ecs/smartwater-guardian-frontend --follow --region ap-northeast-1
 - `docs/demo-runbook.md` — ローカルデモ検証ガイド
 - `infra/README.md`「デモ音源データセットのAWS配置」 — S3への手動アップロード手順（DEMO-2）
 - `backend/scripts/seed_demo.py` — シード投入スクリプト（`POST /demo/seed-batch` を1回叩く）
-- `backend/scripts/clear_demo.py` — シード状態リセットスクリプト（20件Lv0に戻す）
+- `backend/scripts/clear_demo.py` — シード状態リセットスクリプト（23件Lv0に戻す）

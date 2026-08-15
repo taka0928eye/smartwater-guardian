@@ -104,8 +104,8 @@ class TestCalculateKpiSummary:
         assert summary.level2_count == 3
         assert summary.level3_count == 1
         assert summary.estimated_cost_saved_yen == 2_048_400
-        # total_sensors は hydrants.json の実件数（現状20件）と一致（S-3）
-        assert summary.total_sensors == len(get_hydrants()) == 20
+        # total_sensors は hydrants.json の実件数（23件）と一致（S-3）
+        assert summary.total_sensors == len(get_hydrants()) == 23
         # 試算値である旨と算定根拠を常時明示
         assert summary.is_estimate is True
         assert summary.assumption_doc == KPI_ASSUMPTION_DOC
@@ -168,7 +168,7 @@ class TestKpiSummaryEndpoint:
         assert body["level2_count"] == 0
         assert body["level3_count"] == 0
         assert body["estimated_cost_saved_yen"] == 0
-        assert body["total_sensors"] == 20
+        assert body["total_sensors"] == 23
         assert body["assumption_doc"] == KPI_ASSUMPTION_DOC
 
 
@@ -211,24 +211,24 @@ class TestKpiSummarySchema:
 
 
 class TestInitialSensorState:
-    """マスタ20台のセンサの初期正常状態（ユーザー要求）。
+    """マスタ23台のセンサの初期正常状態（ユーザー要求）。
 
     hydrants.json のセンサは初期状態で全て正常（severity_level=0）として初期化される。
     """
 
     def test_initial_sensors_are_normal(self, store) -> None:
-        # アプリ初期化時、hydrants.json の20台は全て正常状態でストアに登録される
+        # アプリ初期化時、hydrants.json の23台は全て正常状態でストアに登録される
         from app.store import initialize_sensors
         initialize_sensors(store)
 
         # ストアが empty で かつ初期化後
         alerts = store.get_all()
 
-        # 20 件の正常状態レコード（Level 0）が登録されているはず
-        assert len(alerts) == 20
+        # 23 件の正常状態レコード（Level 0）が登録されているはず
+        assert len(alerts) == 23
         for alert in alerts:
             assert alert.analysis.severity_level == 0
-            assert alert.sensor_id in [f"SNS-{i:03d}" for i in range(1, 21)]
+            assert alert.sensor_id in [f"SNS-{i:03d}" for i in range(1, 24)]
 
     def test_kpi_summary_counts_initial_normal_sensors(self, store) -> None:
         # 初期化後、KPI サマリで Level 1-3 はすべて 0
@@ -240,4 +240,4 @@ class TestInitialSensorState:
         assert summary.level2_count == 0
         assert summary.level3_count == 0
         # 正常状態は集計対象外（Level 0）
-        assert summary.total_sensors == 20
+        assert summary.total_sensors == 23

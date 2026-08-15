@@ -29,7 +29,7 @@
         [139.772, 35.6911]
       ]
     },
-    "hydrant_ids": ["HYD-002"]
+    "hydrant_ids": ["HYD-002", "HYD-021"]
   },
   {
     "pipe_id": "P-003",
@@ -77,7 +77,7 @@
         [139.702, 35.6892]
       ]
     },
-    "hydrant_ids": ["HYD-005"]
+    "hydrant_ids": ["HYD-005", "HYD-022"]
   },
   {
     "pipe_id": "P-006",
@@ -109,7 +109,7 @@
         [139.7786, 35.7117]
       ]
     },
-    "hydrant_ids": ["HYD-007", "HYD-017"]
+    "hydrant_ids": ["HYD-007", "HYD-017", "HYD-023"]
   },
   {
     "pipe_id": "P-008",

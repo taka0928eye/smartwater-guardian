@@ -73,7 +73,7 @@ DisasterOverlay -> types/disaster / react-leaflet
 main.py
   -> routers/telemetry | alerts | sensors | kpi | disaster | demo
   -> services/dataset_sync (sync_dataset_from_s3)  # lifespan: DEMO_DATASET_S3_URI 設定時のみ（DEMO-2）
-  -> store(initialize_sensors)  # lifespan: 起動時に20件Lv0構築（DEMO-2）
+  -> store(initialize_sensors)  # lifespan: 起動時に23件Lv0構築（DEMO-2）
 routers/telemetry
   -> services/audio (analyze_audio, AudioValidationError) / schemas/telemetry / store
 routers/demo
@@ -146,7 +146,7 @@ schemas/pipe -> schemas/telemetry(STRICT_INPUT_CONFIG)
   `/disaster/summary` の対象抽出に使用。旧 `/tmp/disaster_simulated_items.json` 一時ファイルキャッシュは廃止）
 - `orcarouter._work_order_cache`（LLM 成功時のみ・`asyncio.Lock` 直列化）
 - プロセス再起動で消える（MVP スコープ）。起動時 `lifespan` が `initialize_sensors()` で
-  20件Lv0の初期状態を自動再構築する（DEMO-2）
+  23件Lv0の初期状態を自動再構築する（DEMO-2）
 
 ## 依存関係の監査
 

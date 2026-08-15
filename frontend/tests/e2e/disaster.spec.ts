@@ -23,18 +23,24 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
     expect(initialCount).toBeGreaterThan(0);
   });
 
-  test("2. 防災シミュレーション実行（/api/v1/disaster/simulate）", async () => {
-    const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
+  test("2. 防災シミュレーションボタンで実行する", async ({ page }) => {
+    await page.goto("/");
+    const button = page.getByTestId("disaster-simulate-button");
+    await expect(button).toHaveText("防災シミュレーション");
 
-    const simulateResponse = await fetch(`${apiBaseUrl}/api/v1/disaster/simulate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ count: 10 }),
-    });
+    const [simulateResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/disaster/simulate") &&
+          response.request().method() === "POST",
+      ),
+      button.click(),
+    ]);
 
-    expect(simulateResponse.ok).toBeTruthy();
+    expect(simulateResponse.ok()).toBeTruthy();
     const data = await simulateResponse.json();
     console.log(`[災害シミュレーション] 挿入件数: ${data.inserted_count}`);
+    await expect(button).toHaveText("通常モードに戻る");
   });
 
   test("3. シミュレーション後のダッシュボード更新確認", async ({ page }) => {
@@ -91,5 +97,24 @@ test.describe("災害シミュレーション（シナリオ 9）", () => {
     const main = page.locator("main");
     const box = await main.boundingBox();
     expect(box?.width).toBeGreaterThan(100);
+  });
+
+  test("7. 同じボタンを再度押すと通常モードへ戻る", async ({ page }) => {
+    await page.goto("/");
+    const button = page.getByTestId("disaster-simulate-button");
+    await expect(button).toHaveText("通常モードに戻る");
+
+    const [resetResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/v1/disaster/simulate") &&
+          response.request().method() === "DELETE",
+      ),
+      button.click(),
+    ]);
+
+    expect(resetResponse.ok()).toBeTruthy();
+    await expect(button).toHaveText("防災シミュレーション");
+    await expect(page.locator("path.disaster-cluster")).toHaveCount(0);
   });
 });

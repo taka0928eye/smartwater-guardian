@@ -104,10 +104,10 @@ LLM 失敗時は `build_fallback_work_order()` で規定ルールによる算出
 `model` / `latency_ms` / `is_estimated` を付与 + JSON 構造化ログを出す。WorkOrderModal がフッターに表示。
 
 ### 9. 防災モード（BE-7 / DEMO-2 再設計・routers/disaster.py）
-`POST /disaster/simulate` は実在20消火栓のうち無作為 `count` 件（既定6）を選び、
+`POST /disaster/simulate` は実在23消火栓のうち無作為 `count` 件（既定6）を選び、
 `disaster_signal.generate_level3_signal()`（外部ファイル非依存の合成波形）を
 `analyze_audio()` で解析して Level 3 に確定する。非選出分は現在の状態を保持したまま
-ストアを20件に一括再構築（重複を作らない）。選出 sensor_id は
+ストアを23件に一括再構築（重複を作らない）。選出 sensor_id は
 `store.register_disaster_sensors()` に累積記録される。`GET /disaster/summary` は
 **その記録分のみ**を距離閾値（`threshold_meters` デフォルト 300m）でクラスタリングし、
 被災エリア Polygon を GeoJSON で返す（通常検知の Level 3 は対象外）。旧実装の
@@ -118,12 +118,12 @@ LLM 失敗時は `build_fallback_work_order()` で規定ルールによる算出
 - `POST /api/v1/alerts/seed`: E2E 用シード。実在マスタ（HYD-001〜010）へ L3×3 / L2×3 / L1×3 / L0×1 を決定論的投入
 - `POST /api/v1/demo/seed`: デモ用単体投入。`DemoSeedRequest` の `level` 上書きで実音声の
   `analyze_audio` を実行後に `model_copy(update={"severity_level": payload.level})`
-- `POST /api/v1/demo/seed-batch`（DEMO-2）: `demo_seed.build_seed_batch()` が20消火栓へ
-  ちょうど1レベルを重複なく割当て（Lv0×8/Lv1×8/Lv2×3/Lv3×1）、`backend/dataset/` の
+- `POST /api/v1/demo/seed-batch`（DEMO-2）: `demo_seed.build_seed_batch()` が23消火栓へ
+  ちょうど1レベルを重複なく割当て（Lv0×11/Lv1×8/Lv2×3/Lv3×1）、`backend/dataset/` の
   実音響WAVをreplayして一括投入。既存レコードを破棄してから書き直すため重複しない
 - `DELETE /api/v1/demo/clear`（DEMO-2で契約変更）: クリア後に `initialize_sensors()` を
-  呼び直し、**20件Lv0の初期状態に戻す**（旧: 0件へリセット）
-- `main.py` の `lifespan` が起動時に `initialize_sensors()` を呼び、常に「初期表示=20件
+  呼び直し、**23件Lv0の初期状態に戻す**（旧: 0件へリセット）
+- `main.py` の `lifespan` が起動時に `initialize_sensors()` を呼び、常に「初期表示=23件
   Lv0」を保証する
 
 ## 命名規則
