@@ -125,6 +125,12 @@ jobs:
             --region $REGION \
             --query 'taskDefinition' | \
             jq "(.containerDefinitions[] | select(.name == \"backend\")).image = \"${BACKEND_IMAGE}\" | \
+                (.containerDefinitions[] | select(.name == \"backend\")).environment |= \
+                  if any(.name == \"DEMO_DATASET_S3_URI\") then \
+                    map(if .name == \"DEMO_DATASET_S3_URI\" then .value = \"s3://smartwater-guardian-demo-dataset-620629391048\" else . end) \
+                  else \
+                    . + [{\"name\": \"DEMO_DATASET_S3_URI\", \"value\": \"s3://smartwater-guardian-demo-dataset-620629391048\"}] \
+                  end | \
                 del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)" \
             > backend-taskdef.json
 
