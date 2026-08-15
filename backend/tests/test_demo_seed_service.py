@@ -98,6 +98,55 @@ class TestReplayFileResolution:
         with pytest.raises(DemoSeedError):
             resolve_replay_files(tmp_path / "missing")
 
+    def test_reports_all_missing_required_filenames(self, tmp_path: Path) -> None:
+        signal = generate_signal(
+            0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+        )
+        _write_wav(tmp_path / "BE3_demo_no-leak_level0.wav", signal)
+
+        with pytest.raises(DemoSeedError) as exc_info:
+            resolve_replay_files(tmp_path)
+
+        message = str(exc_info.value)
+        assert "BE3_demo_leak_level1.wav" in message
+        assert "BE3_demo_leak_level2.wav" in message
+        assert "BE3_demo_leak_level3.wav" in message
+        assert "BE3_demo_no-leak_level0.wav" not in message
+
+    def test_rejects_invalid_wav_with_filename_and_invalid_fields(
+        self, audio_dir: Path
+    ) -> None:
+        invalid_path = audio_dir / "BE3_demo_leak_level2.wav"
+        samples = np.zeros(4_000, dtype=np.int16)
+        with wave.open(str(invalid_path), "wb") as wav_file:
+            wav_file.setnchannels(2)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(44_100)
+            wav_file.writeframes(np.repeat(samples, 2).astype("<i2").tobytes())
+
+        with pytest.raises(DemoSeedError) as exc_info:
+            resolve_replay_files(audio_dir)
+
+        message = str(exc_info.value)
+        assert "BE3_demo_leak_level2.wav" in message
+        assert "mono" in message
+        assert "8000Hz" in message
+        assert "1秒" in message
+
+    def test_rejects_non_pcm16_wav(self, audio_dir: Path) -> None:
+        invalid_path = audio_dir / "BE3_demo_leak_level1.wav"
+        with wave.open(str(invalid_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(1)
+            wav_file.setframerate(8_000)
+            wav_file.writeframes(bytes(8_000))
+
+        with pytest.raises(DemoSeedError) as exc_info:
+            resolve_replay_files(audio_dir)
+
+        assert "BE3_demo_leak_level1.wav" in str(exc_info.value)
+        assert "PCM16" in str(exc_info.value)
+
     def test_select_replay_file_level0_uses_no_leak(self, audio_dir: Path) -> None:
         import random
 

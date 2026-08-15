@@ -93,6 +93,50 @@ def test_seed_batch_endpoint_missing_dataset_returns_404(
     assert response.status_code == 404
 
 
+def test_seed_batch_endpoint_reports_all_missing_required_files(
+    client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数不足時は利用者が一度で対応できるよう全ファイル名を返す。"""
+    signal = generate_signal(
+        0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+    )
+    _write_wav(tmp_path / "BE3_demo_no-leak_level0.wav", signal)
+    monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", tmp_path)
+
+    response = client.post("/api/v1/demo/seed-batch?seed=1")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "BE3_demo_leak_level1.wav" in detail
+    assert "BE3_demo_leak_level2.wav" in detail
+    assert "BE3_demo_leak_level3.wav" in detail
+    assert str(tmp_path) not in detail
+
+
+def test_seed_batch_endpoint_rejects_invalid_wav_as_422(
+    client, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象ファイルと不正項目を示して形式不正を拒否する。"""
+    invalid_path = audio_dir / "BE3_demo_leak_level2.wav"
+    samples = np.zeros(4_000, dtype=np.int16)
+    with wave.open(str(invalid_path), "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(44_100)
+        wav_file.writeframes(np.repeat(samples, 2).astype("<i2").tobytes())
+    monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", audio_dir)
+
+    response = client.post("/api/v1/demo/seed-batch?seed=1")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "BE3_demo_leak_level2.wav" in detail
+    assert "mono" in detail
+    assert "8000Hz" in detail
+    assert "1秒" in detail
+    assert str(audio_dir) not in detail
+
+
 def test_seed_batch_endpoint_reproducible_with_same_seed(
     client, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

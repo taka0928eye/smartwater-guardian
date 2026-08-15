@@ -19,8 +19,8 @@
 ## 2. 事前チェックリスト（事故防止）
 
 - [ ] `backend/` に `venv` が存在し、依存がインストール済み
-- [ ] repo外で受領した `demo_audio/` に、§3記載の実音響WAV 4本が配置済み
-      （※ Git 管理外。Zenodo データセットから切り出したファイルを受領して使用する）
+- [ ] プロジェクト管理者から正規に受領した実音響WAV 4本を `backend/dataset/` に配置済み
+      （※ Git 管理外。自動ダウンロード・無許可の再配布は行わない）
 - [ ] `frontend/` で `npm install` 済み（初回のみ）
 - [ ] `--seed` を固定し、リハーサルと同一の結果が出ることを確認済み（既定 `--seed 42`）
 - [ ] `ORCAROUTER_ENABLED=false` でも完走することを確認済み（§6 オフラインリハーサル）
@@ -36,30 +36,21 @@
 cd backend
 venv/Scripts/uvicorn.exe main:app --reload --port 8000
 
-# --- ターミナル 2: デモ初期状態の投入（1コマンド） ---
-cd backend
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
-#   [OK] 23 件を http://localhost:8000/api/v1/demo/seed へ投入しました
-
-# --- ターミナル 3: フロントエンド起動 ---
+# --- ターミナル 2: フロントエンド起動 ---
 cd frontend
 npm run dev
 #   http://localhost:3000 をブラウザで開く
 ```
 
-macOS / Linuxでは、ターミナル2を次のように実行する。
-
-```bash
-cd backend
-venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
-```
+ブラウザで画面の「シード投入」ボタンを押すと、`backend/dataset/` の4ファイルから23件を投入する。
+CLI・テストで別フォルダを使う場合のみ、既存の `--audio-dir` オプションを使用する。
 
 ### 受領する音声ファイル
 
-`--audio-dir`で指定するフォルダには、次の4ファイルを配置する。
+`backend/dataset/`（またはCLIの`--audio-dir`で指定するフォルダ）には、次の4ファイルを配置する。
 
 ```text
-demo_audio/
+backend/dataset/
 ├── BE3_demo_no-leak_level0.wav
 ├── BE3_demo_leak_level1.wav
 ├── BE3_demo_leak_level2.wav
@@ -67,7 +58,7 @@ demo_audio/
 ```
 
 全ファイル共通の形式は **WAV / mono / PCM16 / 8000Hz / 1.0秒（8000サンプル）**。
-ファイル本体はGit管理せず、受領したローカルフォルダを直接指定する。
+ファイル本体はGit管理せず、自動取得もしない。プロジェクト管理者から正規の方法で取得する。
 
 ### シード内容（`--seed 42` の投入内訳）
 
@@ -106,7 +97,7 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\d
 
 - **音源は「学習未使用の Zenodo 実音響」**（学習データと同ドメインの held-out カット）。
   `generate_signal()` の人工音は実 SVM が意図レベルに分類できないため DEMO-1 で不採用にした。
-  実音響はrepo外で受領し、`--audio-dir`でそのフォルダを明示する
+  実音響はrepo外で受領して`backend/dataset/`へ配置する。`--audio-dir`はCLI・テスト用途で維持する
 - **ファイル名規約**: `*no-leak*_level{N}.wav` = 正常音 / `*leak*_level{N}.wav` = 漏水音。
   leak / no-leak を判別できないファイル名は投入ミス防止のためエラーにする
 - **音源選定は決定論的**: Level 0 は no-leak 音、Level 1〜3 は leak 音を使い、

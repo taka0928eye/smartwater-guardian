@@ -36,9 +36,21 @@ DEMO_COMPOSITION: dict[int, int] = {0: 11, 1: 8, 2: 3, 3: 1}
 # 実音響WAVの既定ディレクトリ（backend/dataset）。Git 管理外（.gitignore）。
 DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[2] / "dataset"
 
+# 利用者が手動配置するファイル名。レベルとの対応をここで一元管理する。
+REQUIRED_AUDIO_FILENAMES: dict[int, str] = {
+    0: "BE3_demo_no-leak_level0.wav",
+    1: "BE3_demo_leak_level1.wav",
+    2: "BE3_demo_leak_level2.wav",
+    3: "BE3_demo_leak_level3.wav",
+}
+
 
 class DemoSeedError(Exception):
     """デモ一括シード投入で扱う明示的な失敗（マスタ・音源起因）。"""
+
+    def __init__(self, message: str, *, status_code: int = 422) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -102,20 +114,60 @@ def _classify_audio_name(path: Path) -> tuple[bool, int | None]:
 
 
 def resolve_replay_files(audio_dir: Path) -> tuple[list[Path], list[Path]]:
-    """音声ディレクトリから no-leak と leak の WAV 一覧を返す。"""
-    if not audio_dir.is_dir():
-        raise DemoSeedError(f"音声ディレクトリが見つかりません: {audio_dir}")
-    wavs = sorted(path for path in audio_dir.glob("*.wav") if path.is_file())
-    no_leak: list[Path] = []
-    leak: list[Path] = []
-    for path in wavs:
-        is_leak, _ = _classify_audio_name(path)
-        (leak if is_leak else no_leak).append(path)
-    if not no_leak:
-        raise DemoSeedError(f"no-leak（正常音）のWAVが見つかりません: {audio_dir}")
-    if not leak:
-        raise DemoSeedError(f"leak（漏水音）のWAVが見つかりません: {audio_dir}")
-    return no_leak, leak
+    """必須4ファイルの存在・形式を検証し、no-leak / leak に分けて返す。"""
+    missing = [
+        filename
+        for filename in REQUIRED_AUDIO_FILENAMES.values()
+        if not (audio_dir / filename).is_file()
+    ]
+    if missing:
+        location = (
+            "backend/dataset/"
+            if audio_dir == DEFAULT_AUDIO_DIR
+            else "指定したaudio_dir"
+        )
+        raise DemoSeedError(
+            f"WAVが不足しています。{location} に以下を配置してください: "
+            f"{', '.join(missing)}",
+            status_code=404,
+        )
+
+    paths = {
+        level: audio_dir / filename
+        for level, filename in REQUIRED_AUDIO_FILENAMES.items()
+    }
+    for path in paths.values():
+        _validate_wav_format(path)
+    return [paths[0]], [paths[1], paths[2], paths[3]]
+
+
+def _validate_wav_format(path: Path) -> None:
+    """WAVヘッダーが mono / PCM16 / 8000Hz / 1秒かを安全に検証する。"""
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            sample_rate_hz = wav_file.getframerate()
+            sample_count = wav_file.getnframes()
+            compression = wav_file.getcomptype()
+    except (OSError, EOFError, wave.Error) as exc:
+        raise DemoSeedError(
+            f"不正なWAVです: {path.name} (WAVとして読み込めません)"
+        ) from exc
+
+    invalid: list[str] = []
+    if channels != 1:
+        invalid.append(f"mono（実際: {channels}ch）")
+    if compression != "NONE" or sample_width != 2:
+        invalid.append(
+            f"PCM16（実際: {sample_width * 8}bit, compression={compression}）"
+        )
+    if sample_rate_hz != SAMPLE_RATE_HZ:
+        invalid.append(f"8000Hz（実際: {sample_rate_hz}Hz）")
+    if sample_count != SAMPLE_COUNT:
+        invalid.append(f"1秒・8000サンプル（実際: {sample_count}サンプル）")
+    if invalid:
+        raise DemoSeedError(f"不正なWAVです: {path.name} ({'; '.join(invalid)})")
 
 
 def select_replay_file(
@@ -169,9 +221,11 @@ def load_audio_file(path: Path) -> tuple[np.ndarray, int, float]:
             sample_count = wav_file.getnframes()
             pcm_bytes = wav_file.readframes(sample_count)
     except FileNotFoundError as exc:
-        raise DemoSeedError(f"音声ファイルが見つかりません: {path}") from exc
+        raise DemoSeedError(
+            f"音声ファイルが見つかりません: {path.name}", status_code=404
+        ) from exc
     except (OSError, EOFError, wave.Error) as exc:
-        raise DemoSeedError(f"音声ファイルを読み込めません: {path}") from exc
+        raise DemoSeedError(f"音声ファイルを読み込めません: {path.name}") from exc
 
     if sample_rate_hz <= 0 or sample_count <= 0:
         raise DemoSeedError("音声ファイルのsample rateまたはsample countが不正です")

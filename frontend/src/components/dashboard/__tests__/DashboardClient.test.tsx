@@ -721,6 +721,47 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
   });
 
+  it("シード投入の4xx詳細を利用者向け案内として表示する", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedSeedDemoBatch.mockRejectedValue({
+      name: "ApiError",
+      status: 404,
+      message:
+        "WAVが不足しています。backend/dataset/ に以下を配置してください: BE3_demo_leak_level2.wav",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("seed-demo-button"));
+
+    expect(await screen.findByTestId("seed-demo-error")).toHaveTextContent(
+      "WAVが不足しています。backend/dataset/ に以下を配置してください: BE3_demo_leak_level2.wav",
+    );
+    expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
+  });
+
+  it("シード投入の5xx詳細は表示せず汎用メッセージへフォールバックする", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedSeedDemoBatch.mockRejectedValue({
+      name: "ApiError",
+      status: 500,
+      message: "Traceback: /Users/example/private/path",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("seed-demo-button"));
+
+    expect(await screen.findByTestId("seed-demo-error")).toHaveTextContent(
+      "シード投入に失敗しました",
+    );
+    expect(screen.getByTestId("seed-demo-error")).not.toHaveTextContent(
+      "Traceback",
+    );
+  });
+
   it("シードクリアボタンで clearDemo が呼ばれ、アラート・KPI・地図・被災エリアが即時反映される", async () => {
     mockedFetchAlerts.mockResolvedValue(ALERTS);
     mockedClearDemo.mockResolvedValue({

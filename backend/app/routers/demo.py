@@ -107,8 +107,8 @@ def seed_demo_batch(
         )
     except DemoSeedError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"デモシード一括投入に失敗しました: {exc}",
+            status_code=exc.status_code,
+            detail=str(exc),
         ) from exc
 
     return DemoSeedBatchResponse(

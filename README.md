@@ -82,34 +82,23 @@ npm run dev
 
 ### デモシード投入
 
-受領した音声フォルダに、次の4ファイルを配置する（WAV、mono、PCM16、8000Hz、1秒）。
+プロジェクト管理者から正規の方法で受領した次の4ファイルを `backend/dataset/` に配置する
+（WAV、mono、PCM16、8000Hz、1秒）。WAVはGitへ含めず、自動ダウンロードもしない。
 
 ```text
-demo_audio/
+backend/dataset/
 ├── BE3_demo_no-leak_level0.wav
 ├── BE3_demo_leak_level1.wav
 ├── BE3_demo_leak_level2.wav
 └── BE3_demo_leak_level3.wav
 ```
 
-Windows（PowerShell）:
-
-```powershell
-cd backend
-venv\Scripts\python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
-```
-
-macOS / Linux:
-
-```bash
-cd backend
-venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
-```
+バックエンドとフロントエンドの起動後、画面の「シード投入」ボタンを押す。絶対パスの設定は不要。
+CLI・テストで別フォルダを使う場合のみ、`scripts/seed_demo.py --audio-dir <フォルダ>`を指定できる。
 
 監視センサー23台へ Level 0×11 / Level 1×8 / Level 2×3 / Level 3×1、合計23件を投入する。
 デモデータは1台につき1件とし、同じセンサーへ複数件を割り当てない。
-成功時は `[OK] 23 件を ... へ投入しました` と表示される。
-フロントエンドをリロードすると、センサー地図・アラート一覧・KPI が反映される。
+成功時は画面に23件の投入結果が表示され、センサー地図・アラート一覧・KPIへ即時反映される。
 
 詳細な手順と再投入方法は [`docs/demo-runbook.md`](docs/demo-runbook.md) を参照。
 

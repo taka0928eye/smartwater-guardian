@@ -267,8 +267,9 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 
 > **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
 > 追加した `DemoSeedRequest` を受ける。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
-> 上書きする。音源は**学習未使用の Zenodo 実音響**（`scripts/simulate_sensor.py` の
-> `load_audio_file()` による replay、Git管理外）。受領したWAVフォルダを`--audio-dir`で指定する。
+> 上書きする。音源はプロジェクト管理者から正規に受領し、`backend/dataset/`へ手動配置する
+> 実音響WAV（Git管理外・自動ダウンロードなし）。画面の「シード投入」ボタンから投入できる。
+> `--audio-dir`はCLI・テストで別フォルダを使う場合のみ指定する。
 > 実 no-leak 音は SVM が自然に severity 0（正常）を返す。正確なファイル名・形式・23件の
 > 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。23台へ1件ずつ割り当て、
 > 同一センサーへ複数のデモデータを投入しない。

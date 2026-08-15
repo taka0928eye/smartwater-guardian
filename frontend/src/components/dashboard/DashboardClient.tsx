@@ -49,6 +49,29 @@ export interface DashboardClientProps {
   sensorFeatures: SensorFeatureCollection;
 }
 
+const GENERIC_SEED_ERROR = "シード投入に失敗しました";
+
+/** バックエンドが意図して返した4xx詳細だけを、長さを制限して画面へ表示する。 */
+function getSeedErrorMessage(error: unknown): string {
+  if (typeof error !== "object" || error === null) return GENERIC_SEED_ERROR;
+  const candidate = error as {
+    name?: unknown;
+    status?: unknown;
+    message?: unknown;
+  };
+  if (
+    candidate.name !== "ApiError" ||
+    typeof candidate.status !== "number" ||
+    candidate.status < 400 ||
+    candidate.status >= 500 ||
+    typeof candidate.message !== "string"
+  ) {
+    return GENERIC_SEED_ERROR;
+  }
+  const safeMessage = candidate.message.replace(/[\r\n\t]+/g, " ").trim();
+  return safeMessage ? safeMessage.slice(0, 500) : GENERIC_SEED_ERROR;
+}
+
 export default function DashboardClient({
   sensorFeatures: initialSensorFeatures,
 }: DashboardClientProps) {
@@ -138,12 +161,13 @@ export default function DashboardClient({
   const handleSeedDemo = useCallback(async (): Promise<void> => {
     setIsSeeding(true);
     setSeedError(null);
+    setSeedMessage(null);
     try {
       const response = await seedDemoBatch();
       setSeedMessage(response.message);
       await Promise.all([refreshAlerts(), refreshKpi(), refreshSensors()]);
-    } catch {
-      setSeedError("シード投入に失敗しました");
+    } catch (error) {
+      setSeedError(getSeedErrorMessage(error));
     } finally {
       setIsSeeding(false);
     }
