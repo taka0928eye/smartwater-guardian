@@ -17,6 +17,7 @@ import type {
   WorkOrder,
 } from "../types/api";
 import type {
+  DisasterResetResponse,
   DisasterSimulateResponse,
   DisasterSummary,
 } from "../types/disaster";
@@ -172,13 +173,20 @@ export function simulateDisaster(
   );
 }
 
+/** 防災開始前の23件を復元し、通常モードへ戻す。 */
+export function resetDisasterSimulation(): Promise<DisasterResetResponse> {
+  return unwrap<DisasterResetResponse>(
+    apiClient.delete("/api/v1/disaster/simulate"),
+  );
+}
+
 /** デモ初期状態を一括投入する（DEMO-2: POST /api/v1/demo/seed-batch）。
- *  Lv0×8 / Lv1×8 / Lv2×3 / Lv3×1（計20件）に一括で変化させる。 */
+ *  Lv0×11 / Lv1×8 / Lv2×3 / Lv3×1（計23件）に一括で変化させる。 */
 export function seedDemoBatch(): Promise<DemoSeedBatchResponse> {
   return unwrap<DemoSeedBatchResponse>(apiClient.post("/api/v1/demo/seed-batch"));
 }
 
-/** デモシード状態をクリアし、20件Lv0の初期状態に戻す（DEMO-2: DELETE /api/v1/demo/clear）。 */
+/** デモシード状態をクリアし、23件Lv0の初期状態に戻す。 */
 export function clearDemo(): Promise<DemoClearResponse> {
   return unwrap<DemoClearResponse>(apiClient.delete("/api/v1/demo/clear"));
 }

@@ -106,7 +106,8 @@ cd backend
 venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
 ```
 
-監視センサー20台へ Level 0×11 / Level 1×8 / Level 2×3 / Level 3×1、合計23件を投入する。
+監視センサー23台へ Level 0×11 / Level 1×8 / Level 2×3 / Level 3×1、合計23件を投入する。
+デモデータは1台につき1件とし、同じセンサーへ複数件を割り当てない。
 成功時は `[OK] 23 件を ... へ投入しました` と表示される。
 フロントエンドをリロードすると、センサー地図・アラート一覧・KPI が反映される。
 
@@ -327,7 +328,7 @@ smartwater-guardian/
 
 | 機能 | 状態 | 詳細 |
 |---|---|---|
-| Level 3 アラートシミュレーション投入 | ✅ 完了 | `POST /disaster/simulate?count=1-20` |
+| Level 3 アラートシミュレーション投入 | ✅ 完了 | `POST /disaster/simulate?count=1-23` |
 | 被災エリアクラスタリング（距離ベース） | ✅ 完了 | DBSCAN→GeoJSON 変換 |
 | 被災エリア地図描画（DisasterOverlay） | ✅ 完了 | `components/map/DisasterOverlay.tsx` |
 | 想定断水世帯数表示 | ✅ 完了 | 消火栓密度ベース概算 |

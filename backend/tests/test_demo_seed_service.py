@@ -57,21 +57,21 @@ def audio_dir(tmp_path: Path) -> Path:
 
 
 class TestBuildSeedBatch:
-    """20消火栓への1:1レベル配分（Lv0×8/Lv1×8/Lv2×3/Lv3×1）。"""
+    """23消火栓への1:1レベル配分（Lv0×11/Lv1×8/Lv2×3/Lv3×1）。"""
 
     def test_matches_new_composition_exactly(self) -> None:
         hydrants = get_hydrants()
         steps = build_seed_batch(hydrants, seed=42)
         counts = Counter(step.level for step in steps)
-        assert counts == {0: 8, 1: 8, 2: 3, 3: 1}
-        assert len(steps) == 20
+        assert counts == {0: 11, 1: 8, 2: 3, 3: 1}
+        assert len(steps) == 23
 
     def test_one_level_per_hydrant_no_overlap(self) -> None:
         """現行のサイクリング上書きを廃止し、1消火栓=1レベルを保証する。"""
         hydrants = get_hydrants()
         steps = build_seed_batch(hydrants, seed=42)
         hydrant_ids = [step.hydrant_id for step in steps]
-        assert len(hydrant_ids) == len(set(hydrant_ids)) == 20
+        assert len(hydrant_ids) == len(set(hydrant_ids)) == 23
 
     def test_reproducible_with_same_seed(self) -> None:
         hydrants = get_hydrants()
@@ -81,9 +81,9 @@ class TestBuildSeedBatch:
         hydrants = get_hydrants()
         assert build_seed_batch(hydrants, seed=1) != build_seed_batch(hydrants, seed=2)
 
-    def test_requires_twenty_hydrants(self) -> None:
+    def test_requires_twenty_three_hydrants(self) -> None:
         with pytest.raises(DemoSeedError):
-            build_seed_batch(get_hydrants()[:19], seed=1)
+            build_seed_batch(get_hydrants()[:22], seed=1)
 
 
 class TestReplayFileResolution:
@@ -117,17 +117,19 @@ class TestReplayFileResolution:
 
 
 class TestRunSeedBatch:
-    """run_seed_batch: ストアを20件・新内訳で一括再構築する。"""
+    """run_seed_batch: ストアを23件・新内訳で一括再構築する。"""
 
-    def test_inserts_exactly_twenty_records_with_new_distribution(self, audio_dir: Path) -> None:
+    def test_inserts_exactly_twenty_three_records_with_new_distribution(
+        self, audio_dir: Path
+    ) -> None:
         store = InMemoryStore()
         result = run_seed_batch(store, audio_dir, seed=42)
         records = store.get_all()
-        assert len(records) == 20
+        assert len(records) == 23
         counts = Counter(record.analysis.severity_level for record in records)
-        assert counts == {0: 8, 1: 8, 2: 3, 3: 1}
-        assert result.inserted_count == 20
-        assert result.level_counts == {"0": 8, "1": 8, "2": 3, "3": 1}
+        assert counts == {0: 11, 1: 8, 2: 3, 3: 1}
+        assert result.inserted_count == 23
+        assert result.level_counts == {"0": 11, "1": 8, "2": 3, "3": 1}
 
     def test_clears_previous_store_state(self, audio_dir: Path) -> None:
         store = InMemoryStore()
@@ -149,7 +151,7 @@ class TestRunSeedBatch:
         )
         run_seed_batch(store, audio_dir, seed=42)
         assert store.get("stale") is None
-        assert len(store.get_all()) == 20
+        assert len(store.get_all()) == 23
 
     def test_missing_dataset_raises_demo_seed_error(self, tmp_path: Path) -> None:
         store = InMemoryStore()

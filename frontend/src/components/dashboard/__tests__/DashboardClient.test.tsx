@@ -98,6 +98,7 @@ vi.mock("@/lib/api", () => ({
   }),
   // BE-7: 防災シミュレーションボタンで呼ぶ。デフォルトは未解決（テストごとに設定）。
   simulateDisaster: vi.fn(),
+  resetDisasterSimulation: vi.fn(),
   // DEMO-2: 「シード投入」「シードクリア」ボタンで呼ぶ。デフォルトは未解決（テストごとに設定）。
   seedDemoBatch: vi.fn(),
   clearDemo: vi.fn(),
@@ -111,6 +112,7 @@ import {
   fetchDisasterSummary,
   fetchKpiSummary,
   fetchSensorsGeoJson,
+  resetDisasterSimulation,
   seedDemoBatch,
   simulateDisaster,
 } from "@/lib/api";
@@ -122,6 +124,7 @@ const mockedFetchKpiSummary = vi.mocked(fetchKpiSummary);
 const mockedFetchSensorsGeoJson = vi.mocked(fetchSensorsGeoJson);
 const mockedFetchDisasterSummary = vi.mocked(fetchDisasterSummary);
 const mockedSimulateDisaster = vi.mocked(simulateDisaster);
+const mockedResetDisasterSimulation = vi.mocked(resetDisasterSimulation);
 const mockedSeedDemoBatch = vi.mocked(seedDemoBatch);
 const mockedClearDemo = vi.mocked(clearDemo);
 
@@ -491,7 +494,13 @@ describe("防災モード（BE-7）", () => {
 
   it("防災シミュレーションボタンで simulate API（count=6）が呼ばれ、クラスタが地図に反映される", async () => {
     mockedFetchAlerts.mockResolvedValue(ALERTS);
-    mockedFetchDisasterSummary.mockResolvedValue(DISASTER_SUMMARY);
+    mockedFetchDisasterSummary
+      .mockResolvedValueOnce({
+        totalClusters: 0,
+        totalAffectedHouseholds: 0,
+        clusters: [],
+      })
+      .mockResolvedValue(DISASTER_SUMMARY);
     mockedSimulateDisaster.mockResolvedValue({
       insertedCount: 6,
       message: "震災モードシミュレーション: Level 3 アラートを 6 件一括追加しました",
@@ -516,6 +525,36 @@ describe("防災モード（BE-7）", () => {
     // 成功メッセージが表示される
     expect(screen.getByTestId("disaster-simulate-message")).toHaveTextContent(
       /6 件/,
+    );
+  });
+
+  it("同じボタンを再度押すと通常モードへ戻り、全表示を即時更新する", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedFetchDisasterSummary
+      .mockResolvedValueOnce(DISASTER_SUMMARY)
+      .mockResolvedValue({
+        totalClusters: 0,
+        totalAffectedHouseholds: 0,
+        clusters: [],
+      });
+    mockedResetDisasterSimulation.mockResolvedValue({
+      removedCount: 6,
+      message: "防災シミュレーションを終了しました",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    const button = await screen.findByRole("button", {
+      name: "通常モードに戻る",
+    });
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(mockedResetDisasterSimulation).toHaveBeenCalledOnce(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("disaster-simulate-button")).toHaveTextContent(
+        "防災シミュレーション",
+      ),
     );
   });
 
@@ -599,9 +638,9 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     mockedFetchAlerts.mockResolvedValue(ALERTS);
     mockedSeedDemoBatch.mockResolvedValue({
       status: "seeded",
-      insertedCount: 20,
-      levelCounts: { "0": 8, "1": 8, "2": 3, "3": 1 },
-      message: "20 件投入しました",
+      insertedCount: 23,
+      levelCounts: { "0": 11, "1": 8, "2": 3, "3": 1 },
+      message: "23 件投入しました",
     });
 
     render(<DashboardClient sensorFeatures={FEATURES} />);
@@ -629,7 +668,7 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     });
 
     expect(screen.getByTestId("seed-demo-message")).toHaveTextContent(
-      "20 件投入しました",
+      "23 件投入しました",
     );
   });
 
@@ -660,9 +699,9 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     await act(async () => {
       resolveSeed({
         status: "seeded",
-        insertedCount: 20,
-        levelCounts: { "0": 8, "1": 8, "2": 3, "3": 1 },
-        message: "20 件投入しました",
+        insertedCount: 23,
+        levelCounts: { "0": 11, "1": 8, "2": 3, "3": 1 },
+        message: "23 件投入しました",
       });
     });
   });
@@ -687,7 +726,7 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     mockedClearDemo.mockResolvedValue({
       status: "cleared",
       clearedCount: 2,
-      message: "20件Lv0（正常）の初期状態にリセットしました",
+      message: "23件Lv0（正常）の初期状態にリセットしました",
     });
 
     render(<DashboardClient sensorFeatures={FEATURES} />);
@@ -718,7 +757,7 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
     });
 
     expect(screen.getByTestId("clear-demo-message")).toHaveTextContent(
-      "20件Lv0（正常）の初期状態にリセットしました",
+      "23件Lv0（正常）の初期状態にリセットしました",
     );
   });
 
@@ -749,7 +788,7 @@ describe("デモ操作（DEMO-2: シード投入・シードクリア）", () =>
       resolveClear({
         status: "cleared",
         clearedCount: 2,
-        message: "20件Lv0（正常）の初期状態にリセットしました",
+        message: "23件Lv0（正常）の初期状態にリセットしました",
       });
     });
   });

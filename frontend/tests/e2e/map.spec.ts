@@ -40,25 +40,55 @@ test.describe("センサー地図（シナリオ 2）", () => {
     await expect(dashboard.mapDrawnMarkers.first()).toBeVisible();
   });
 
-  test("マーカーをクリックすると詳細ドロワーが開く", async ({ page }) => {
+  test("マーカーをクリックすると詳細ドロワーが開く", async ({ page, request }) => {
     const dashboard = new DashboardPage(page);
     await dashboard.goto();
 
     // マーカー選択はアラート一覧と連動するため、先に一覧の読み込みを待つ
     await dashboard.waitForAlertList();
 
-    // 実描画されたマーカーをクリックし、sensor_id に対応する詳細を開く。
+    const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://localhost:8000";
+    const [alertsResponse, sensorsResponse] = await Promise.all([
+      request.get(`${apiBaseUrl}/api/v1/alerts?include_normal=true`),
+      request.get(`${apiBaseUrl}/api/v1/sensors?format=geojson`),
+    ]);
+    expect(alertsResponse.ok()).toBeTruthy();
+    expect(sensorsResponse.ok()).toBeTruthy();
+    const alerts = (await alertsResponse.json()) as Array<{ sensor_id: string }>;
+    const sensorGeoJson = (await sensorsResponse.json()) as {
+      features: Array<{ properties: { sensor_id: string } }>;
+    };
+    const alertSensorIds = new Set(alerts.map((alert) => alert.sensor_id));
+    const markers = await dashboard.mapMarkers.all();
+    let markerIndex = -1;
+    for (let zoomAttempt = 0; zoomAttempt < 6 && markerIndex < 0; zoomAttempt += 1) {
+      for (let index = 0; index < sensorGeoJson.features.length; index += 1) {
+        const sensorId = sensorGeoJson.features[index].properties.sensor_id;
+        if (
+          alertSensorIds.has(sensorId) &&
+          (await markers[index].getAttribute("d")) !== "M0 0"
+        ) {
+          markerIndex = index;
+          break;
+        }
+      }
+      if (markerIndex < 0) {
+        await page.locator(".leaflet-control-zoom-out").click();
+        await page.waitForTimeout(300);
+      }
+    }
+    expect(markerIndex).toBeGreaterThanOrEqual(0);
+
+    // アラートがあり、かつ実描画されたマーカーをクリックして対応する詳細を開く。
     // マーカー中心がコンテナ下端ギリギリの場合は Playwright の実クリックがヒットテストで
     // 遮られることがあるため、実際のユーザー操作と同じ Leaflet のクリック処理経路
     // （パスの DOM イベント → レンダラー点検出 _getLayerAt → レイヤー click →
     // GeoJSON eventHandlers → onSelectMarker）を、マーカー中心の実画面座標を持つ
     // MouseEvent の dispatch で確実に通す（座標があるため _containsPoint の判定も成立する）。
-    const drawnMarker = dashboard.mapDrawnMarkers.first();
-    await expect(drawnMarker).toBeVisible();
-    await page.evaluate(() => {
-      const el = document.querySelector<SVGPathElement>(
-        'path.leaflet-interactive:not([d="M0 0"])',
-      );
+    await page.evaluate((index) => {
+      const el = document.querySelectorAll<SVGPathElement>(
+        "path.leaflet-interactive",
+      )[index];
       if (!el) throw new Error("実描画マーカーが見つかりません");
       const rect = el.getBoundingClientRect();
       el.dispatchEvent(
@@ -70,7 +100,7 @@ test.describe("センサー地図（シナリオ 2）", () => {
           clientY: rect.top + rect.height / 2,
         }),
       );
-    });
+    }, markerIndex);
 
     // マーカー選択 → アラート一覧と連動して詳細ドロワーが開く（FE-5）
     await expect(dashboard.drawer).toBeVisible();

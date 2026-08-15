@@ -49,22 +49,30 @@ def _post_seed_batch(url: str, params: dict[str, Any], timeout_sec: float) -> di
 def run_seed_batch_cli(
     seed: int,
     url: str = DEFAULT_URL,
+    audio_dir: str | None = None,
     timeout_sec: float = 30.0,
     post_func: PostFunc = _post_seed_batch,
 ) -> dict[str, Any]:
     """seed-batch エンドポイントを1回叩き、結果 JSON を返す。"""
-    return post_func(url, {"seed": seed}, timeout_sec)
+    params: dict[str, Any] = {"seed": seed}
+    if audio_dir is not None:
+        params["audio_dir"] = audio_dir
+    return post_func(url, params, timeout_sec)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """CLI 引数を解釈する。``--seed`` は必須（再現性担保のため）。"""
     parser = argparse.ArgumentParser(
-        description="デモ初期状態(Lv0×8/Lv1×8/Lv2×3/Lv3×1、計20件)を一括投入します。"
+        description="デモ初期状態(Lv0×11/Lv1×8/Lv2×3/Lv3×1、計23件)を一括投入します。"
     )
     parser.add_argument(
         "--seed", type=int, required=True, help="配分・音声選択の再現用シード（同一値で同一結果）"
     )
     parser.add_argument("--url", default=DEFAULT_URL, help="デモシード一括投入 API の URL")
+    parser.add_argument(
+        "--audio-dir",
+        help="Zenodo WAV 4本を置いたディレクトリ（未指定時はbackend/dataset）",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -86,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        result = run_seed_batch_cli(args.seed, args.url)
+        result = run_seed_batch_cli(args.seed, args.url, args.audio_dir)
     except SeedBatchCliError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         return 1

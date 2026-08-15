@@ -1,6 +1,6 @@
 """DEMO-2: デモ初期状態を一括投入するサービス。
 
-20消火栓それぞれにちょうど1レベルを重複なく割り当て（Lv0×8 / Lv1×8 / Lv2×3 /
+23消火栓それぞれにちょうど1レベルを重複なく割り当て（Lv0×11 / Lv1×8 / Lv2×3 /
 Lv3×1）、``backend/dataset/`` の実音響WAV（BE-2 由来）を replay して
 ``analyze_audio()`` で実スペクトルを算出しつつ、深刻度は意図値に確定する
 （``app/routers/demo.py::seed_demo`` と同じハイブリッド方針）。
@@ -30,8 +30,8 @@ from app.schemas.telemetry import GeoLocation
 from app.services.audio import DURATION_SEC, SAMPLE_COUNT, SAMPLE_RATE_HZ, analyze_audio
 from app.store import InMemoryStore, StoredTelemetry, clear_disaster_state, get_hydrants
 
-# デモ既定内訳（DEMO-2: Lv0×8 / Lv1×8 / Lv2×3 / Lv3×1、計20件＝実消火栓の全件数）。
-DEMO_COMPOSITION: dict[int, int] = {0: 8, 1: 8, 2: 3, 3: 1}
+# デモ既定内訳（23台へ1対1で割り当てる）。
+DEMO_COMPOSITION: dict[int, int] = {0: 11, 1: 8, 2: 3, 3: 1}
 
 # 実音響WAVの既定ディレクトリ（backend/dataset）。Git 管理外（.gitignore）。
 DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[2] / "dataset"
@@ -60,7 +60,7 @@ class SeedBatchResult:
 def build_seed_batch(
     hydrants: list[HydrantMaster], *, seed: int | None = None
 ) -> list[SeedStep]:
-    """20消火栓それぞれにちょうど1レベルを重複なく割り当てる（純粋関数）。
+    """23消火栓それぞれにちょうど1レベルを重複なく割り当てる（純粋関数）。
 
     同一 ``seed`` で同一シーケンスが再現される（デモの再現性）。
     """
@@ -186,9 +186,9 @@ def load_audio_file(path: Path) -> tuple[np.ndarray, int, float]:
 def run_seed_batch(
     store: InMemoryStore, audio_dir: Path, *, seed: int | None = None
 ) -> SeedBatchResult:
-    """デモシーケンスを組み立て、ストアを20件・新内訳で一括再構築する。
+    """デモシーケンスを組み立て、ストアを23件・新内訳で一括再構築する。
 
-    音声は ``audio_dir`` 内の実音響 WAV を replay する。全20件を組み立てた後に
+    音声は ``audio_dir`` 内の実音響 WAV を replay する。全23件を組み立てた後に
     ``store.clear()`` してから ``add()`` することで、既存レコードとの重複
     （アラート一覧・KPI 集計の二重カウント）を防ぐ。以前の防災シミュレーション
     選出記録（``register_disaster_sensors()``）も新しいベースラインのために

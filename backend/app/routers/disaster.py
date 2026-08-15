@@ -1,6 +1,6 @@
 """防災モード API ルーター (GET /summary, POST /simulate)。
 
-DEMO-2 再設計: 実在する20消火栓のうち無作為に選んだセンサーを Level 3 に変化
+DEMO-2 再設計: 実在する23消火栓のうち無作為に選んだセンサーを Level 3 に変化
 させる（架空センサーの新規追加はしない）。信号データも合成波形
 （``app/services/disaster_signal.py``）で更新する。「被災エリア」クラスタ
 （GET /summary）は、シミュレーションで選ばれたセンサーのみを対象とする
@@ -15,10 +15,11 @@ import random
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
 from app.schemas.disaster import (
     DisasterCluster,
+    DisasterResetResponse,
     DisasterSimulateResponse,
     DisasterSummaryResponse,
     GeoJSONPolygon,
@@ -32,6 +33,7 @@ from app.store import (
     get_hydrants,
     get_store,
     register_disaster_sensors,
+    restore_disaster_baseline,
 )
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
@@ -141,19 +143,26 @@ def get_disaster_summary(
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> DisasterSimulateResponse:
+def simulate_disaster(count: int = Query(6, ge=1, le=23)) -> DisasterSimulateResponse:
     """実在消火栓のうち count 件を無作為に選び、信号データごと Level 3 へ変化させる。
 
-    ストア内の全20件を読み直し、選出分は合成波形で新しい解析結果を組み立て、
+    ストア内の全23件を読み直し、選出分は合成波形で新しい解析結果を組み立て、
     非選出分は現在の状態をそのまま保持したうえで、ストアを一括で置き換える
-    （常に20件を維持し、アラート一覧・KPI 集計で重複を発生させない）。
+    （常に23件を維持し、アラート一覧・KPI 集計で重複を発生させない）。
     """
+    if get_disaster_sensor_ids():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="防災シミュレーションはすでに実行中です",
+        )
+
     store = get_store()
     hydrants = get_hydrants()
     target_count = min(count, len(hydrants))
     selected = random.sample(hydrants, target_count)
     selected_sensor_ids = {hydrant.sensor_id for hydrant in selected}
 
+    baseline_records = store.get_all()
     current = store.latest_sensor_states()
     now = datetime.now(timezone.utc)
 
@@ -182,13 +191,23 @@ def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> DisasterSimulateRes
             if existing is not None:
                 rebuilt.append(existing)
 
-    store.clear()
-    for record in rebuilt:
-        store.add(record)
+    store.replace_all(rebuilt)
 
-    register_disaster_sensors(sorted(selected_sensor_ids))
+    register_disaster_sensors(
+        sorted(selected_sensor_ids), baseline_records=baseline_records
+    )
 
     return DisasterSimulateResponse(
         inserted_count=target_count,
         message=f"防災シミュレーション: {target_count} 件のセンサーを Level 3 に変化させました",
+    )
+
+
+@router.delete("/simulate", response_model=DisasterResetResponse)
+def stop_disaster_simulation() -> DisasterResetResponse:
+    """開始前の23件を復元し、同じボタンから通常モードへ戻す。"""
+    restored_count = restore_disaster_baseline(get_store())
+    return DisasterResetResponse(
+        removed_count=restored_count,
+        message="防災シミュレーションを終了し、通常モードへ戻りました",
     )

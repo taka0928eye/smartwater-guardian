@@ -270,13 +270,14 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 > 上書きする。音源は**学習未使用の Zenodo 実音響**（`scripts/simulate_sensor.py` の
 > `load_audio_file()` による replay、Git管理外）。受領したWAVフォルダを`--audio-dir`で指定する。
 > 実 no-leak 音は SVM が自然に severity 0（正常）を返す。正確なファイル名・形式・23件の
-> 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
+> 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。23台へ1件ずつ割り当て、
+> 同一センサーへ複数のデモデータを投入しない。
 
 ### 6.2 防災モード（BE-7）
 
 | メソッド | パス | 説明 | 現状 |
 |---|---|---|---|
-| POST | `/api/v1/disaster/simulate` | Level 3 アラートシミュレーション投入（`?count=1-20`） | ✅ 実装済み |
+| POST | `/api/v1/disaster/simulate` | Level 3 アラートシミュレーション投入（`?count=1-23`） | ✅ 実装済み |
 | GET | `/api/v1/disaster/summary` | 被災エリアクラスタリング（距離ベース）・想定世帯数 | ✅ 実装済み |
 
 ### 6.3 その他
@@ -316,7 +317,7 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 
 ```json
 {
-  "total_sensors": 20,
+  "total_sensors": 23,
   "level1_count": 4,
   "level2_count": 2,
   "level3_count": 1,

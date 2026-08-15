@@ -18,15 +18,39 @@ export interface SpectrumDataPoint {
   power: number;
 }
 
+export const LEAK_BAND_MIN_HZ = 500;
+export const LEAK_BAND_MAX_HZ = 1500;
+const FREQUENCY_TICK_INTERVAL_HZ = 1000;
+
+export function formatSpectrumPower(value: number): string {
+  if (value === 0) return '0';
+
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < 0.000001) return value.toExponential(3);
+
+  return value.toFixed(6).replace(/\.?0+$/, '');
+}
+
+export function buildFrequencyTicks(data: SpectrumDataPoint[]): number[] {
+  const maxFrequency = Math.max(...data.map((point) => point.freqHz), 0);
+  const axisMax = Math.max(
+    FREQUENCY_TICK_INTERVAL_HZ,
+    Math.ceil(maxFrequency / FREQUENCY_TICK_INTERVAL_HZ) * FREQUENCY_TICK_INTERVAL_HZ,
+  );
+
+  return Array.from(
+    { length: axisMax / FREQUENCY_TICK_INTERVAL_HZ + 1 },
+    (_, index) => index * FREQUENCY_TICK_INTERVAL_HZ,
+  );
+}
+
 interface SpectrumChartProps {
   data?: SpectrumDataPoint[];
-  dominantFreqHz?: number;
   isLoading?: boolean;
 }
 
 export const SpectrumChart: React.FC<SpectrumChartProps> = ({
   data,
-  dominantFreqHz,
   isLoading,
 }) => {
   if (isLoading || !data || data.length === 0) {
@@ -36,6 +60,9 @@ export const SpectrumChart: React.FC<SpectrumChartProps> = ({
       </div>
     );
   }
+
+  const frequencyTicks = buildFrequencyTicks(data);
+  const frequencyMax = frequencyTicks.at(-1) ?? FREQUENCY_TICK_INTERVAL_HZ;
 
   return (
     <div className="h-full w-full">
@@ -50,6 +77,9 @@ export const SpectrumChart: React.FC<SpectrumChartProps> = ({
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
           <XAxis
             dataKey="freqHz"
+            type="number"
+            domain={[0, frequencyMax]}
+            ticks={frequencyTicks}
             stroke="#94a3b8"
             fontSize={10}
             tickFormatter={(val) => `${val}Hz`}
@@ -62,34 +92,28 @@ export const SpectrumChart: React.FC<SpectrumChartProps> = ({
               borderRadius: '0.375rem',
               fontSize: '12px',
             }}
-            formatter={(value: unknown) => [Number(value).toFixed(2), 'パワー']}
+            formatter={(value: unknown) => [formatSpectrumPower(Number(value)), 'パワー']}
             labelFormatter={(label: unknown) => `周波数: ${label} Hz`}
           />
           {/* 500~1500Hz の漏水強調帯域 */}
           <ReferenceArea
-            x1={500}
-            x2={1500}
+            x1={LEAK_BAND_MIN_HZ}
+            x2={LEAK_BAND_MAX_HZ}
             fill="#ef4444"
-            fillOpacity={0.15}
-            stroke="#ef4444"
-            strokeOpacity={0.3}
-            strokeDasharray="2 2"
+            fillOpacity={0.08}
           />
-          {/* 卓越周波数の基準線 */}
-          {dominantFreqHz !== undefined && (
-            <ReferenceLine
-              x={dominantFreqHz}
-              stroke="#f59e0b"
-              strokeWidth={2}
-              strokeDasharray="3 3"
-              label={{
-                value: `卓越: ${dominantFreqHz}Hz`,
-                fill: '#f59e0b',
-                fontSize: 11,
-                position: 'top',
-              }}
-            />
-          )}
+          <ReferenceLine
+            x={LEAK_BAND_MIN_HZ}
+            stroke="#ef4444"
+            strokeOpacity={0.8}
+            strokeDasharray="4 4"
+          />
+          <ReferenceLine
+            x={LEAK_BAND_MAX_HZ}
+            stroke="#ef4444"
+            strokeOpacity={0.8}
+            strokeDasharray="4 4"
+          />
           <Area
             type="monotone"
             dataKey="power"

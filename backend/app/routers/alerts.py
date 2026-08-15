@@ -23,7 +23,7 @@ from app.schemas.telemetry import AnalysisResult, GeoLocation
 from app.schemas.work_order import WorkOrder
 from app.services import orcarouter
 from app.services.ledger import find_pipe_by_hydrant, get_pipe_age
-from app.store import StoredTelemetry, get_hydrants, get_store
+from app.store import StoredTelemetry, clear_disaster_state, get_hydrants, get_store
 
 router = APIRouter(prefix="/api/v1", tags=["alerts"])
 
@@ -254,21 +254,22 @@ def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
 
     ``_SEED_HYDRANT_LEVELS`` に従い、実在マスタ（hydrants.json）の消火栓へ
     レベルを決定論的に割り当てて投入する（合計 10 件: L3×3 / L2×3 / L1×3 / L0×1）。
+    起動時レコードや前回のE2E状態は置換し、再実行時も同じ10件だけにする。
     ``payload.count`` は後方互換用の受領のみで、投入件数には影響しない。
     """
     hydrants = {h.hydrant_id: h for h in get_hydrants()}
     now = datetime.now(UTC)
     store = get_store()
 
-    inserted = 0
+    records: list[StoredTelemetry] = []
     for hydrant_id, level in _SEED_HYDRANT_LEVELS.items():
         hydrant = hydrants.get(hydrant_id)
         if hydrant is None:
             # マスタに無い ID は投入しない（防御的）。実在マスタは全て揃っている前提。
             continue
-        store.add(
+        records.append(
             StoredTelemetry(
-                telemetry_id=f"tlm_e2e_{level}_{inserted}_{uuid4().hex[:8]}",
+                telemetry_id=f"tlm_e2e_{level}_{len(records)}_{uuid4().hex[:8]}",
                 sensor_id=hydrant.sensor_id,
                 hydrant_id=hydrant.hydrant_id,
                 recorded_at=now,
@@ -285,9 +286,12 @@ def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
                 ),
             )
         )
-        inserted += 1
+
+    store.replace_all(records)
+    clear_disaster_state()
+    inserted = len(records)
 
     return SeedResponse(
         inserted_count=inserted,
-        message=f"E2E テスト用シード投入完了: {inserted} 件のアラートをストアへ追加しました",
+        message=f"E2E テスト用シード投入完了: {inserted} 件のアラートでストアを初期化しました",
     )

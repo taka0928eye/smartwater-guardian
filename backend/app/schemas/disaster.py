@@ -49,3 +49,12 @@ class DisasterSimulateResponse(BaseModel):
 
     inserted_count: int = Field(..., description="投入された Level 3 アラート件数")
     message: str = Field(..., description="ステータスメッセージ")
+
+
+class DisasterResetResponse(BaseModel):
+    """DELETE /simulate のレスポンス。"""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    removed_count: int = Field(..., description="削除したシミュレーション件数")
+    message: str = Field(..., description="ステータスメッセージ")

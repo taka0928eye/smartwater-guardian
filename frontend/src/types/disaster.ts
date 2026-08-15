@@ -56,6 +56,14 @@ export interface DisasterSimulateResponse {
   message: string;
 }
 
+/** DELETE /api/v1/disaster/simulate のレスポンス。 */
+export interface DisasterResetResponse {
+  /** 削除されたシミュレーションアラート件数。 */
+  removedCount: number;
+  /** ステータスメッセージ。 */
+  message: string;
+}
+
 /** クラスタ描画用 GeoJSON Feature の properties。 */
 export interface DisasterClusterProperties {
   /** クラスタ識別子（例: CLS-001）。 */

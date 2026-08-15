@@ -121,6 +121,17 @@ class InMemoryStore:
             self._index.clear()
             self._sensor_latest.clear()
 
+    def replace_all(self, records: list[StoredTelemetry]) -> None:
+        """全レコードをアトミックに置換し、索引を再構築する。"""
+        with self._lock:
+            self._records = deque(records, maxlen=self._maxlen)
+            self._index = {
+                record.telemetry_id: record for record in self._records
+            }
+            self._sensor_latest = {}
+            for record in self._records:
+                self._sensor_latest[record.sensor_id] = record
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._records)
@@ -151,9 +162,12 @@ def reset_store() -> None:
 # --- 消火栓マスタローダー ---
 
 _disaster_sensor_ids: set[str] = set()
+_disaster_baseline_records: list[StoredTelemetry] | None = None
 
 
-def register_disaster_sensors(sensor_ids: list[str]) -> None:
+def register_disaster_sensors(
+    sensor_ids: list[str], baseline_records: list[StoredTelemetry] | None = None
+) -> None:
     """防災シミュレーションで Level 3 に変化した sensor_id を記録する。
 
     ``/disaster/summary`` はこの集合に含まれる sensor_id のみを被災エリア
@@ -162,8 +176,10 @@ def register_disaster_sensors(sensor_ids: list[str]) -> None:
     テスト隔離・``/demo/clear``・``/demo/seed-batch`` 実行時は
     ``clear_disaster_state()`` で明示的にクリアする。
     """
-    global _disaster_sensor_ids
+    global _disaster_sensor_ids, _disaster_baseline_records
     _disaster_sensor_ids = _disaster_sensor_ids | set(sensor_ids)
+    if baseline_records is not None and _disaster_baseline_records is None:
+        _disaster_baseline_records = list(baseline_records)
 
 
 def get_disaster_sensor_ids() -> set[str]:
@@ -173,8 +189,19 @@ def get_disaster_sensor_ids() -> set[str]:
 
 def clear_disaster_state() -> None:
     """防災シミュレーションで記録した sensor_id をクリアする。"""
-    global _disaster_sensor_ids
+    global _disaster_sensor_ids, _disaster_baseline_records
     _disaster_sensor_ids = set()
+    _disaster_baseline_records = None
+
+
+def restore_disaster_baseline(store: InMemoryStore) -> int:
+    """開始前スナップショットを復元し、防災状態をクリアする。"""
+    global _disaster_baseline_records
+    restored_sensor_count = len(_disaster_sensor_ids)
+    if _disaster_baseline_records is not None:
+        store.replace_all(_disaster_baseline_records)
+    clear_disaster_state()
+    return restored_sensor_count
 
 
 @lru_cache(maxsize=1)
@@ -193,7 +220,7 @@ def _get_hydrants_from_file() -> list[HydrantMaster]:
 
 
 def get_hydrants() -> list[HydrantMaster]:
-    """hydrants.json の消火栓一覧を返す（実在20件）。"""
+    """hydrants.json の消火栓一覧を返す。"""
     return _get_hydrants_from_file()
 
 

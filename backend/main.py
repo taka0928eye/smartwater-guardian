@@ -16,9 +16,9 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """起動時にhydrants.json 20件を severity_level=0 で初期化する（DEMO-2）。
+    """起動時にhydrants.json 23件を severity_level=0 で初期化する（DEMO-2）。
 
-    「初期表示時は20件・全てLv0」という要求を満たす。``@app.on_event`` は
+    「初期表示時は23件・全てLv0」という要求を満たす。``@app.on_event`` は
     非推奨のため ``lifespan`` を使う。
     """
     initialize_sensors(get_store())
