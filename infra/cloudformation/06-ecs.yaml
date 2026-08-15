@@ -76,9 +76,9 @@ Parameters:
     Default: 'false'
     AllowedValues: ['true', 'false']
     Description: >-
-      Enable S3 dataset sync for the seed-batch ("シード投入") feature. Set to
+      Enable S3 dataset sync for the seed-batch feature. Set to
       'true' only after the licensed WAV dataset has been manually uploaded
-      to the DemoDatasetBucket (see infra/README.md — never via git/CI).
+      to the DemoDatasetBucket (see infra/README.md - never via git/CI).
       When 'false' (default), the seed-batch button fails gracefully (404)
       since no dataset is present.
 
