@@ -22,10 +22,10 @@ OpenAPI ドキュメントは FastAPI が自動生成（`/docs`）。CORS 許可
 | 7 | GET | `/api/v1/sensors?format=json\|geojson` | センサー一覧（JSON / GeoJSON） | 実装済み |
 | 8 | GET | `/api/v1/kpi/summary` | KPI サマリ（推定削減コスト・BE-8） | 実装済み |
 | 9 | GET | `/api/v1/disaster/summary` | 防災シミュレーションで選出された被災エリアクラスタ（BE-7 / DEMO-2 再設計） | 実装済み |
-| 10 | POST | `/api/v1/disaster/simulate` | 実在20消火栓のうち無作為6件をLevel 3へ変化（BE-7 / DEMO-2 再設計） | 実装済み |
+| 10 | POST | `/api/v1/disaster/simulate` | 実在23消火栓のうち無作為6件をLevel 3へ変化（BE-7 / DEMO-2 再設計） | 実装済み |
 | 11 | POST | `/api/v1/demo/seed` | デモシード1件投入（DEMO-1） | 実装済み |
-| 12 | POST | `/api/v1/demo/seed-batch` | デモ初期状態の一括投入（Lv0×8/Lv1×8/Lv2×3/Lv3×1・DEMO-2） | 実装済み |
-| 13 | DELETE | `/api/v1/demo/clear` | デモシード状態をクリアし20件Lv0の初期状態に戻す（DEMO-2） | 実装済み |
+| 12 | POST | `/api/v1/demo/seed-batch` | デモ初期状態の一括投入（Lv0×11/Lv1×8/Lv2×3/Lv3×1・DEMO-2） | 実装済み |
+| 13 | DELETE | `/api/v1/demo/clear` | デモシード状態をクリアし23件Lv0の初期状態に戻す（DEMO-2） | 実装済み |
 
 レスポンスはすべて snake_case（Pydantic v2）。フロントは `lib/api.ts` が camelCase へ変換する。
 
@@ -285,7 +285,7 @@ E2E テスト用のデモシード。実在マスタ（HYD-001〜010）へレベ
 距離閾値（`threshold_meters` デフォルト 300m）でクラスタリングし、被災エリア
 （GeoJSON Polygon）・想定断水世帯・優先閉栓バルブを返す（BE-7）。通常の漏水検知
 （シード投入・実テレメトリ）でたまたま Level 3 になったセンサーは対象外。
-実在する20消火栓は数km単位で離れているため、選出センサー数に近いクラスタ数
+実在する23消火栓は数km単位で離れているため、選出センサー数に近いクラスタ数
 （多くの場合ほぼ1対1）になる。
 
 **Query Parameters**
@@ -320,23 +320,23 @@ E2E テスト用のデモシード。実在マスタ（HYD-001〜010）へレベ
 
 ## 10. POST /api/v1/disaster/simulate
 
-**DEMO-2 で再設計**: 実在する20消火栓のうち無作為に `count` 件を選び、信号データ
+**DEMO-2 で再設計**: 実在する23消火栓のうち無作為に `count` 件を選び、信号データ
 ごと Level 3 へ変化させる（BE-7）。以前の「東京駅周辺に架空センサーを新規追加」実装は
 廃止し、実マスタの既存センサーを書き換える方式に変更した（監視センサー数は
-常に20のまま増加しない）。選出されなかったセンサーは現在の状態を維持する。
+常に23のまま増加しない）。選出されなかったセンサーは現在の状態を維持する。
 
 - 選出6件（既定）: `app/services/disaster_signal.py` の合成Lv3波形（外部ファイル
   非依存。AWS環境でも常に動作する）を `analyze_audio()` で解析し、`severity_level=3`
   へ確定
-- 非選出14件: `store.latest_sensor_states()` の現在のレコードをそのまま保持
-- ストアは一括で20件に書き直され（`store.clear()` → `add()` ×20）、重複しない
+- 非選出17件: `store.latest_sensor_states()` の現在のレコードをそのまま保持
+- ストアは一括で23件に書き直され（`store.clear()` → `add()` ×23）、重複しない
 - 選出された sensor_id は `register_disaster_sensors()` に**累積**記録され、
   `/disaster/summary` の対象となる
 
 **Query Parameters**
 | Name | Type | Description |
 |------|------|-------------|
-| `count` | int | 変化させる件数。`ge=1, le=20`。デフォルト 6 |
+| `count` | int | 投入件数。`ge=1, le=23`。デフォルト 6 |
 
 **Response 200** — `DisasterSimulateResponse`
 ```json
@@ -378,12 +378,12 @@ E2E テスト用のデモシード。実在マスタ（HYD-001〜010）へレベ
 
 ## 12. POST /api/v1/demo/seed-batch
 
-**DEMO-2 で新設**: 20消火栓へ Lv0×8 / Lv1×8 / Lv2×3 / Lv3×1（計20件）を一括投入する。
+**DEMO-2 で新設**: 23消火栓へ Lv0×11 / Lv1×8 / Lv2×3 / Lv3×1（計23件）を一括投入する。
 `app/services/demo_seed.py` が消火栓ごとにちょうど1レベルを重複なく割り当て
 （`build_seed_batch`）、`backend/dataset/`（Zenodo由来・ライセンス上git管理外）の
 実音響WAVを replay して `analyze_audio()` で実スペクトルを算出しつつ、深刻度は
 意図値に確定する（`POST /demo/seed` と同じハイブリッド方針）。既存レコードを
-破棄してから20件を書き直すため、繰り返し呼んでも重複しない。ダッシュボードの
+破棄してから23件を書き直すため、繰り返し呼んでも重複しない。ダッシュボードの
 「シード投入」ボタンから呼ばれる。
 
 **Query Parameters**
@@ -410,7 +410,7 @@ E2E テスト用のデモシード。実在マスタ（HYD-001〜010）へレベ
 
 ## 13. DELETE /api/v1/demo/clear
 
-**DEMO-2 で契約変更**: デモシード状態をクリアし、**20件Lv0（正常）の初期状態に戻す**
+**DEMO-2 で契約変更**: デモシード状態をクリアし、**23件Lv0（正常）の初期状態に戻す**
 （旧: 0件へリセット）。`store.clear()` 後に `initialize_sensors()` を呼び直し、
 防災シミュレーションで記録された被災エリア選出（`clear_disaster_state()`）も
 クリアする。ダッシュボードの「シードクリア」ボタンから呼ばれる。
@@ -420,7 +420,7 @@ E2E テスト用のデモシード。実在マスタ（HYD-001〜010）へレベ
 {
   "status": "cleared",
   "cleared_count": 20,
-  "message": "20 件のアラートをクリアし、20件Lv0（正常）の初期状態にリセットしました"
+  "message": "20 件のアラートをクリアし、23件Lv0（正常）の初期状態にリセットしました"
 }
 ```
 
@@ -486,8 +486,8 @@ estimatedCostSavedYen / isEstimate / assumptionDoc）・`WorkOrder`（source は
 - `InMemoryStore.latest_sensor_states()` — センサー別最新レコードの浅いコピー
 - `InMemoryStore.clear()` — 全件破棄（`/demo/clear` 等で使用）
 - `get_store()` / `reset_store()` — モジュールレベルシングルトン（ハンドラ実行時取得・import 時捕捉は禁止）
-- `get_hydrants()` — `@lru_cache` で hydrants.json（実在20件）を 1 回読み込み
-- `initialize_sensors(store)`（DEMO-2） — hydrants.json 20件を severity_level=0 で
+- `get_hydrants()` — `@lru_cache` で hydrants.json（実在23件）を 1 回読み込み
+- `initialize_sensors(store)`（DEMO-2） — hydrants.json 23件を severity_level=0 で
   登録する。`main.py` の `lifespan` が起動時に呼び、`/demo/clear` もクリア後に呼び直す
 - `register_disaster_sensors(sensor_ids)` / `get_disaster_sensor_ids()` /
   `clear_disaster_state()`（DEMO-2） — 防災シミュレーションで Level 3 に変化した
@@ -521,10 +521,10 @@ estimatedCostSavedYen / isEstimate / assumptionDoc）・`WorkOrder`（source は
 - `calculate_kpi_summary()` — ストア全件走査でレベル別件数と推定削減コストを集計。`total_sensors` は hydrants.json 実件数
 
 ### services/demo_seed.py（DEMO-2）
-- `build_seed_batch(hydrants, seed)` — 20消火栓へちょうど1レベルを重複なく割り当てる純粋関数（Lv0×8/Lv1×8/Lv2×3/Lv3×1）
+- `build_seed_batch(hydrants, seed)` — 23消火栓へちょうど1レベルを重複なく割り当てる純粋関数（Lv0×11/Lv1×8/Lv2×3/Lv3×1）
 - `resolve_replay_files(audio_dir)` / `select_replay_file(...)` — `backend/dataset/` の
   WAVをファイル名規約（`*no-leak*_level{N}.wav` / `*leak*_level{N}.wav`）で解決・選定
-- `run_seed_batch(store, audio_dir, seed)` — 上記を組み合わせてストアを20件で一括再構築し、
+- `run_seed_batch(store, audio_dir, seed)` — 上記を組み合わせてストアを23件で一括再構築し、
   `clear_disaster_state()` で以前の防災シミュレーション選出記録もクリアする
 - `DemoSeedError` — マスタ・音源起因の失敗（ルーターで404に変換）
 

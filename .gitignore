@@ -7,8 +7,10 @@ backend/venv/
 backend/.coverage
 backend/coverage.xml
 
-# ---- デモ用実音響データ（Git 管理外。Zenodo 由来・ライセンス上の再配布不可）----
-backend/dataset/
+# ---- デモ用実音響データ（Git 管理外。ライセンス上の再配布不可）----
+backend/dataset/*
+!backend/dataset/.gitkeep
+!backend/dataset/README.md
 
 # ---- 環境変数 / 機密情報 ----
 .env

@@ -138,7 +138,7 @@ npm run e2e
   他スペックが追加しない深刻度（L3/L2）に限定し、L1 は「2 件以上」で検証する。
 
 > ⚠️ **既知の相互作用（DEMO-2）**: バックエンド起動時（`lifespan`）に
-> `initialize_sensors()` が hydrants.json 20件を severity_level=0 で自動投入する
+> `initialize_sensors()` が hydrants.json 23件を severity_level=0 で自動投入する
 > ようになった。`global-setup.ts` の `POST /api/v1/alerts/seed` は同じ実在マスタ
 > （HYD-001〜010 = SNS-001〜010）へ追加投入するため、それらのセンサーは
 > 「起動時のLv0レコード」と「シードで上書きされた新レコード」の**2件が併存**

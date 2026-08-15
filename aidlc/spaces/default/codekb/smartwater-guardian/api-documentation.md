@@ -320,7 +320,7 @@ Level 3 アラートを距離閾値（`threshold_meters` デフォルト 300m）
 **Query Parameters**
 | Name | Type | Description |
 |------|------|-------------|
-| `count` | int | 投入件数。`ge=1, le=20`。デフォルト 6 |
+| `count` | int | 投入件数。`ge=1, le=23`。デフォルト 6 |
 
 **Response 200** — `DisasterSimulateResponse`
 ```json

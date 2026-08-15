@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import sys
 import wave
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import requests
@@ -26,6 +28,8 @@ BASE_URL = "http://localhost:8000"
 TELEMETRY_ENDPOINT = f"{BASE_URL}/api/v1/telemetry"
 ALERTS_ENDPOINT = f"{BASE_URL}/api/v1/alerts"
 SENSORS_ENDPOINT = f"{BASE_URL}/api/v1/sensors"
+HYDRANTS_PATH = Path(__file__).resolve().parents[1] / "app" / "data" / "hydrants.json"
+EXPECTED_SENSOR_COUNT = len(json.loads(HYDRANTS_PATH.read_text(encoding="utf-8")))
 
 SAMPLE_RATE_HZ = 16_000
 DURATION_SEC = 1.0
@@ -183,14 +187,17 @@ def case_6_unknown_id_404() -> None:
 
 
 def case_7_sensors() -> None:
-    """GET /sensors が消火栓10件 + 契約フィールド + 登録反映を返す。"""
+    """GET /sensors がマスター実件数 + 契約フィールド + 登録反映を返す。"""
     response = requests.get(SENSORS_ENDPOINT, timeout=10)
     expect(
         response.status_code == 200,
         f"GET /sensors 期待 200 / 実際 {response.status_code}: {response.text}",
     )
     body = response.json()
-    expect(len(body) == 10, f"消火栓は10件のはず: {len(body)}")
+    expect(
+        len(body) == EXPECTED_SENSOR_COUNT,
+        f"消火栓は{EXPECTED_SENSOR_COUNT}件のはず: {len(body)}",
+    )
 
     first = body[0]
     for key in ("sensor_id", "hydrant_id", "status", "location", "last_reading_at"):
@@ -222,7 +229,10 @@ def case_8_geojson() -> None:
         f"type が FeatureCollection ではない: {body_type}",
     )
     features_len = len(body["features"])
-    expect(features_len == 10, f"features は10件のはず: {features_len}")
+    expect(
+        features_len == EXPECTED_SENSOR_COUNT,
+        f"features は{EXPECTED_SENSOR_COUNT}件のはず: {features_len}",
+    )
 
     for feature in body["features"]:
         lon, lat = feature["geometry"]["coordinates"]
@@ -256,7 +266,7 @@ CASES = [
     ("フィルタ: ?limit=2 で最大2件", case_4_limit),
     ("詳細: GET /alerts/{id} が spectrum 128点・pipe_info null", case_5_detail),
     ("404: 不明 ID の詳細", case_6_unknown_id_404),
-    ("センサー: GET /sensors が10件・契約フィールド", case_7_sensors),
+    ("センサー: GET /sensors がマスター実件数・契約フィールド", case_7_sensors),
     ("GeoJSON: ?format=geojson が [経度, 緯度] 順", case_8_geojson),
     ("スタブ: 実在 ID の work-order → 501", case_9_work_order_501),
     ("404: 不明 ID の work-order", case_10_work_order_unknown_404),

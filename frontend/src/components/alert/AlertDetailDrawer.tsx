@@ -269,7 +269,6 @@ export default function AlertDetailDrawer({
                   <div className="h-48 w-full">
                     <SpectrumChart
                       data={spectrumData}
-                      dominantFreqHz={detail.analysis?.dominantFreqHz}
                       isLoading={loading}
                     />
                   </div>

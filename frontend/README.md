@@ -184,14 +184,14 @@ npm run lint
   補修部材・概算見積・作業指示書を `WorkOrderModal` に表示する。バックエンドが LLM 未設定・失敗時は
   `source: "fallback"` で表示し、可用性を担保する。FR-6 の原価（`cost_yen` / `latency_ms`）もフッターに表示。
 - **防災モード**（DEMO-2 で再設計）: 「防災シミュレーション」ボタンが `POST
-  /api/v1/disaster/simulate`（BE-7）を呼び、実在20消火栓のうち無作為6件を信号データごと Level 3 へ
-  変化させる（架空センサーの新規追加はしない。監視センサー数は常に20）。`GET /api/v1/disaster/summary`
+  /api/v1/disaster/simulate`（BE-7）を呼び、実在23消火栓のうち無作為6件を信号データごと Level 3 へ
+  変化させる（架空センサーの新規追加はしない。監視センサー数は常に23）。`GET /api/v1/disaster/summary`
   のクラスタリング結果（被災エリア・想定断水世帯・優先閉栓バルブ）を `DisasterOverlay` で地図上に
   描画する。シミュレーション未実施時は何も描画しない。
-- **デモ操作**（DEMO-2）: 「シード投入」ボタンが `POST /api/v1/demo/seed-batch` を呼び、20消火栓へ
-  Lv0×8/Lv1×8/Lv2×3/Lv3×1 を一括投入する（`backend/dataset/` の音源が必要。AWS環境で未配置の場合は
+- **デモ操作**（DEMO-2）: 「シード投入」ボタンが `POST /api/v1/demo/seed-batch` を呼び、23消火栓へ
+  Lv0×11/Lv1×8/Lv2×3/Lv3×1 を一括投入する（`backend/dataset/` の音源が必要。AWS環境で未配置の場合は
   404で失敗するが画面は壊れない）。「シードクリア」ボタンが `DELETE /api/v1/demo/clear` を呼び、
-  20件Lv0の初期状態に戻す。いずれも押下後、`useAlertPolling` / `useKpiPolling` / `useSensorPolling`
+  23件Lv0の初期状態に戻す。いずれも押下後、`useAlertPolling` / `useKpiPolling` / `useSensorPolling`
   （+ シードクリアは `useDisasterSummary`）の `refresh()` を呼び、ポーリング間隔を待たず即時反映する。
 
 ### KPI サマリの表示仕様（FE-7）

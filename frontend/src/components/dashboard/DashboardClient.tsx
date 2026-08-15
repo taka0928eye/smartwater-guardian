@@ -29,7 +29,12 @@ import { useAlertPolling } from "@/hooks/useAlertPolling";
 import { useDisasterSummary } from "@/hooks/useDisasterSummary";
 import { useKpiPolling } from "@/hooks/useKpiPolling";
 import { useSensorPolling } from "@/hooks/useSensorPolling";
-import { clearDemo, seedDemoBatch, simulateDisaster } from "@/lib/api";
+import {
+  clearDemo,
+  resetDisasterSimulation,
+  seedDemoBatch,
+  simulateDisaster,
+} from "@/lib/api";
 import SensorMap from "@/components/map/SensorMap";
 import type { SensorFeatureCollection } from "@/types/sensor";
 
@@ -42,6 +47,29 @@ export const DISASTER_SIMULATE_COUNT = 6;
 export interface DashboardClientProps {
   /** サーバー側（page.tsx）で取得済みのセンサー GeoJSON（初期表示用。以後は useSensorPolling が引き継ぐ）。 */
   sensorFeatures: SensorFeatureCollection;
+}
+
+const GENERIC_SEED_ERROR = "シード投入に失敗しました";
+
+/** バックエンドが意図して返した4xx詳細だけを、長さを制限して画面へ表示する。 */
+function getSeedErrorMessage(error: unknown): string {
+  if (typeof error !== "object" || error === null) return GENERIC_SEED_ERROR;
+  const candidate = error as {
+    name?: unknown;
+    status?: unknown;
+    message?: unknown;
+  };
+  if (
+    candidate.name !== "ApiError" ||
+    typeof candidate.status !== "number" ||
+    candidate.status < 400 ||
+    candidate.status >= 500 ||
+    typeof candidate.message !== "string"
+  ) {
+    return GENERIC_SEED_ERROR;
+  }
+  const safeMessage = candidate.message.replace(/[\r\n\t]+/g, " ").trim();
+  return safeMessage ? safeMessage.slice(0, 500) : GENERIC_SEED_ERROR;
 }
 
 export default function DashboardClient({
@@ -70,7 +98,7 @@ export default function DashboardClient({
     error: disasterError,
     refresh: refreshDisaster,
   } = useDisasterSummary(ALERT_POLL_INTERVAL_MS);
-  const [isSimulating, setIsSimulating] = useState(false);
+  const [isDisasterActionPending, setIsDisasterActionPending] = useState(false);
   const [simulateMessage, setSimulateMessage] = useState<string | null>(null);
   const [simulateError, setSimulateError] = useState<string | null>(null);
 
@@ -87,37 +115,65 @@ export default function DashboardClient({
   /** 「防災シミュレーション」ボタン押下: Level 3 を一括投入してクラスタを即時反映する。
    *  useCallback で refreshDisaster の変化時のみ参照を更新する。 */
   const handleSimulateDisaster = useCallback(async (): Promise<void> => {
-    setIsSimulating(true);
+    setIsDisasterActionPending(true);
     setSimulateError(null);
+    setSimulateMessage(null);
     try {
       const response = await simulateDisaster(DISASTER_SIMULATE_COUNT);
       setSimulateMessage(response.message);
-      await refreshDisaster();
+      await Promise.all([
+        refreshAlerts(),
+        refreshKpi(),
+        refreshSensors(),
+        refreshDisaster(),
+      ]);
     } catch {
       // 画面は壊さず、ボタン横に控えめなエラー表示に留める。
       setSimulateError("防災シミュレーションに失敗しました");
     } finally {
-      setIsSimulating(false);
+      setIsDisasterActionPending(false);
     }
-  }, [refreshDisaster]);
+  }, [refreshAlerts, refreshKpi, refreshSensors, refreshDisaster]);
 
-  /** 「シード投入」ボタン押下: 20件（Lv0×8/Lv1×8/Lv2×3/Lv3×1）を一括投入し、
+  const handleStopDisaster = useCallback(async (): Promise<void> => {
+    setIsDisasterActionPending(true);
+    setSimulateError(null);
+    try {
+      const response = await resetDisasterSimulation();
+      setSimulateMessage(response.message);
+      await Promise.all([
+        refreshAlerts(),
+        refreshKpi(),
+        refreshSensors(),
+        refreshDisaster(),
+      ]);
+    } catch {
+      setSimulateError("通常モードへの復帰に失敗しました");
+    } finally {
+      setIsDisasterActionPending(false);
+    }
+  }, [refreshAlerts, refreshKpi, refreshSensors, refreshDisaster]);
+
+  const isDisasterActive = (disasterSummary?.totalClusters ?? 0) > 0;
+
+  /** 「シード投入」ボタン押下: 23件（Lv0×11/Lv1×8/Lv2×3/Lv3×1）を一括投入し、
    *  アラート一覧・KPI・地図を即時反映する（DEMO-2）。 */
   const handleSeedDemo = useCallback(async (): Promise<void> => {
     setIsSeeding(true);
     setSeedError(null);
+    setSeedMessage(null);
     try {
       const response = await seedDemoBatch();
       setSeedMessage(response.message);
       await Promise.all([refreshAlerts(), refreshKpi(), refreshSensors()]);
-    } catch {
-      setSeedError("シード投入に失敗しました");
+    } catch (error) {
+      setSeedError(getSeedErrorMessage(error));
     } finally {
       setIsSeeding(false);
     }
   }, [refreshAlerts, refreshKpi, refreshSensors]);
 
-  /** 「シードクリア」ボタン押下: 20件Lv0の初期状態に戻し、被災エリア表示も含めて
+  /** 「シードクリア」ボタン押下: 23件Lv0の初期状態に戻し、被災エリア表示も含めて
    *  即時反映する（DEMO-2）。 */
   const handleClearDemo = useCallback(async (): Promise<void> => {
     setIsClearing(true);
@@ -216,13 +272,25 @@ export default function DashboardClient({
               <button
                 type="button"
                 data-testid="disaster-simulate-button"
-                onClick={handleSimulateDisaster}
-                disabled={isSimulating}
-                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={
+                  isDisasterActive
+                    ? handleStopDisaster
+                    : handleSimulateDisaster
+                }
+                disabled={isDisasterActionPending}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  isDisasterActive
+                    ? "bg-slate-600 hover:bg-slate-700"
+                    : "bg-red-600 hover:bg-red-700"
+                }`}
               >
-                {isSimulating
-                  ? "シミュレーション中…"
-                  : "防災シミュレーション"}
+                {isDisasterActionPending
+                  ? isDisasterActive
+                    ? "終了中…"
+                    : "シミュレーション中…"
+                  : isDisasterActive
+                    ? "通常モードに戻る"
+                    : "防災シミュレーション"}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 """DEMO-2: main.py 起動処理（lifespan）のテスト。
 
-「初期表示時は20件・全てLv0」という要求が、FastAPI 起動時の lifespan で
+「初期表示時は23件・全てLv0」という要求が、FastAPI 起動時の lifespan で
 満たされることを検証する。あわせて、AWS環境向けの S3 データセット同期
 （DEMO_DATASET_S3_URI 環境変数）が起動を止めないことも検証する。
 
@@ -16,8 +16,8 @@ from unittest.mock import patch
 from app.store import get_store, reset_store
 
 
-async def test_lifespan_initializes_twenty_level0_sensors() -> None:
-    """起動時 lifespan がhydrants.json 20件を severity_level=0 で登録する。"""
+async def test_lifespan_initializes_twenty_three_level0_sensors() -> None:
+    """起動時 lifespan がhydrants.json 23件を severity_level=0 で登録する。"""
     from main import app, lifespan
 
     reset_store()
@@ -25,10 +25,10 @@ async def test_lifespan_initializes_twenty_level0_sensors() -> None:
         async with lifespan(app):
             store = get_store()
             records = store.get_all()
-            assert len(records) == 20
+            assert len(records) == 23
             assert all(record.analysis.severity_level == 0 for record in records)
             assert {record.sensor_id for record in records} == {
-                f"SNS-{i:03d}" for i in range(1, 21)
+                f"SNS-{i:03d}" for i in range(1, 24)
             }
     finally:
         reset_store()
@@ -79,7 +79,7 @@ async def test_lifespan_continues_startup_when_s3_sync_fails(monkeypatch) -> Non
         ):
             async with lifespan(app):
                 store = get_store()
-                # S3同期に失敗しても、20件Lv0の初期化は行われる
-                assert len(store.get_all()) == 20
+                # S3同期に失敗しても、23件Lv0の初期化は行われる
+                assert len(store.get_all()) == 23
     finally:
         reset_store()

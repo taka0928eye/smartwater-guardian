@@ -24,6 +24,6 @@ class DemoSeedBatchResponse(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     status: str = Field(description="投入結果ステータス")
-    inserted_count: int = Field(description="投入件数（常に20件）")
+    inserted_count: int = Field(description="投入件数（常に23件）")
     level_counts: dict[str, int] = Field(description="深刻度別の件数内訳")
     message: str = Field(description="ステータスメッセージ")

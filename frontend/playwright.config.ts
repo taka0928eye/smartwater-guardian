@@ -82,12 +82,17 @@ export default defineConfig({
   projects: [
     {
       name: "main",
-      testIgnore: /disaster\.spec\.ts/,
+      testIgnore: [/disaster\.spec\.ts/, /seed-demo\.spec\.ts/],
+    },
+    {
+      name: "seed-demo",
+      testMatch: /seed-demo\.spec\.ts/,
+      dependencies: ["main"],
     },
     {
       name: "disaster",
       testMatch: /disaster\.spec\.ts/,
-      dependencies: ["main"],
+      dependencies: ["seed-demo"],
     },
   ],
   use: {

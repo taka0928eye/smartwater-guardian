@@ -2,10 +2,10 @@
 
 - シードAPI（``POST /api/v1/demo/seed``）が意図した深刻度でストアへ投入する
 - 一括投入API（``POST /api/v1/demo/seed-batch``、DEMO-2）が
-  ``app/services/demo_seed.py`` を使って20件（Lv0×8/Lv1×8/Lv2×3/Lv3×1）を
+  ``app/services/demo_seed.py`` を使って23件（Lv0×11/Lv1×8/Lv2×3/Lv3×1）を
   一括投入する。内訳計算・音声選択ロジックは ``tests/test_demo_seed_service.py``
   で検証済みのため、ここではルーター経由の統合的な振る舞いのみ検証する。
-- クリアAPI（``DELETE /api/v1/demo/clear``）が20件Lv0の初期状態に戻す
+- クリアAPI（``DELETE /api/v1/demo/clear``）が23件Lv0の初期状態に戻す
 """
 
 from __future__ import annotations
@@ -52,27 +52,27 @@ def audio_dir(tmp_path: Path) -> Path:
 # --- 一括投入API（POST /api/v1/demo/seed-batch）---
 
 
-def test_seed_batch_endpoint_inserts_twenty_records_with_new_distribution(
+def test_seed_batch_endpoint_inserts_twenty_three_records_with_new_distribution(
     client, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一括投入APIが20件（Lv0×8/Lv1×8/Lv2×3/Lv3×1）をストアへ投入する。"""
+    """一括投入APIが23件（Lv0×11/Lv1×8/Lv2×3/Lv3×1）を投入する。"""
     monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", audio_dir)
 
     response = client.post("/api/v1/demo/seed-batch?seed=42")
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "seeded"
-    assert body["inserted_count"] == 20
-    assert body["level_counts"] == {"0": 8, "1": 8, "2": 3, "3": 1}
+    assert body["inserted_count"] == 23
+    assert body["level_counts"] == {"0": 11, "1": 8, "2": 3, "3": 1}
 
     alerts = client.get("/api/v1/alerts").json()
-    assert len(alerts) == 20
+    assert len(alerts) == 23
 
 
 def test_seed_batch_endpoint_replaces_previous_state(
     client, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一括投入は既存レコードを破棄してから20件を書き直す（重複を作らない）。"""
+    """一括投入は既存レコードを破棄してから23件を書き直す（重複を作らない）。"""
     monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", audio_dir)
 
     client.post("/api/v1/demo/seed", json=_build_seed_request(level=1))
@@ -80,7 +80,7 @@ def test_seed_batch_endpoint_replaces_previous_state(
     assert response.status_code == 200
 
     alerts = client.get("/api/v1/alerts").json()
-    assert len(alerts) == 20
+    assert len(alerts) == 23
 
 
 def test_seed_batch_endpoint_missing_dataset_returns_404(
@@ -91,6 +91,50 @@ def test_seed_batch_endpoint_missing_dataset_returns_404(
 
     response = client.post("/api/v1/demo/seed-batch?seed=1")
     assert response.status_code == 404
+
+
+def test_seed_batch_endpoint_reports_all_missing_required_files(
+    client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """複数不足時は利用者が一度で対応できるよう全ファイル名を返す。"""
+    signal = generate_signal(
+        0, sample_rate_hz=SEED_SAMPLE_RATE_HZ, duration_sec=SEED_DURATION_SEC, seed=1
+    )
+    _write_wav(tmp_path / "BE3_demo_no-leak_level0.wav", signal)
+    monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", tmp_path)
+
+    response = client.post("/api/v1/demo/seed-batch?seed=1")
+
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "BE3_demo_leak_level1.wav" in detail
+    assert "BE3_demo_leak_level2.wav" in detail
+    assert "BE3_demo_leak_level3.wav" in detail
+    assert str(tmp_path) not in detail
+
+
+def test_seed_batch_endpoint_rejects_invalid_wav_as_422(
+    client, audio_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象ファイルと不正項目を示して形式不正を拒否する。"""
+    invalid_path = audio_dir / "BE3_demo_leak_level2.wav"
+    samples = np.zeros(4_000, dtype=np.int16)
+    with wave.open(str(invalid_path), "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(44_100)
+        wav_file.writeframes(np.repeat(samples, 2).astype("<i2").tobytes())
+    monkeypatch.setattr(demo_seed_service, "DEFAULT_AUDIO_DIR", audio_dir)
+
+    response = client.post("/api/v1/demo/seed-batch?seed=1")
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "BE3_demo_leak_level2.wav" in detail
+    assert "mono" in detail
+    assert "8000Hz" in detail
+    assert "1秒" in detail
+    assert str(audio_dir) not in detail
 
 
 def test_seed_batch_endpoint_reproducible_with_same_seed(
@@ -173,8 +217,8 @@ def test_seed_endpoint_rejects_all_zero_audio(client) -> None:
 # --- クリアAPI（DELETE /api/v1/demo/clear）---
 
 
-def test_clear_endpoint_resets_to_twenty_level0_records(client) -> None:
-    """クリアエンドポイントは全テレメトリを破棄し、20件Lv0の初期状態に戻す。"""
+def test_clear_endpoint_resets_to_twenty_three_level0_records(client) -> None:
+    """クリアエンドポイントは全テレメトリを破棄し、23件Lv0へ戻す。"""
     # 先にシードデータを投入
     client.post("/api/v1/demo/seed", json=_build_seed_request(level=1))
     client.post("/api/v1/demo/seed", json=_build_seed_request(level=2))
@@ -189,9 +233,9 @@ def test_clear_endpoint_resets_to_twenty_level0_records(client) -> None:
     # クリア前（投入した2件）の件数が実績値として返る
     assert body["cleared_count"] == 2
 
-    # クリア後、20件Lv0の初期状態に戻る
+    # クリア後、23件Lv0の初期状態に戻る
     alerts_after = client.get("/api/v1/alerts").json()
-    assert len(alerts_after) == 20
+    assert len(alerts_after) == 23
     assert all(item["severity_level"] == 0 for item in alerts_after)
 
 
@@ -238,8 +282,8 @@ def test_clear_endpoint_resets_kpi_summary(client) -> None:
     assert kpi_after["level2_count"] == 0
     assert kpi_after["level3_count"] == 0
     assert kpi_after["estimated_cost_saved_yen"] == 0
-    # 監視センサー数は常に20（クリアでも増減しない）
-    assert kpi_after["total_sensors"] == 20
+    # 監視センサー数は常に23（クリアでも増減しない）
+    assert kpi_after["total_sensors"] == 23
 
 
 def test_clear_endpoint_message_indicates_reset_complete(client) -> None:

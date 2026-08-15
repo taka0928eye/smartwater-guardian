@@ -11,7 +11,7 @@
 export interface DemoSeedBatchResponse {
   /** 投入結果ステータス。 */
   status: string;
-  /** 投入件数（常に20件）。 */
+  /** 投入件数（常に23件）。 */
   insertedCount: number;
   /** 深刻度別の件数内訳（キーは "0"〜"3"）。 */
   levelCounts: Record<string, number>;

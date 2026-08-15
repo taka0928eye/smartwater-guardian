@@ -98,7 +98,7 @@
 ```python
 # backend/app/routers/disaster.py:145-163
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-def simulate_disaster(count: int = Query(6, ge=1, le=20, ...)) -> DisasterSimulateResponse:
+def simulate_disaster(count: int = Query(6, ge=1, le=23, ...)) -> DisasterSimulateResponse:
     """デモ用に一括で Level 3 アラートをシミュレーション投入する。"""
     # TODO: add_simulated_alert 実装時に有効化
     # base_lat, base_lng = 35.6812, 139.7671
