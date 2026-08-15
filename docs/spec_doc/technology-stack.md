@@ -12,6 +12,7 @@
 | 機械学習 | scikit-learn | 1.9.0 | SVM 漏水判定（services/audio.py） |
 | モデル読込 | joblib | 1.5.3 | leak_svm_v1.joblib の読込・SHA-256 検証 |
 | HTTP クライアント | httpx | 0.28.1 | `HttpClientDep` → orcarouter（LLM API 呼び出し） |
+| AWS SDK | boto3 / botocore | 1.43.72 | `services/dataset_sync.py`（DEMO-2・AWS環境向けS3データセット同期） |
 | ASGI サーバー | uvicorn | 0.52.1 | 開発・デプロイ |
 | テスト | pytest | 9.1.1 | 単体・統合テスト（`python -m pytest`） |
 | カバレッジ | pytest-cov | CI 導入 | `--cov=app --cov-branch --cov-fail-under=80`（行+branch 各 80%） |
@@ -56,6 +57,7 @@
 | 監視 | CloudWatch Logs / Alarms / SNS | ALB 5xx・ECS CPU/Memory・UnHealthy Host |
 | CI/CD | GitHub Actions OIDC | ECR push・ECS タスク定義更新（deploy.yml） |
 | セキュリティ | （コスト削減で廃止） | WAF / Secrets Manager 不使用。API キーは環境変数注入。To-Be 構成に記録 |
+| ストレージ | S3（プライベートバケット） | `DemoDatasetBucket`（DEMO-2）。Zenodoライセンスの実音響を手動アップロードし、`DemoDatasetEnabled=true` で backend タスクが起動時に同期（`infra/README.md`） |
 
 デモ 1 日コスト目安は約 **$3.5-4.5**（NAT Gateway 1 台・タスク各 1・WAF 廃止）。
 

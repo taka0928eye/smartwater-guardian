@@ -66,9 +66,12 @@ flowchart TD
         SC["Service: llm_cost.py (FR-6)"]
         SL["Service: ledger.py"]
         SK["Service: kpi.py"]
+        SDS["Service: demo_seed.py (DEMO-2)"]
+        SIG["Service: disaster_signal.py (DEMO-2)"]
         ST["Store (store.py)"]
         DATA["data: hydrants.json / pipes.json / repair_parts.json"]
         MODEL["models: leak_svm_v1.joblib"]
+        DSET["backend/dataset/ (Zenodo実音響・git管理外)"]
         APP --> RT
         APP --> RA
         APP --> RS
@@ -77,6 +80,11 @@ flowchart TD
         APP --> RM
         RT --> SA
         RM --> SA
+        RM --> SDS
+        SDS --> SA
+        SDS --> DSET
+        RD --> SIG
+        SIG --> SA
         RA --> SO
         SO --> SC
         RA --> SL
@@ -89,6 +97,7 @@ flowchart TD
         ST --> DATA
         SA --> MODEL
         SO --> DATA
+        APP -. "起動時 lifespan: initialize_sensors() + 任意でS3同期(dataset_sync.py)" .-> ST
     end
 
     API -- "REST / JSON (snake_case)" --> APP
@@ -98,19 +107,27 @@ flowchart TD
 （テキスト代替: フロントは `page.tsx` → `DashboardClient` が KpiSummary / SensorMap / DisasterOverlay /
 AlertList / AlertDetailDrawer（配下に WorkOrderModal・チャート）を束ねる。データ取得は `lib/api.ts`
 （axios + snake_case→camelCase 変換）が一本化し、ポーリングは useKpiPolling / useAlertPolling /
-useSensorPolling / useDisasterSummary が担う。KPI の「前提: docs/business-model.md」リンクは
-`app/api/docs/business-model/route.ts` が docs を配信。バックエンドは `main.py` → 6 ルーター
-（telemetry / alerts / sensors / kpi / disaster / demo）。telemetry・demo は audio サービス（SVM + FFT）を
-呼び、alerts の work-order は orcarouter サービス（LLM + 原価算出）を呼ぶ。データ源は
-`hydrants.json` / `pipes.json` / `repair_parts.json` / `leak_svm_v1.joblib`。）
+useSensorPolling / useDisasterSummary が担う（いずれも DEMO-2 で `refresh()` を追加し、
+シード投入・シードクリア・防災シミュレーションボタン押下直後に即時反映する）。KPI の
+「前提: docs/business-model.md」リンクは `app/api/docs/business-model/route.ts` が docs を配信。
+バックエンドは `main.py` → 6 ルーター（telemetry / alerts / sensors / kpi / disaster / demo）。
+telemetry・demo（`POST /demo/seed`）は audio サービス（SVM + FFT）を直接呼び、demo の
+`seed-batch` は `demo_seed.py`（DEMO-2・20消火栓へ1レベルずつ割当て + audio 呼び出し）を、
+disaster の `simulate` は `disaster_signal.py`（DEMO-2・外部ファイル非依存の合成Level3波形）を
+経由して audio サービスを呼ぶ。alerts の work-order は orcarouter サービス（LLM + 原価算出）を呼ぶ。
+データ源は `hydrants.json` / `pipes.json` / `repair_parts.json` / `leak_svm_v1.joblib`。
+起動時（`lifespan`）は `initialize_sensors()` で20件Lv0の初期状態を構築し、環境変数
+`DEMO_DATASET_S3_URI` があれば `dataset_sync.py` で AWS 環境向けに `backend/dataset/`
+（Zenodo実音響・ライセンス上git管理外）をプライベートS3から同期する。）
 
 ## 層構造とデータフロー
 
 - **Presentation 層（FE）**: `page.tsx`（サーバーサイドで GeoJSON を 1 回取得）→ `DashboardClient`（クライアント状態管理）
 - **API 境界**: `lib/api.ts` が snake_case→camelCase 変換を「1 回だけ」実施。型契約は `types/api.ts` / `types/sensor.ts` / `types/disaster.ts`
 - **API 層（BE）**: 6 ルーター。入力検証は Pydantic v2 strict / extra=forbid
-- **サービス層（BE）**: `audio.py`（音響判定）・`orcarouter.py`（LLM 起票）・`llm_cost.py`（原価）・`ledger.py`（台帳照合）・`kpi.py`（コスト算定）
-- **データ層（BE）**: `store.py`（インメモリ・スレッドセーフ）・`data/*.json`（マスタ）・`models/`（学習済みモデル）
+- **サービス層（BE）**: `audio.py`（音響判定）・`orcarouter.py`（LLM 起票）・`llm_cost.py`（原価）・`ledger.py`（台帳照合）・`kpi.py`（コスト算定）・
+  `demo_seed.py`（DEMO-2・一括シード投入）・`disaster_signal.py`（DEMO-2・合成Level3波形）・`dataset_sync.py`（DEMO-2・AWS向けS3データセット同期）
+- **データ層（BE）**: `store.py`（インメモリ・スレッドセーフ）・`data/*.json`（マスタ）・`models/`（学習済みモデル）・`dataset/`（実音響WAV・git管理外）
 
 ## Interaction Diagrams
 
@@ -212,34 +229,49 @@ sequenceDiagram
 kpiData を null に破棄し、スケルトン（`data-testid="kpi-skeleton"`）へ戻す**（FE-7 実装済み）。
 KPI ランドマーク（section / h2 / aria-labelledby / aria-busy）は DashboardClient が一元所有する。）
 
-### 4. 防災モード（BE-7）
+### 4. 防災モード（BE-7 / DEMO-2 再設計）
+
+> DEMO-2 で「東京駅周辺に架空センサーを新規追加」方式から「実在20消火栓のうち
+> 無作為6件を書き換える」方式へ再設計した。監視センサー数は常に20のまま増加しない。
 
 ```mermaid
 sequenceDiagram
     participant U as User (防災シミュレーション ボタン)
     participant API as libApi simulateDisaster / fetchDisasterSummary
     participant R as DisasterRouter
+    participant SIG as disaster_signal
     participant ST as Store
     participant D as DashboardClient
     participant DIS as DisasterOverlay
 
     U->>API: simulateDisaster(count=6)
     API->>R: POST /api/v1/disaster/simulate
-    R->>ST: add(TEL-DISASTER-* Level3 ×6) + /tmp キャッシュ
+    R->>R: 実在20消火栓から6件を無作為選出
+    R->>SIG: generate_level3_signal() ×6（外部ファイル非依存の合成波形）
+    R->>R: analyze_audio() で実スペクトル算出 + severity_level=3 に確定
+    R->>ST: clear() → 20件を再構築（選出6件=新状態 / 非選出14件=現状維持）
+    R->>ST: register_disaster_sensors(選出sensor_ids) に累積記録
     R-->>API: DisasterSimulateResponse (inserted_count)
-    API->>D: refresh() (useDisasterSummary)
+    API->>D: refresh() (useDisasterSummary / useAlertPolling / useKpiPolling / useSensorPolling)
     D->>API: fetchDisasterSummary()
     API->>R: GET /api/v1/disaster/summary
-    R->>R: Level3 を距離閾値でクラスタリング
+    R->>R: register_disaster_sensors() 記録分のみ距離閾値でクラスタリング
     R-->>API: DisasterSummaryResponse (clusters / households)
     API-->>D: camelCase 変換後の DisasterSummary
     D->>DIS: DisasterOverlay (GeoJSON Polygon 描画・popup XSS エスケープ)
 ```
 
-（テキスト代替: 防災シミュレーションボタン → `simulateDisaster(6)` で Level 3 アラートを一括投入 →
-`refresh()` で即時再取得 → `GET /api/v1/disaster/summary` が Level 3 を距離閾値（300m）でクラスタリングし、
-被災エリア Polygon・想定断水世帯・優先閉栓バルブを返す。`DisasterOverlay` が react-leaflet の
-`<GeoJSON>` で描画（popup は HTML エスケープで XSS 対策）。Level 3 が 0 件のときは非表示。）
+（テキスト代替: 防災シミュレーションボタン → `simulateDisaster(6)` が実在20消火栓のうち
+無作為6件を選び、`disaster_signal.generate_level3_signal()`（合成波形。AWS環境でも
+データセット不要で常に動作する）を `analyze_audio()` で解析して Level 3 に確定 →
+ストアを20件（選出6件=新状態＋非選出14件=現状維持）に一括再構築 → 選出 sensor_id を
+`register_disaster_sensors()` に累積記録 → `refresh()` で即時再取得 →
+`GET /api/v1/disaster/summary` は**その累積記録分のみ**を距離閾値（300m）で
+クラスタリングし、被災エリア Polygon・想定断水世帯・優先閉栓バルブを返す
+（通常検知でLevel3になったセンサーは対象外）。実消火栓は数km単位で離れているため、
+クラスタは選出センサー数に近い数（多くはほぼ1対1）になる。`DisasterOverlay` が
+react-leaflet の `<GeoJSON>` で描画（popup は HTML エスケープで XSS 対策）。
+シミュレーション未実施時は非表示。）
 
 ## 設計上の判断と代替案
 

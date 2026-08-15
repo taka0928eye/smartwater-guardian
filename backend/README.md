@@ -3,17 +3,19 @@
 消火栓貼付型IoT音響センサーとハイブリッドAI解析により、水道管の微小漏水を早期検知する
 「SmartWater Guardian」のバックエンド API サーバー（FastAPI / Python）。
 
-**実装状況（2026-08-12 現在）:**
+**実装状況（2026-08-15 現在）:**
 - ✅ **BE-1**: テレメトリ受信・Pydantic v2 検証（`POST /api/v1/telemetry`）
 - ✅ **BE-2**: 消火栓マスタ・疑似センサーシミュレータ CLI（`simulate_sensor.py`）
 - ✅ **BE-3**: FFT 解析 + SVM リーク判定（`app/services/audio.py` 実装済み）
 - ✅ **BE-4**: 疑似GIS配管台帳・Haversine 位置照合（`app/services/ledger.py`）
 - ✅ **BE-5**: LLM 自動起票・キャッシング・フォールバック分類（`app/services/orcarouter.py`）
 - ✅ **BE-6**: インメモリストア + アラート・センサー参照 API（`app/store.py` + `app/routers/alerts.py`, `sensors.py`）
-- ✅ **BE-7**: 防災モード・被害エリアクラスタリング（`app/routers/disaster.py`）
+- ✅ **BE-7**: 防災モード・被害エリアクラスタリング（`app/routers/disaster.py`。DEMO-2で実在センサー書換え方式に再設計）
 - ✅ **BE-8**: KPIサマリ「推定削減コスト」算定（`app/routers/kpi.py`）
 - ✅ **FR-6**: LLM 原価計測・可視化（`app/services/llm_cost.py`）
 - ✅ **DEMO-1**: デモ初期状態の投入（`app/routers/demo.py`・深刻度を意図レベルに確定）
+- ✅ **DEMO-2**: センサーデータ構成再設計（初期表示20件Lv0の自動構築・`seed-batch`一括投入API・
+  実センサー書換え型防災シミュレーション・シードクリアの20件Lv0契約・AWS向けS3データセット同期）
 
 **環境**: Windows PowerShell / Python 3.12 / FastAPI 0.141
 
@@ -42,7 +44,7 @@ backend/
 │   ├── dependencies.py        # 依存性注入（httpx.AsyncClient 等）
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── hydrants.json      # 消火栓マスタ（BE-2）
+│   │   ├── hydrants.json      # 消火栓マスタ（BE-2・20件）
 │   │   ├── pipes.json         # 疑似GIS配管台帳（BE-4・10路線）
 │   │   └── repair_parts.json  # 補修部材マスタ（BE-5 フォールバック WorkOrder 用）
 │   ├── models/
@@ -56,7 +58,7 @@ backend/
 │   │   ├── kpi.py             # KpiSummary（BE-8。is_estimate / assumption_doc で試算値を明示）
 │   │   ├── work_order.py      # WorkOrder / RepairPart（BE-5・FR-6 原価フィールド）
 │   │   ├── disaster.py        # DisasterCluster / Summary / Simulate（BE-7）
-│   │   └── demo.py            # DemoSeedRequest（DEMO-1。TelemetryRequest + level）
+│   │   └── demo.py            # DemoSeedRequest / DemoSeedBatchResponse（DEMO-1/2。TelemetryRequest + level）
 │   ├── services/                # ビジネスロジック集約（router は薄く保つ）
 │   │   ├── __init__.py
 │   │   ├── audio.py           # FFT 解析 + SVM リーク判定（BE-3。379行、カバレッジ84%）
@@ -64,15 +66,19 @@ backend/
 │   │   ├── orcarouter.py      # LLM 自動起票・リトライ分類・キャッシング（BE-5。442行、カバレッジ100%）
 │   │   ├── llm_cost.py        # LLM 原価計測（FR-6。token→JPY 変換）
 │   │   ├── prompts.py         # Orcarouter API 用プロンプトビルダー
-│   │   └── kpi.py             # KPI「推定削減コスト」算定（BE-8。定数は docs/business-model.md §3.2 準拠）
+│   │   ├── kpi.py             # KPI「推定削減コスト」算定（BE-8。定数は docs/business-model.md §3.2 準拠）
+│   │   ├── demo_seed.py       # デモ一括投入（DEMO-2。20消火栓へ1レベルずつ割当て + 実音響replay）
+│   │   ├── disaster_signal.py # 合成Level3波形生成（DEMO-2。外部ファイル非依存・AWS環境でも動作）
+│   │   └── dataset_sync.py    # AWS向けS3データセット同期（DEMO-2。boto3使用）
 │   └── routers/                # APIRouter（エンドポイント。薄く保ちサービス呼び出しのみ）
 │       ├── __init__.py
 │       ├── telemetry.py       # POST /api/v1/telemetry（BE-1・BE-3）
 │       ├── alerts.py          # GET /api/v1/alerts 系（BE-6・BE-5 work-order 実装済み）
 │       ├── sensors.py         # GET /api/v1/sensors（JSON / GeoJSON。BE-6）
-│       ├── disaster.py        # GET /summary, POST /simulate（BE-7 防災モード・クラスタリング）
+│       ├── disaster.py        # GET /summary, POST /simulate（BE-7・DEMO-2で実在20消火栓の書換え方式に再設計）
 │       ├── kpi.py             # GET /api/v1/kpi/summary（BE-8）
-│       └── demo.py            # POST /api/v1/demo/seed（DEMO-1 デモシード投入）
+│       └── demo.py            # POST /api/v1/demo/seed(-batch), DELETE /demo/clear（DEMO-1/2）
+├── dataset/                     # 実音響WAV（Zenodo由来。git管理外・ライセンス上再配布不可）
 ├── scripts/                    # 手動検証スクリプト（CI で実行、サーバー起動前提）
 │   ├── check_telemetry.py     # E2E検証（テレメトリ受信・解析パイプライン）
 │   ├── check_alerts.py        # アラート・センサーAPI の E2E検証
@@ -80,14 +86,15 @@ backend/
 │   ├── check_disaster.py      # 防災モード API の E2E検証（シミュレーション投入→クラスタリング）
 │   ├── check_ledger.py        # 配管台帳照合ロジックの検証（BE-4）
 │   ├── check_orcarouter.py    # Orcarouter LLM 統合の検証（リトライ・フォールバック）
-│   ├── seed_demo.py           # デモ初期状態の投入スクリプト（DEMO-1）
+│   ├── seed_demo.py           # デモ一括投入CLI（DEMO-2。`POST /demo/seed-batch` を叩く薄いラッパー）
+│   ├── clear_demo.py          # デモシードクリアCLI（`DELETE /demo/clear` を叩く。20件Lv0に戻す）
 │   ├── simulate_sensor.py     # 疑似音響センサーCLI（BE-2。WAVリプレイモード対応）
 │   └── train_leak_svm.py      # SVM モデル学習・保存スクリプト（BE-3）
-├── tests/                      # pytest テスト（297 件、カバレッジ 94%・行+branch 各 80% ゲート）
+├── tests/                      # pytest テスト（334 件、カバレッジ 95%・行+branch 各 80% ゲート）
 │   ├── conftest.py            # TestClient / ストアリセット フィクスチャ
 │   ├── fixtures/              # テスト共有フィクスチャ
 │   ├── test_telemetry.py      # BE-1 の正常系・異常系（238 行）
-│   ├── test_store.py          # インメモリストア単体（maxlen / 並行性）
+│   ├── test_store.py          # インメモリストア単体（maxlen / 並行性 / 防災センサー追跡）
 │   ├── test_alerts.py         # 参照 API 統合（GeoJSON）
 │   ├── test_audio.py          # FFT 解析・SVM 推論（BE-3。486 行）
 │   ├── test_hydrants.py       # 消火栓マスタロード
@@ -98,13 +105,18 @@ backend/
 │   ├── test_llm_cost.py       # 原価計測（FR-6）
 │   ├── test_prompts.py        # プロンプトビルダー（BE-5）
 │   ├── test_secrets.py        # シークレット非露出検証（NFR-4。敵対的テスト）
-│   ├── test_disaster.py       # 防災モード・クラスタリング（BE-7）
-│   ├── test_seed_demo.py      # デモシード投入（DEMO-1）
+│   ├── test_disaster.py       # 防災モード・実センサー書換え・クラスタリング（BE-7・DEMO-2）
+│   ├── test_seed_demo.py      # シードAPI・一括投入API・クリアAPI（DEMO-1/2）
+│   ├── test_seed_demo_cli.py  # scripts/seed_demo.py CLIラッパー（DEMO-2）
+│   ├── test_demo_seed_service.py # app/services/demo_seed.py（DEMO-2）
+│   ├── test_disaster_signal.py # app/services/disaster_signal.py（DEMO-2）
+│   ├── test_dataset_sync.py   # app/services/dataset_sync.py（DEMO-2・AWS向けS3同期）
+│   ├── test_main.py           # main.py の lifespan（起動時初期化・S3同期・DEMO-2）
 │   ├── test_cors_config.py    # CORS 環境変数構成（INFRA-1）
 │   ├── test_exception_handling.py # 例外→502 / 500（構造化）ハンドラ
 │   ├── test_dependencies.py   # 依存性注入
 │   └── test_simulate_sensor.py # 疑似センサーCLI
-├── main.py                    # FastAPI アプリ本体（router 登録・CORS）
+├── main.py                    # FastAPI アプリ本体（router 登録・CORS・lifespanで起動時初期化 + 任意S3同期）
 ├── pyproject.toml              # ruff / mypy 設定
 ├── requirements.txt            # 依存パッケージ（pip freeze で固定）
 ├── requirements-dev.txt        # 開発用依存（pytest-cov / ruff / mypy。CI 専用）
@@ -263,21 +275,31 @@ venv\Scripts\python.exe scripts/check_ledger.py      # 配管台帳照合ロジ�
 | POST | `/api/v1/alerts/seed` | E2E 用シード投入（実在マスタ HYD-001〜010 へ L3×3 / L2×3 / L1×3 / L0×1） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/sensors` | センサー状態一覧（`?format=geojson`） | BE-6 | ✅ 実装済み |
 | GET | `/api/v1/kpi/summary` | KPIサマリ（監視数・Level別件数・推定削減コスト） | BE-8 | ✅ 実装済み |
-| POST | `/api/v1/demo/seed` | デモ初期状態の1件投入（実スペクトル算出 + 深刻度を意図レベルに確定） | DEMO-1 | ✅ 実装済み |
+| POST | `/api/v1/demo/seed` | デモシード1件投入（実スペクトル算出 + 深刻度を意図レベルに確定） | DEMO-1 | ✅ 実装済み |
+| POST | `/api/v1/demo/seed-batch` | デモ初期状態の一括投入（Lv0×8/Lv1×8/Lv2×3/Lv3×1・計20件） | DEMO-2 | ✅ 実装済み |
+| DELETE | `/api/v1/demo/clear` | シード状態をクリアし20件Lv0の初期状態に戻す | DEMO-2 | ✅ 実装済み |
 
-> **DEMO-1 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
-> 追加した `DemoSeedRequest` を受ける。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
-> 上書きする。音源は**学習未使用の Zenodo 実音響**（`scripts/simulate_sensor.py` の
-> `load_audio_file()` による replay、Git管理外）。受領したWAVフォルダを`--audio-dir`で指定する。
-> 実 no-leak 音は SVM が自然に severity 0（正常）を返す。正確なファイル名・形式・23件の
-> 投入手順は `scripts/seed_demo.py` / `docs/demo-runbook.md` を参照。
+> **DEMO-1/DEMO-2 注記**: `POST /api/v1/demo/seed` は `TelemetryRequest` に `level`（意図した深刻度）を
+> 追加した `DemoSeedRequest` を受ける（単体投入用）。`analyze_audio()` で実スペクトルを算出しつつ深刻度のみ
+> 上書きする。**`POST /api/v1/demo/seed-batch`**（DEMO-2）はサーバー側が20消火栓へちょうど1レベルずつ
+> 重複なく割り当て、`backend/dataset/`（学習未使用の Zenodo 実音響。Git管理外・ライセンス上再配布不可）の
+> WAVをreplayして一括投入する。実 no-leak 音は SVM が自然に severity 0（正常）を返す。バックエンド
+> 起動時（`lifespan`）は `initialize_sensors()` が hydrants.json 20件を自動で Lv0 初期化するため、
+> シード投入前でも「初期表示」は常に20件・全てLv0になる。正確な手順は `scripts/seed_demo.py` /
+> `docs/demo-runbook.md` を参照。
 
-### 6.2 防災モード（BE-7）
+### 6.2 防災モード（BE-7・DEMO-2で再設計）
 
 | メソッド | パス | 説明 | 現状 |
 |---|---|---|---|
-| POST | `/api/v1/disaster/simulate` | Level 3 アラートシミュレーション投入（`?count=1-20`） | ✅ 実装済み |
-| GET | `/api/v1/disaster/summary` | 被災エリアクラスタリング（距離ベース）・想定世帯数 | ✅ 実装済み |
+| POST | `/api/v1/disaster/simulate` | 実在20消火栓のうち無作為 `count` 件（既定6・`?count=1-20`）を信号データごとLevel3へ変化 | ✅ 実装済み |
+| GET | `/api/v1/disaster/summary` | シミュレーション選出分のみを距離ベースでクラスタリング・想定世帯数 | ✅ 実装済み |
+
+> **DEMO-2 注記**: 旧実装（東京駅周辺への架空センサー追加。監視センサー数が20→26に増加）を廃止し、
+> 実在する20消火栓のうち無作為に選んだセンサーを合成Level3波形（`services/disaster_signal.py`。
+> 外部音声ファイル非依存のためAWS環境でも常に動作する）で書き換える方式に再設計した。監視センサー数は
+> 常に20のまま増加しない。`GET /disaster/summary` は選出されたセンサーIDのみを対象とし、通常検知で
+> たまたまLevel3になったセンサーは対象外。
 
 ### 6.3 その他
 

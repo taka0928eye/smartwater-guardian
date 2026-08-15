@@ -39,7 +39,7 @@
 ### デモスコープ（2026-08-10 ～ 08-15）
 
 - インメモリストア + JSON マスタで完全に動作するデモ
-- 消火栓 10 台・配管 10 路線の疑似センサーネットワーク
+- 消火栓 20 台・配管 10 路線の疑似センサーネットワーク
 - 実スペクトル算出と 1:1 自動起票ワークフローの実演
 - WAF・Secrets Manager・本番 DB は不使用（コスト削減）
 - AWS デプロイオプション（余裕がある場合）
@@ -82,10 +82,12 @@ npm run dev
 
 ### デモシード投入
 
-受領した音声フォルダに、次の4ファイルを配置する（WAV、mono、PCM16、8000Hz、1秒）。
+バックエンド起動直後は、監視センサー20台が自動的に **Level 0（正常）** で初期化される
+（コマンド不要）。デモの山場（Level 0/1/2/3 の対比）を作るには、受領した音声フォルダを
+`backend/dataset/` に配置する（WAV、mono、PCM16、8000Hz、1秒）。
 
 ```text
-demo_audio/
+backend/dataset/
 ├── BE3_demo_no-leak_level0.wav
 ├── BE3_demo_leak_level1.wav
 ├── BE3_demo_leak_level2.wav
@@ -96,18 +98,20 @@ Windows（PowerShell）:
 
 ```powershell
 cd backend
-venv\Scripts\python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
+venv\Scripts\python.exe scripts/seed_demo.py --seed 42
 ```
 
 macOS / Linux:
 
 ```bash
 cd backend
-venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
+venv/bin/python scripts/seed_demo.py --seed 42
 ```
 
-監視センサー20台へ Level 0×11 / Level 1×8 / Level 2×3 / Level 3×1、合計23件を投入する。
-成功時は `[OK] 23 件を ... へ投入しました` と表示される。
+監視センサー20台へ Level 0×8 / Level 1×8 / Level 2×3 / Level 3×1、合計20件を投入する。
+成功時は `[OK] 20 件を ... へ投入しました` と表示される。
+ダッシュボード画面右上の「シード投入」「シードクリア」「防災シミュレーション」ボタンから
+同じ操作をブラウザだけで実行することもできる。
 フロントエンドをリロードすると、センサー地図・アラート一覧・KPI が反映される。
 
 詳細な手順と再投入方法は [`docs/demo-runbook.md`](docs/demo-runbook.md) を参照。
@@ -179,23 +183,27 @@ smartwater-guardian/
 │   │   │   ├── ledger.py                # 疑似 GIS 配管台帳照合
 │   │   │   ├── orcarouter.py            # LLM 自動起票・リトライ・キャッシング
 │   │   │   ├── llm_cost.py              # LLM 原価計測
-│   │   │   └── kpi.py                   # KPI 推定削減コスト算定
+│   │   │   ├── kpi.py                   # KPI 推定削減コスト算定
+│   │   │   ├── demo_seed.py             # デモ一括投入（DEMO-2）
+│   │   │   ├── disaster_signal.py       # 合成 Level3 波形生成（DEMO-2）
+│   │   │   └── dataset_sync.py          # AWS向けS3データセット同期（DEMO-2）
 │   │   ├── routers/                     # API エンドポイント（薄く保つ）
 │   │   │   ├── telemetry.py             # POST /api/v1/telemetry
 │   │   │   ├── alerts.py                # GET /api/v1/alerts 系
 │   │   │   ├── sensors.py               # GET /api/v1/sensors
 │   │   │   ├── kpi.py                   # GET /api/v1/kpi/summary
-│   │   │   ├── disaster.py              # 防災モード API
-│   │   │   └── demo.py                  # POST /api/v1/demo/seed
+│   │   │   ├── disaster.py              # 防災モード API（DEMO-2で実在センサー書換え方式に再設計）
+│   │   │   └── demo.py                  # POST /api/v1/demo/seed(-batch) / DELETE /demo/clear
 │   │   ├── data/
-│   │   │   ├── hydrants.json            # 消火栓マスタ（10 台）
+│   │   │   ├── hydrants.json            # 消火栓マスタ（20 台）
 │   │   │   ├── pipes.json               # 疑似 GIS 配管台帳（10 路線）
 │   │   │   └── repair_parts.json        # 補修部材フォールバック
 │   │   └── models/
 │   │       ├── leak_svm_v1.joblib       # 学習済み SVM モデル
 │   │       └── leak_svm_v1.metadata.json # モデルメタ（SHA-256）
-│   ├── tests/                            # pytest テスト（297 件・カバレッジ 94%）
-│   ├── scripts/                          # 手動検証・シード投入スクリプト
+│   ├── dataset/                          # 実音響WAV（Zenodo由来・git管理外・シード投入用）
+│   ├── tests/                            # pytest テスト（334 件・カバレッジ 95%）
+│   ├── scripts/                          # 手動検証・シード投入(seed_demo.py)・クリア(clear_demo.py)スクリプト
 │   ├── requirements.txt                  # 依存パッケージ（pip freeze）
 │   ├── requirements-dev.txt              # 開発用（pytest-cov / ruff / mypy）
 │   ├── pyproject.toml                    # ruff / mypy 設定
@@ -307,10 +315,11 @@ smartwater-guardian/
 | **BE-4** | 疑似 GIS 配管台帳・Haversine 位置照合 | ✅ 完了 | `ledger.py` find_nearest_pipe |
 | **BE-5** | LLM 自動起票・キャッシング・フォールバック | ✅ 完了 | Orcarouter API リトライ分類・fallback 分類 |
 | **BE-6** | インメモリストア・API（アラート・センサー） | ✅ 完了 | GeoJSON / JSON 応答 |
-| **BE-7** | 防災モード・被害エリアクラスタリング | ✅ 完了 | Level 3 シミュレーション・DBSCAN |
+| **BE-7** | 防災モード・被害エリアクラスタリング | ✅ 完了（DEMO-2 で再設計） | 実在20消火栓のうち無作為6件をLevel3化・Haversine距離クラスタリング |
 | **BE-8** | KPI サマリ「推定削減コスト」算定 | ✅ 完了 | 算定定数は `docs/business-model.md` 準拠 |
 | **FR-6** | LLM 原価計測・可視化 | ✅ 完了 | トークン→円換算・UI 表示 |
 | **DEMO-1** | デモ初期状態投入 | ✅ 完了 | 実スペクトル + 意図レベル上書き |
+| **DEMO-2** | センサーデータ構成再設計（初期状態/シード投入/防災シミュレーション） | ✅ 完了 | 初期表示20件Lv0・一括シード投入API・実センサー書換え型防災シミュレーション |
 
 ### フロントエンド（FE-2 ～ FE-7）
 
@@ -323,12 +332,12 @@ smartwater-guardian/
 | **FE-6** | AI 自動起票 UI・WorkOrderModal | ✅ 完了 | `POST /alerts/{id}/work-order` 連携 |
 | **FE-7** | KPI サマリ実データ連携・「試算値」注記 | ✅ 完了 | `docs/business-model.md` リンク |
 
-### 防災モード（BE-7 統合）
+### 防災モード（BE-7・DEMO-2 で再設計）
 
 | 機能 | 状態 | 詳細 |
 |---|---|---|
-| Level 3 アラートシミュレーション投入 | ✅ 完了 | `POST /disaster/simulate?count=1-20` |
-| 被災エリアクラスタリング（距離ベース） | ✅ 完了 | DBSCAN→GeoJSON 変換 |
+| Level 3 アラートシミュレーション投入 | ✅ 完了 | `POST /disaster/simulate?count=1-20`。実在20消火栓のうち無作為 `count` 件（既定6）を、合成波形で信号データごとLevel3へ変化させる（架空センサーの新規追加はしない。監視センサー数は常に20） |
+| 被災エリアクラスタリング（距離ベース） | ✅ 完了 | Haversine距離 + 貪欲法でクラスタリング（DBSCAN・scikit-learnは不使用）。シミュレーションで選出されたセンサーのみが対象（通常検知のLevel3は対象外） |
 | 被災エリア地図描画（DisasterOverlay） | ✅ 完了 | `components/map/DisasterOverlay.tsx` |
 | 想定断水世帯数表示 | ✅ 完了 | 消火栓密度ベース概算 |
 
@@ -336,7 +345,7 @@ smartwater-guardian/
 
 | 項目 | 現状 | ゲート |
 |---|---|---|
-| **バックエンド** | 297 テスト・カバレッジ 94% | 行+branch 各 **80%** |
+| **バックエンド** | 334 テスト・カバレッジ 95% | 行+branch 各 **80%** |
 | **フロントエンド** | Vitest + Testing Library | lines / functions / branches / statements 各 **80%** |
 | **E2E テスト** | Playwright 8 spec | global-setup / CI 前提 |
 | **静的チェック** | ruff (lint) + mypy (型検査) | CI ゲート必須 |

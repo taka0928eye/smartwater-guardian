@@ -58,9 +58,15 @@ Level 3 / Level 2 / Level 1 / 推定削減コスト）を降順表示。**モッ
 `GET /api/v1/disaster/summary` が距離閾値でクラスタリングして**被災エリア・想定断水世帯・優先閉栓バルブ**を
 地図上に描画する（`DisasterOverlay`）。災害時の緊急対応シミュレーションをデモで実演可能。
 
-### 8. デモ初期状態（DEMO-1）
-`POST /api/v1/demo/seed` で実音声の `analyze_audio` を実行しつつ深刻度を意図値（`level`）に確定して
-1 件投入。実録音リプレイでも深刻度が保証されるハイブリッド方針。E2E 用は `POST /api/v1/alerts/seed`。
+### 8. デモ初期状態（DEMO-1 / DEMO-2）
+バックエンド起動時、hydrants.json 実在20消火栓が常に **severity_level=0（正常）** で
+自動初期化される（コマンド不要）。ダッシュボードの「シード投入」ボタン（`POST
+/api/v1/demo/seed-batch`）で20消火栓へ Lv0×8 / Lv1×8 / Lv2×3 / Lv3×1 を一括投入し、
+「シードクリア」ボタン（`DELETE /api/v1/demo/clear`）で20件Lv0の初期状態に戻せる。
+「防災シミュレーション」ボタン（`POST /api/v1/disaster/simulate`）は実在20消火栓の
+うち無作為6件を信号データごと Level 3 へ変化させる。いずれも実音声の `analyze_audio`
+を実行しつつ深刻度を意図値に確定するハイブリッド方針。単体投入は `POST
+/api/v1/demo/seed`、E2E 用は `POST /api/v1/alerts/seed`。
 
 ## 深刻度モデル（Level）
 

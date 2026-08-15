@@ -44,8 +44,8 @@ Write-Host "ALB DNS: $ALB_DNS"
 ```powershell
 # 2. AWS 上のタスクが running か確認
 aws ecs describe-services `
-  --cluster smartwater-guardian-demo `
-  --services smartwater-guardian-backend smartwater-guardian-frontend `
+  --cluster smartwater-guardian-cluster `
+  --services smartwater-guardian-backend-service smartwater-guardian-frontend-service `
   --region ap-northeast-1 `
   --query 'services[*].[serviceName,status,desiredCount,runningCount]' `
   --output table
@@ -56,7 +56,7 @@ aws ecs describe-services `
 ```powershell
 # 3. ALB ターゲットが healthy か確認
 aws elbv2 describe-target-health `
-  --target-group-arn "arn:aws:elasticloadbalancing:ap-northeast-1:ACCOUNT:targetgroup/smartwater-guardian-backend/*" `
+  --target-group-arn "arn:aws:elasticloadbalancing:ap-northeast-1:ACCOUNT:targetgroup/smartwater-guardian-backend-tg/*" `
   --region ap-northeast-1
 
 # => HealthyCount > 0 を確認
@@ -74,24 +74,36 @@ Write-Host "Open in browser: http://$ALB_DNS"
 ```
 
 **期待される画面**:
-- 地図が表示される（マーカー無し・初期状態）
+- 地図に20件のマーカーが表示される（全てグレー＝Lv0・初期状態。DEMO-2でバックエンド
+  起動時に自動投入されるため、シード投入前でも0件にはならない）
 - コンソール に API エラーが無い（CORS 等）
 
 ### 4.2 シード投入
 
+> **前提**: AWS 上の backend タスクで「シード投入」を動かすには、`backend/dataset/`
+> （Zenodo由来・ライセンス上git/CI経由の再配布不可）を事前にプライベートS3
+> バケットへ手動アップロードし、`DemoDatasetEnabled=true` でデプロイしておく必要が
+> ある（`infra/README.md` の「デモ音源データセットのAWS配置」参照）。未実施の場合、
+> 下記コマンドは 404 で失敗する（バックエンド自体は落ちない）。
+
 ```powershell
-# AWS 上のバックエンド にシード投入
+# AWS 上のバックエンド にシード投入（一括投入API）
 cd backend
 
 $BACKEND_URL = "http://$ALB_DNS:8000"
 
 venv/Scripts/python.exe scripts/seed_demo.py `
   --seed 42 `
-  --url "$BACKEND_URL/api/v1/demo/seed"
+  --url "$BACKEND_URL/api/v1/demo/seed-batch"
 
 # 出力例:
-# [OK] 13 件を http://ALB_DNS:8000/api/v1/demo/seed へ投入しました
+# [OK] 20 件を http://ALB_DNS:8000/api/v1/demo/seed-batch へ投入しました
+# （内訳: {'0': 8, '1': 8, '2': 3, '3': 1}）
 ```
+
+> ブラウザで ALB DNS を開き、ダッシュボード画面右上の「シード投入」ボタンを押しても
+> 同じ結果になる（データセットS3配置済みの場合のみ成功する）。「防災シミュレーション」
+> ボタンは合成波形を使うためデータセット配置に関わらず常に動作する。
 
 ### 4.3 デモ動作確認
 
@@ -119,8 +131,8 @@ $ALB_DNS = aws elbv2 describe-load-balancers `
 
 # 2. AWS 上のタスクが running か確認
 aws ecs describe-services `
-  --cluster smartwater-guardian-demo `
-  --services smartwater-guardian-backend smartwater-guardian-frontend `
+  --cluster smartwater-guardian-cluster `
+  --services smartwater-guardian-backend-service smartwater-guardian-frontend-service `
   --region ap-northeast-1 `
   --query 'services[*].[serviceName,status,desiredCount,runningCount]' `
   --output table
@@ -131,26 +143,27 @@ aws ecs describe-services `
 ```powershell
 # 3. シード状態の復旧（必要に応じて）
 cd backend
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --url "http://$ALB_DNS:8000/api/v1/demo/seed"
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --url "http://$ALB_DNS:8000/api/v1/demo/seed-batch"
 ```
 
 ### デモ中のシード状態リセット
 
-「正常状態 → Level 1 検知」を何度も実演したい場合、バックエンド再起動不要でストアをリセット：
+「正常状態 → Level 1 検知」を何度も実演したい場合、バックエンド再起動不要で
+20件Lv0の初期状態に戻せる（ダッシュボードの「シードクリア」ボタンでも可）：
 
 ```powershell
 cd backend
 
 $BACKEND_URL = "http://$ALB_DNS:8000"
 
-# シード状態をクリア
+# シード状態をクリア（20件Lv0の初期状態に戻る。0件にはならない）
 venv/Scripts/python.exe scripts/clear_demo.py `
   --url "$BACKEND_URL/api/v1/demo/clear"
 
 # 同じシード 42 で再度投入
 venv/Scripts/python.exe scripts/seed_demo.py `
   --seed 42 `
-  --url "$BACKEND_URL/api/v1/demo/seed"
+  --url "$BACKEND_URL/api/v1/demo/seed-batch"
 ```
 
 ### ローカル ↔ AWS の切り替え
@@ -182,10 +195,10 @@ venv/Scripts/uvicorn.exe main:app --reload --port 8000
 
 ```powershell
 # backend ログ
-aws logs tail /ecs/smartwater-guardian-demo-backend --follow --region ap-northeast-1
+aws logs tail /ecs/smartwater-guardian-backend --follow --region ap-northeast-1
 
 # frontend ログ
-aws logs tail /ecs/smartwater-guardian-demo-frontend --follow --region ap-northeast-1
+aws logs tail /ecs/smartwater-guardian-frontend --follow --region ap-northeast-1
 ```
 
 ---
@@ -193,5 +206,6 @@ aws logs tail /ecs/smartwater-guardian-demo-frontend --follow --region ap-northe
 ## 7. 参考リンク
 
 - `docs/demo-runbook.md` — ローカルデモ検証ガイド
-- `backend/scripts/seed_demo.py` — シード投入スクリプト
-- `backend/scripts/clear_demo.py` — シード状態リセットスクリプト
+- `infra/README.md`「デモ音源データセットのAWS配置」 — S3への手動アップロード手順（DEMO-2）
+- `backend/scripts/seed_demo.py` — シード投入スクリプト（`POST /demo/seed-batch` を1回叩く）
+- `backend/scripts/clear_demo.py` — シード状態リセットスクリプト（20件Lv0に戻す）

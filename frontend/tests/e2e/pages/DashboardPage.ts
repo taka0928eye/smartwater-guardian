@@ -56,9 +56,18 @@ export class DashboardPage {
     return this.page.getByTestId("alert-row");
   }
 
-  /** 指定した消火栓 ID のアラート行。 */
+  /**
+   * 指定した消火栓 ID のアラート行。
+   *
+   * DEMO-2: バックエンド起動時の自動初期化（`initialize_sensors()`。20件Lv0）と
+   * `global-setup.ts` の `POST /alerts/seed`（実在マスタ HYD-001〜010 を再利用）が
+   * 同じセンサーIDに対して別レコードを投入しうるため、同一 hydrantId で複数行が
+   * ヒットする場合がある（`list_alerts()` はセンサー単位で重複排除しない設計）。
+   * `.first()` で最新（深刻度降順ソートの先頭）の1件に絞り、Playwright の
+   * 厳格モード（複数要素マッチ時のエラー）を回避する。
+   */
   alertRow(hydrantId: string): Locator {
-    return this.alertRows.filter({ hasText: hydrantId });
+    return this.alertRows.filter({ hasText: hydrantId }).first();
   }
 
   /** アラート一覧が描画されるまで待つ。 */

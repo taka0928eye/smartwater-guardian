@@ -1,16 +1,24 @@
-# DEMO-1 デモ通しリハーサル & シード投入 ランガイド
+# DEMO-1/DEMO-2 デモ通しリハーサル & シード投入 ランガイド
 
-> **Issue**: #23（DEMO-1） / **優先度**: P1 / **想定日**: 8/15
+> **Issue**: #23（DEMO-1） / #33（DEMO-2） / **優先度**: P1
 > **関連**: `docs/ui-wireframe.md` §5 / `docs/business-model.md` §3.4 / PRD §6.1
 
 デモ当日に「触れて30秒で価値が伝わる」状態を確実に再現するための、シード投入手順・
 通しリハーサル手順・トラブル復旧手順をまとめた実行ガイド。
 
+DEMO-2 でセンサーデータ構成が「初期表示（20件Lv0）→ シード投入（Lv0×8/Lv1×8/
+Lv2×3/Lv3×1）→ 防災シミュレーション（うち6件がLv3に変化）」の3局面に再設計され、
+「シード投入」「シードクリア」はダッシュボード画面のボタンからも実行できるように
+なった（CLIスクリプトは引き続き利用可能）。
+
 ---
 
 ## 1. 目的
 
-- **1コマンドでデモ初期状態を構築**する（`seed_demo.py`）
+- **バックエンド起動直後は常に20件・全てLv0（正常）の初期状態**になる
+  （`initialize_sensors()` が起動時 `lifespan` で自動実行。コマンド不要）
+- **1コマンド／1クリックでデモの山場を構築**する（`seed_demo.py` または
+  ダッシュボードの「シード投入」ボタン）
 - デモの山場である **Level 1（微小漏水）** と **Level 0（正常）の対比** を画面上に成立させる
   - 訴求文: 「人間には無音・水圧変化もない段階で、AIだけが漏水に気づいた」
 - 同一 `--seed` で同じ状態を再現できる（デモの再現性）
@@ -19,11 +27,13 @@
 ## 2. 事前チェックリスト（事故防止）
 
 - [ ] `backend/` に `venv` が存在し、依存がインストール済み
-- [ ] repo外で受領した `demo_audio/` に、§3記載の実音響WAV 4本が配置済み
-      （※ Git 管理外。Zenodo データセットから切り出したファイルを受領して使用する）
+- [ ] repo外で受領した実音響WAV 4本を `backend/dataset/` に配置済み
+      （※ Git 管理外。Zenodo データセットから切り出したファイルを受領して使用する。
+      「シード投入」は**サーバー側**（バックエンドプロセスの実行環境）がこのパスを
+      固定で読むため、AWS環境では別途 S3 同期が必要 — §10 参照）
 - [ ] `frontend/` で `npm install` 済み（初回のみ）
 - [ ] `--seed` を固定し、リハーサルと同一の結果が出ることを確認済み（既定 `--seed 42`）
-- [ ] `ORCAROUTER_ENABLED=false` でも完走することを確認済み（§6 オフラインリハーサル）
+- [ ] `ORCAROUTER_ENABLED=false` でも完走することを確認済み（§7 オフラインリハーサル）
 - [ ] KPI「推定削減コスト」が **2,048,400 円（表示「204.8万円」）** になることを確認済み
 - [ ] 起票モーダルに「概算であり正式見積ではない」注記と `source` バッジが表示される
 - [ ] 同一アラートの再起票がキャッシュを返し、重複課金しないことを確認済み
@@ -35,11 +45,13 @@
 # --- ターミナル 1: バックエンド起動 ---
 cd backend
 venv/Scripts/uvicorn.exe main:app --reload --port 8000
+#   起動直後、20件・全てLv0の初期状態が自動的に構築される（コマンド不要）
 
-# --- ターミナル 2: デモ初期状態の投入（1コマンド） ---
+# --- ターミナル 2: デモの山場（シード投入、1コマンド） ---
 cd backend
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
-#   [OK] 23 件を http://localhost:8000/api/v1/demo/seed へ投入しました
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42
+#   [OK] 20 件を http://localhost:8000/api/v1/demo/seed-batch へ投入しました
+#   （内訳: {'0': 8, '1': 8, '2': 3, '3': 1}）
 
 # --- ターミナル 3: フロントエンド起動 ---
 cd frontend
@@ -51,15 +63,19 @@ macOS / Linuxでは、ターミナル2を次のように実行する。
 
 ```bash
 cd backend
-venv/bin/python scripts/seed_demo.py --seed 42 --audio-dir /path/to/demo_audio
+venv/bin/python scripts/seed_demo.py --seed 42
 ```
+
+> ダッシュボード画面が開いていれば、ターミナル2の代わりに画面右上の
+> **「シード投入」ボタン**をクリックしても同じ結果になる（§5 参照）。
 
 ### 受領する音声ファイル
 
-`--audio-dir`で指定するフォルダには、次の4ファイルを配置する。
+`backend/dataset/` に、次の4ファイルを配置する（サーバー起動プロセスから見た
+固定パス。CLIの引数指定は廃止した）。
 
 ```text
-demo_audio/
+backend/dataset/
 ├── BE3_demo_no-leak_level0.wav
 ├── BE3_demo_leak_level1.wav
 ├── BE3_demo_leak_level2.wav
@@ -67,63 +83,88 @@ demo_audio/
 ```
 
 全ファイル共通の形式は **WAV / mono / PCM16 / 8000Hz / 1.0秒（8000サンプル）**。
-ファイル本体はGit管理せず、受領したローカルフォルダを直接指定する。
+ファイル本体はGit管理せず（`.gitignore` 対象。Zenodo由来・ライセンス上再配布不可）、
+受領したファイルを `backend/dataset/` に直接配置する。
 
 ### シード内容（`--seed 42` の投入内訳）
 
+20消火栓それぞれに**ちょうど1レベル**が重複なく割り当てられる（合計20件）。
+
 | 内容 | 件数 | 画面での表現 |
 |---|---|---|
-| Level 0（正常） | 11（既存1＋追加10） | 地図のグレー（normal）ノード（対比の起点） |
+| Level 0（正常） | 8 | 地図のグレー（normal）ノード（対比の起点） |
 | Level 1（微小漏水） | 8 | 地図の黄緑（watch）＋ アラート一覧上位 |
 | Level 2（進行性漏水） | 3 | 地図のオレンジ（warning） |
 | Level 3（管路破裂） | 1 | 地図の赤（critical・点滅） |
 
-監視センサーは合計20台、投入するデモアラートは合計23件。4種類の音源をLevelに応じて再利用する。
+監視センサーは合計20台、投入するデモアラートも合計20件（1消火栓=1件）。
+4種類の音源をLevelに応じて再利用する。
 
 KPI「推定削減コスト」はこの内訳から **2,048,400 円（204.8万円）** になる
-（`docs/business-model.md` §3.4 の式）。
+（`docs/business-model.md` §3.4 の式。Level 0 は算定対象外のため、Level 0 の
+件数が変わっても金額は変わらない）。
 
 ### シードオプション
 
 | オプション | 既定 | 説明 |
 |---|---|---|
-| `--seed` | （必須） | シーケンス再現用シード。同一値で同一結果（再現性） |
-| `--audio-dir` | `backend/dataset` | 受領した実音響WAVのディレクトリ（上記4ファイルを推奨） |
-| `--url` | `http://localhost:8000/api/v1/demo/seed` | デモシード API の URL |
-| `--dry-run` | off | 送信せず組み立て結果（内訳・割当・音源ファイル）だけを表示 |
+| `--seed` | （必須） | 消火栓へのレベル割当て・音源選択の再現用シード。同一値で同一結果（再現性） |
+| `--url` | `http://localhost:8000/api/v1/demo/seed-batch` | デモ一括投入 API の URL |
+| `--dry-run` | off | 送信せず、消火栓へのレベル割当てだけを表示（音源はサーバー側判定のため対象外） |
 
 ```powershell
 # 送信せずに確認したい場合
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio" --dry-run
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --dry-run
 ```
 
 ## 4. デモ初期状態の仕様
 
-シードは `scripts/seed_demo.py` の `build_demo_sequence(seed)` が決定的に組み立て、
-各ステップで実音響WAVを再生（**BE-2 の `load_audio_file()` 再利用**）して
-`POST /api/v1/demo/seed` で1件ずつ投入する。
+シードは `app/services/demo_seed.py` の `build_seed_batch(hydrants, seed)` が
+決定的に組み立て（20消火栓に1レベルずつ重複なく割当て）、`POST
+/api/v1/demo/seed-batch` が各ステップの実音響WAVを再生（**BE-2 の
+`load_audio_file()` 系ロジック再利用**）して**サーバー側で一括投入**する。
+`scripts/seed_demo.py` はこのエンドポイントを1回叩く薄いCLIラッパー。
 
 - **音源は「学習未使用の Zenodo 実音響」**（学習データと同ドメインの held-out カット）。
   `generate_signal()` の人工音は実 SVM が意図レベルに分類できないため DEMO-1 で不採用にした。
-  実音響はrepo外で受領し、`--audio-dir`でそのフォルダを明示する
+  実音響はrepo外で受領し、`backend/dataset/` に配置する
 - **ファイル名規約**: `*no-leak*_level{N}.wav` = 正常音 / `*leak*_level{N}.wav` = 漏水音。
   leak / no-leak を判別できないファイル名は投入ミス防止のためエラーにする
 - **音源選定は決定論的**: Level 0 は no-leak 音、Level 1〜3 は leak 音を使い、
   ファイル名の `_level{N}` 一致を優先する（無ければ同バケット内から `--seed` で選ぶ）
 - **BE-3 MVP 契約の事前検証**: シードAPIは 8000Hz / 1.0秒 / 8000サンプルの WAV のみ受付可能
-  （`validate_mvp_contract`）。契約外の WAV は 422 になる前にエラーで停止する
-- 各ステップの `hydrant_id` は `hydrants.json` に実在するIDから決定論的に選定
-- Level 0の既存ベースライン1台と追加正常10台は異常ステップで再利用しない
-  （最新状態が上書きされると「正常」対比が消えるため）
-- Level 1 のステップは Level 3 より**必ず先**に投入される（山場は Level 1）
-- **深刻度の確定方式**: デモシード専用 API（`POST /api/v1/demo/seed`）が
-  `analyze_audio()` で**実スペクトルを算出**しつつ、深刻度を意図レベルに確定する。
-  実 no-leak 音は SVM が自然に severity 0（正常）を返すため、
+  （`validate_mvp_contract`）。契約外の WAV は事前エラーで停止する
+- 各ステップの `hydrant_id` は `hydrants.json` に実在する20件全件を1回ずつ使用
+  （現行版はサイクリング上書きをしないため、1消火栓=1レベルが常に保証される）
+- **深刻度の確定方式**: `analyze_audio()` で**実スペクトルを算出**しつつ、深刻度を
+  意図レベルに確定する。実 no-leak 音は SVM が自然に severity 0（正常）を返すため、
   「Level 0 = 正しい正常」「Level 1+ = AIが気づいた漏水」の対比が実信号で成立する
-  - 実測: `BE3_demo_no-leak_level0.wav` → severity 0（honest 正常）/
-    `BE3_demo_leak_level2.wav` → severity 2（leak）を確認済み
 
-## 5. 1分間デモタイムライン（`docs/ui-wireframe.md` §5 と整合）
+### 初期表示（サーバー起動直後）
+
+バックエンド起動時（`main.py` の `lifespan`）に `initialize_sensors()` が
+hydrants.json の20件を **severity_level=0（正常）** で自動登録する。
+シード投入前でもアラート一覧「正常も表示」トグルをONにすれば20件のLv0ノードが
+確認できる。「シードクリア」（§6）もこの状態に戻す。
+
+## 5. フロント操作ボタン（DEMO-2）
+
+CLIスクリプトの代わりに、ダッシュボード画面右上の3ボタンから同じ操作ができる。
+
+| ボタン | 動作 | 対応するAPI |
+|---|---|---|
+| シード投入 | 20件をLv0×8/Lv1×8/Lv2×3/Lv3×1に一括投入 | `POST /api/v1/demo/seed-batch` |
+| シードクリア | 20件Lv0の初期状態に戻す | `DELETE /api/v1/demo/clear` |
+| 防災シミュレーション | 20件のうち無作為6件をLv3に変化（信号データも更新） | `POST /api/v1/disaster/simulate` |
+
+押下直後にアラート一覧・KPI・地図（防災シミュレーション/シードクリアは被災エリア表示も）が
+ポーリング間隔を待たず即時反映される。「シード投入」ボタンはサーバー側の
+`backend/dataset/` に音源が必要なため、AWS環境ではデータセットをS3配置していない
+限り失敗する（404・「シード投入に失敗しました」と表示されるのみで画面は壊れない。
+詳細は §10）。「防災シミュレーション」は合成波形を使うためデータセット不要で
+常に動作する。
+
+## 6. 1分間デモタイムライン（`docs/ui-wireframe.md` §5 と整合）
 
 > 事前にシード済みの状態を、審査員へ以下の順に実演する。所要目安は1分以内。
 
@@ -152,31 +193,36 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\d
                1起票あたりのAPI原価もわずか【¥X.XX】。現場の調査・手配コストを9割削減します」
 ```
 
-## 6. シード状態のクリア
+> 余裕があれば、続けて「防災シミュレーション」ボタンを押し、20件のうち6件が
+> 一斉にLv3へ変化する様子・地図上の被災エリア表示（赤い円オーバーレイ）を見せると、
+> 個別検知と広域シミュレーションの両方を1分半程度でカバーできる。
+
+## 7. シード状態のクリア
 
 デモ中に「正常状態 → Level 1 検知」を何度も実演したい場合、バックエンド再起動不要で
-ストアをリセットする。
+20件Lv0の初期状態に戻す。
 
 ```powershell
 # ターミナル 1（バックエンド起動中）
 
-# --- シード状態をクリア（全アラート削除） ---
+# --- シード状態をクリアし、20件Lv0の初期状態に戻す ---
 cd backend
 venv/Scripts/python.exe scripts/clear_demo.py
 
 # 出力例:
-# [OK] 23 件のアラートをクリアしました
+# [OK] 20 件のアラートをクリアしました
 
 # --- 別シード、または同じシード 42 で再度投入 ---
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42
 ```
+
+> ダッシュボード画面の「シードクリア」ボタンでも同じ結果になる（§5）。
 
 ### クリア後の状態
 
-- ストア内の全アラートが削除される
-- 地図のマーカーが消える
-- アラート一覧が空になる
-- KPI もリセットされる
+- ストア内の全アラートが破棄され、**20件Lv0（正常）の初期状態に戻る**
+  （DEMO-2 で「空のストア」から変更。地図・アラート一覧・KPI は 0 件にはならない）
+- 防災シミュレーションで記録された被災エリア表示（選出センサーID）もリセットされる
 - **バックエンドを再起動する必要なし**（AWS 環境・本番環境でも利用可能）
 
 ### トラブル時
@@ -192,7 +238,7 @@ venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\d
 
 ---
 
-## 7. オフラインリハーサル（`ORCAROUTER_ENABLED=false`）
+## 8. オフラインリハーサル（`ORCAROUTER_ENABLED=false`）
 
 実キー無し・ネットワーク無しでも通しシナリオが完走することを確認する。
 
@@ -203,7 +249,7 @@ echo "ORCAROUTER_ENABLED=false" >> backend/.env
 # バックエンドを再起動してから、シード → フロント
 cd backend
 venv/Scripts/uvicorn.exe main:app --reload --port 8000
-venv/Scripts/python.exe scripts/seed_demo.py --seed 42 --audio-dir "C:\path\to\demo_audio"
+venv/Scripts/python.exe scripts/seed_demo.py --seed 42
 cd ..\frontend; npm run dev
 ```
 
@@ -211,26 +257,36 @@ cd ..\frontend; npm run dev
   （LLM 未使用のため原価計上なし）。**HTTP 呼び出しは行われない**
 - リハーサル後は `ORCAROUTER_ENABLED=true`（または削除）に戻して実キーを注入する
 
-## 8. 当日トラブル時の復旧手順
+## 9. 当日トラブル時の復旧手順
 
 | 症状 | 対処 | 備考 |
 |---|---|---|
-| アラート・地図が空 / 状態がおかしい | **バックエンド再起動** → ストア（インメモリ）がクリアされる | `Ctrl+C` → uvicorn 再起動 |
-| シードをやり直したい | **クリア後に再投入**: `seed_demo.py --seed 42 --audio-dir <受領フォルダ>` | 同一シード・音源で同一状態に復元 |
-| LLM が動かない / 実キーが無い | **フォールバック強制**: `backend/.env` に `ORCAROUTER_ENABLED=false` → 再起動 | §6 と同じ手順 |
+| アラート・地図が空 / 状態がおかしい | **バックエンド再起動** → 20件Lv0の初期状態に自動で戻る | `Ctrl+C` → uvicorn 再起動 |
+| シードをやり直したい | **クリア後に再投入**: `clear_demo.py` → `seed_demo.py --seed 42` | 同一シード・音源で同一状態に復元。ダッシュボードのボタンでも可 |
+| LLM が動かない / 実キーが無い | **フォールバック強制**: `backend/.env` に `ORCAROUTER_ENABLED=false` → 再起動 | §8 と同じ手順 |
 | フロントが描画されない | **フロント再起動**: `npm run dev`（`Ctrl+C` → 再実行） | ポート3000 が空いているか確認 |
 | CORS エラーが出る | `main.py` の `allow_origins` に使用 URL が入っているか確認 | 既定 `http://localhost:3000` |
 | スペクトルが表示されない | アラート詳細を開き直す（ドロワー再取得） | 地図連動で選択状態をリセット |
 | KPI が 204.8万円 と一致しない | ストアに余計なデータが無いか確認 → **再起動 + シード再投入** | ステップ内訳がずれると変化する |
+| 「シード投入」ボタンが404で失敗する | `backend/dataset/` に4つのWAVが配置されているか確認（AWS環境は §10） | ローカルはサーバープロセスの実行ディレクトリ基準 |
 
 ### ストアの性質
 
 - データは**インメモリストア**（`app/store.py`、保持上限500件）。**バックエンド再起動で
-  初期化される**。永続化はしない（デモスコープの設計）。
-- シードは投入済みアラートを二重に作らないよう、**再起動後に必ず再投入**する
-  （同一シードなら同一状態に復元されるため安全）。
+  20件Lv0の初期状態に戻る**。永続化はしない（デモスコープの設計）。
+- シードは投入済みアラートを二重に作らないよう、`POST /demo/seed-batch` は毎回
+  ストアを一括で書き直す（既存レコードと重複しない）。
 
-## 9. リハーサル実測記録（通しリハーサル Step 4）
+## 10. AWS環境での「シード投入」
+
+AWS（ECS）デプロイ環境では `backend/dataset/`（Zenodo由来・ライセンス上git/CI経由の
+再配布不可）がコンテナイメージに含まれないため、既定では「シード投入」ボタンが
+404で失敗する（アプリ自体は壊れない）。AWS上でも実音響のシード投入を動かしたい
+場合は `infra/README.md` の「デモ音源データセットのAWS配置」の手順（プライベート
+S3バケットへ手動アップロード → `DemoDatasetEnabled=true` で再デプロイ）に従う。
+「防災シミュレーション」はこのデータセットに依存しないため、AWS上でも常に動作する。
+
+## 11. リハーサル実測記録（通しリハーサル）
 
 | 日時 | モード | `--seed` | 結果 | 通し所要時間 | 備考 |
 |---|---|---|---|---|---|

@@ -40,26 +40,47 @@
 
 ## Router: disaster.py
 
-- **責務**: 防災モード（BE-7）。`GET /api/v1/disaster/summary` で Level 3 アラートをクラスタリングし被災エリアを返す。`POST /api/v1/disaster/simulate` で Level 3 を一括シミュレーション投入
-- **主要関数**: `haversine_distance()` / `create_circle_polygon()` / `_extract_lat_lng()` / `get_disaster_summary()` / `simulate_disaster()`
-- **依存**: schemas/disaster（DisasterCluster / DisasterSummaryResponse / DisasterSimulateResponse / GeoJSONPolygon）、schemas/telemetry（AnalysisResult / GeoLocation）、store（get_store / StoredTelemetry）
+- **責務**: 防災モード（BE-7 / DEMO-2 再設計）。`POST /api/v1/disaster/simulate` は実在20消火栓のうち無作為 `count` 件（既定6）を選び、合成Level3波形で信号データごと変化させる。`GET /api/v1/disaster/summary` はその選出分のみをクラスタリングし被災エリアを返す
+- **主要関数**: `haversine_distance()` / `create_circle_polygon()` / `get_disaster_summary()` / `simulate_disaster()`
+- **依存**: schemas/disaster（DisasterCluster / DisasterSummaryResponse / DisasterSimulateResponse / GeoJSONPolygon）、schemas/telemetry（GeoLocation）、services/audio（analyze_audio）、services/disaster_signal（generate_level3_signal / encode_signal_to_base64）、store（get_store / get_hydrants / register_disaster_sensors / get_disaster_sensor_ids / StoredTelemetry）
 - **関連**: BE-7。`threshold_meters`（デフォルト 300m）でクラスタリング。想定断水世帯 = クラスタ内件数 × 120 + 50
-- **注記**: `CACHE_FILE=/tmp/disaster_simulated_items.json` にシミュレーション投入分を記録（テスト分離に配慮）。store に `TEL-DISASTER-*` がない場合は 0 件を返す
+- **注記**: 監視センサー数は常に20のまま増加しない（旧「東京駅周辺への架空センサー追加」方式を廃止）。選出 sensor_id は `register_disaster_sensors()` に累積記録され、`get_disaster_summary()` はこの記録分のみを対象とする（通常検知のLevel3は対象外）。旧 `TEL-DISASTER-*` プレフィックス判定・`/tmp/disaster_simulated_items.json` キャッシュは廃止
 
 ## Router: demo.py
 
-- **責務**: デモ初期状態の投入（DEMO-1）。`POST /api/v1/demo/seed` で実音声の `analyze_audio` を実行しつつ深刻度を `payload.level` に確定して 1 件投入
-- **主要関数**: `seed_demo()`
-- **依存**: schemas/demo（DemoSeedRequest）、schemas/telemetry（TelemetryResponse）、services/audio（analyze_audio / AudioValidationError）、store（get_store / StoredTelemetry）
-- **注記**: 実 SVM は合成波形（`generate_signal`）を意図レベルに分類できないため、デモシード専用の補正として深刻度を上書き（`model_copy(update={"severity_level": ...})`）。実録音のリプレイでも深刻度保証
+- **責務**: デモ初期状態の投入・クリア（DEMO-1/DEMO-2）。`POST /api/v1/demo/seed` は実音声の `analyze_audio` を実行しつつ深刻度を `payload.level` に確定して1件投入。`POST /api/v1/demo/seed-batch` は20消火栓へLv0×8/Lv1×8/Lv2×3/Lv3×1を一括投入。`DELETE /api/v1/demo/clear` はクリア後に20件Lv0の初期状態へ戻す
+- **主要関数**: `seed_demo()` / `seed_demo_batch()` / `clear_demo()`
+- **依存**: schemas/demo（DemoSeedRequest / DemoSeedBatchResponse）、schemas/telemetry（TelemetryResponse）、services/audio（analyze_audio / AudioValidationError）、services/demo_seed（run_seed_batch / DemoSeedError）、store（get_store / initialize_sensors / clear_disaster_state / StoredTelemetry）
+- **注記**: 実 SVM は合成波形（`generate_signal`）を意図レベルに分類できないため、デモシード専用の補正として深刻度を上書き（`model_copy(update={"severity_level": ...})`）。実録音のリプレイでも深刻度保証。`seed_demo_batch()` はデータセット未配置時に404を返す（500にしない）
 
 ## Store (store.py)
 
 - **責務**: 解析済みテレメトリを保持するスレッドセーフなインメモリストア（BE-6）
 - **主要要素**: `StoredTelemetry`（Pydantic・frozen / strict / extra=forbid）/ `InMemoryStore`（`deque(maxlen=500)` + `dict` 索引 + `threading.Lock`）/ `get_store()` / `reset_store()` / `get_hydrants()`（`@lru_cache`）
 - **主要メソッド**: `add()` / `get()` / `get_all()` / `list_alerts()` / `latest_sensor_states()` / `clear()`
+- **DEMO-2 追加関数**: `initialize_sensors(store)`（起動時・クリア時に20件Lv0を登録）/ `register_disaster_sensors()` / `get_disaster_sensor_ids()` / `clear_disaster_state()`（防災シミュレーション選出センサーの累積追跡。旧 `register_runtime_sensors`（架空センサー追加）を置き換え）
 - **依存**: schemas/alert（HydrantMaster）、schemas/telemetry（AnalysisResult / GeoLocation）、data/hydrants.json
 - **設計判断**: 満杯時は最古を索引と同期して破棄。`sensor_latest` は破棄しない（デモでマーカーを消さない非対称設計）。`get_all()` は防災クラスタリングで使用
+
+## Service: demo_seed.py（DEMO-2）
+
+- **責務**: デモ初期状態の一括投入（`POST /demo/seed-batch` / `scripts/seed_demo.py` の両方から呼ばれる単一の実体）
+- **主要関数**: `build_seed_batch(hydrants, seed)`（20消火栓へ1レベルずつ重複なく割当て）/ `resolve_replay_files()` / `select_replay_file()` / `validate_mvp_contract()` / `load_audio_file()` / `run_seed_batch(store, audio_dir, seed)`
+- **依存**: services/audio（analyze_audio）、store（get_hydrants / StoredTelemetry / clear_disaster_state）
+- **注記**: `DemoSeedError` はマスタ・音源起因の失敗（ルーターで404に変換）。`run_seed_batch()` は以前の防災シミュレーション選出記録も `clear_disaster_state()` でクリアする（新しいベースラインのため）
+
+## Service: disaster_signal.py（DEMO-2）
+
+- **責務**: 防災シミュレーション用の合成Level3波形生成。外部音声ファイルに依存せず、AWS環境でもデータセット無しで常に動作する
+- **主要関数**: `generate_level3_signal(seed)`（500-1500Hz帯域ノイズ + ブロードバンドノイズ、8000Hz/1.0秒/8000サンプル）/ `encode_signal_to_base64(signal)`
+- **注記**: シード投入（実音響WAVのreplay）と意図的に手法を使い分けている
+
+## Service: dataset_sync.py（DEMO-2・AWS向け）
+
+- **責務**: `backend/dataset/`（Zenodo由来・ライセンス上git管理外）をAWS環境向けにプライベートS3バケットから同期
+- **主要関数**: `sync_dataset_from_s3(s3_uri, target_dir)` / `_parse_s3_uri()`
+- **依存**: boto3 / botocore（DEMO-2で追加）
+- **注記**: `main.py` の `lifespan` が環境変数 `DEMO_DATASET_S3_URI` 設定時のみ起動時実行。失敗しても `DatasetSyncError` に変換され起動は継続する（`infra/README.md` 参照）
 
 ## Service: ledger.py
 
@@ -124,9 +145,9 @@
 ## DashboardClient.tsx
 
 - **責務**: ダッシュボード本体（Client Component）。アラート・KPI・センサー・防災のポーリングと選択状態を束ねる
-- **主要要素**: `ALERT_POLL_INTERVAL_MS = 5000` / `useAlertPolling()` / `useKpiPolling()` / `useSensorPolling()` / `useDisasterSummary()` / `selectedAlertId` 状態 / `handleSelectMarker()` / 防災シミュレーション ボタン
-- **依存**: hooks/{useAlertPolling,useKpiPolling,useSensorPolling,useDisasterSummary}、components/map/{SensorMap,DisasterOverlay}、components/alert/{AlertList,AlertDetailDrawer}、components/dashboard/KpiSummary、lib/api（simulateDisaster）、types/sensor
-- **関連**: FE-5 / FE-7 / BE-7。KPI ランドマーク（section / h2 / aria-labelledby / aria-busy / data-testid="kpi-skeleton"）を一元所有し、配下でスケルトンかカードグリッドを切替える（refined-mockups:c4）
+- **主要要素**: `ALERT_POLL_INTERVAL_MS = 5000` / `useAlertPolling()` / `useKpiPolling()` / `useSensorPolling()` / `useDisasterSummary()` / `selectedAlertId` 状態 / `handleSelectMarker()` / 「シード投入」「シードクリア」「防災シミュレーション」ボタン（DEMO-2で3ボタン構成に）
+- **依存**: hooks/{useAlertPolling,useKpiPolling,useSensorPolling,useDisasterSummary}、components/map/{SensorMap,DisasterOverlay}、components/alert/{AlertList,AlertDetailDrawer}、components/dashboard/KpiSummary、lib/api（simulateDisaster / seedDemoBatch / clearDemo）、types/sensor
+- **関連**: FE-5 / FE-7 / BE-7 / DEMO-2。KPI ランドマーク（section / h2 / aria-labelledby / aria-busy / data-testid="kpi-skeleton"）を一元所有し、配下でスケルトンかカードグリッドを切替える（refined-mockups:c4）。「シード投入」「シードクリア」ボタンは押下後、各フックの `refresh()` を呼んでアラート・KPI・地図（クリア時は被災エリア含む）を即時反映する
 
 ## KpiSummary.tsx
 
@@ -190,22 +211,23 @@
 ## useAlertPolling.ts
 
 - **責務**: アラートのポーリングを担うカスタムフック（DashboardClient から抽出）
-- **主要要素**: `useAlertPolling(intervalMs)` → `{ alerts, error, lastUpdatedAt }`
+- **主要要素**: `useAlertPolling(intervalMs)` → `{ alerts, error, lastUpdatedAt, refresh }`
 - **依存**: lib/api（fetchAlerts）、types/api（AlertSummary）
-- **注記**: `useEffect` クリーンアップで `clearInterval` + `cancelled` フラグ。失敗時は最終状態を据え置く
+- **注記**: `useEffect` クリーンアップで `clearInterval` + `cancelled` フラグ。失敗時は最終状態を据え置く。`refresh()`（DEMO-2）はデモ操作ボタン押下直後の即時反映用
 
 ## useKpiPolling.ts
 
 - **責務**: KPI サマリのポーリング（FE-7）。**失敗時は古い値を最新として見せないため null に破棄して再スケルトン**
-- **主要要素**: `useKpiPolling(intervalMs)` → `{ kpiData, isLoading }`。`requestSeq` でアウトオブオーダー防止
+- **主要要素**: `useKpiPolling(intervalMs)` → `{ kpiData, isLoading, refresh }`。`requestSeqRef` でアウトオブオーダー防止（ポーリングと `refresh()` で共有）
 - **依存**: lib/api（fetchKpiSummary）、types/api（KpiSummary）
-- **注記**: useAlertPolling（最終状態据え置き）とは失敗時挙動が異なるため共通フックに統合しない（application-design:c5）
+- **注記**: useAlertPolling（最終状態据え置き）とは失敗時挙動が異なるため共通フックに統合しない（application-design:c5）。`refresh()`（DEMO-2）はデモ操作ボタン押下直後の即時反映用
 
 ## useSensorPolling.ts
 
 - **責務**: センサー一覧（GeoJSON）のポーリング（地図マーカー更新用）
+- **主要要素**: `useSensorPolling(initialData, intervalMs)` → `{ sensorFeatures, error, refresh }`
 - **依存**: lib/api（fetchSensorsGeoJson）、types/sensor
-- **注記**: 失敗時は最終状態を据え置く（地図・画面を壊さない）
+- **注記**: 失敗時は最終状態を据え置く（地図・画面を壊さない）。`refresh()`（DEMO-2）はデモ操作ボタン押下直後の即時反映用
 
 ## useDisasterSummary.ts
 
@@ -257,21 +279,27 @@ page.tsx
 DashboardClient
   -> useKpiPolling / useAlertPolling / useSensorPolling / useDisasterSummary
   -> KpiSummary / SensorMap / DisasterOverlay / AlertList / AlertDetailDrawer
-useKpiPolling -> lib/api(fetchKpiSummary)
-useAlertPolling -> lib/api(fetchAlerts)
-useSensorPolling -> lib/api(fetchSensorsGeoJson)
-useDisasterSummary -> lib/api(fetchDisasterSummary)
+  -> lib/api(seedDemoBatch, clearDemo)  # DEMO-2: シード投入・シードクリアボタン
+useKpiPolling -> lib/api(fetchKpiSummary)  # refresh() あり（DEMO-2）
+useAlertPolling -> lib/api(fetchAlerts)  # refresh() あり（DEMO-2）
+useSensorPolling -> lib/api(fetchSensorsGeoJson)  # refresh() あり（DEMO-2）
+useDisasterSummary -> lib/api(fetchDisasterSummary)  # refresh() あり
 AlertDetailDrawer -> lib/api(fetchAlertDetail, createWorkOrder) / SpectrumChart / WaveformChart / WorkOrderModal
-lib/api -> types/api / types/sensor / types/disaster
+lib/api -> types/api / types/sensor / types/disaster / types/demo（DEMO-2）
 main.py -> routers(telemetry, alerts, sensors, kpi, disaster, demo)
+main.py -> services/dataset_sync（lifespan: DEMO_DATASET_S3_URI 設定時のみ・DEMO-2）
+main.py -> store(initialize_sensors)（lifespan: 起動時に20件Lv0を構築・DEMO-2）
 routers/telemetry -> services/audio / store / schemas/telemetry
-routers/demo -> services/audio / store / schemas/demo
+routers/demo -> services/audio / services/demo_seed / store / schemas/demo（DEMO-2）
 routers/alerts -> store / services/ledger / services/orcarouter / schemas/alert
 routers/sensors -> store / schemas/alert
 routers/kpi -> services/kpi / schemas/kpi
-routers/disaster -> store / schemas/disaster
+routers/disaster -> services/audio / services/disaster_signal / store / schemas/disaster（DEMO-2）
 services/orcarouter -> services/prompts / services/llm_cost / schemas/work_order / app/dependencies / data/repair_parts.json
 services/audio -> schemas/telemetry / models/leak_svm_v1.joblib
+services/demo_seed -> services/audio / store(get_hydrants, clear_disaster_state) / backend/dataset/（DEMO-2）
+services/disaster_signal -> services/audio（DEMO-2）
+services/dataset_sync -> boto3 / botocore（DEMO-2）
 services/kpi -> store(get_store, get_hydrants) / schemas/kpi
 services/ledger -> schemas/pipe / data/pipes.json
 store -> data/hydrants.json / schemas/alert / schemas/telemetry
@@ -285,20 +313,23 @@ store -> data/hydrants.json / schemas/alert / schemas/telemetry
 | Router: alerts.py | BE-5 / BE-6 | 実装済み（work-order / seed） |
 | Router: sensors.py | BE-6 | 実装済み |
 | Router: kpi.py | BE-8 | 実装済み |
-| Router: disaster.py | BE-7 | 実装済み |
-| Router: demo.py | DEMO-1 | 実装済み |
-| Store (store.py) | BE-6 | 実装済み |
+| Router: disaster.py | BE-7 / DEMO-2 | 実装済み（実在20消火栓を書き換える方式に再設計） |
+| Router: demo.py | DEMO-1 / DEMO-2 | 実装済み（seed-batch / clear の20件Lv0契約を追加） |
+| Store (store.py) | BE-6 / DEMO-2 | 実装済み |
 | Service: ledger.py | BE-4 | 実装済み |
 | Service: kpi.py | BE-8 | 実装済み |
 | Service: audio.py | BE-3 | 実装済み（SVM + DSP） |
 | Service: orcarouter.py | BE-5 / FR-6 | 実装済み（LLM / フォールバック / キャッシュ） |
 | Service: llm_cost.py | FR-6 | 実装済み |
 | Service: prompts.py | BE-5 | 実装済み |
+| Service: demo_seed.py | DEMO-2 | 実装済み |
+| Service: disaster_signal.py | DEMO-2 | 実装済み |
+| Service: dataset_sync.py | DEMO-2 | 実装済み（AWS向け） |
 | Frontend Page (page.tsx) | FE-2/3/5/7 | 実装済み（モック KPI 撤去済み） |
-| DashboardClient.tsx | FE-5 / FE-7 / BE-7 | 実装済み（KPI・防災ポーリング配線） |
+| DashboardClient.tsx | FE-5 / FE-7 / BE-7 / DEMO-2 | 実装済み（KPI・防災ポーリング配線 + シード投入/クリアボタン） |
 | KpiSummary.tsx | FE-2 / FE-7 | 実装済み（契約整合・表示専用） |
 | AlertDetailDrawer.tsx | FE-4 / FE-5 / FE-6 | 実装済み（チャート + 自動起票ボタン） |
 | WorkOrderModal.tsx | FE-6 / FR-6 | 実装済み |
 | DisasterOverlay.tsx | BE-7 | 実装済み |
-| lib/api.ts | FE-1 / FE-7 / BE-7 | 実装済み（fetchKpiSummary 等） |
+| lib/api.ts | FE-1 / FE-7 / BE-7 / DEMO-2 | 実装済み（fetchKpiSummary / seedDemoBatch / clearDemo 等） |
 | lib/severity.ts | FE-2/3/5/7 | 実装済み（単一ソース） |

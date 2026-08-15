@@ -14,6 +14,9 @@
 #   -Phase: デプロイ対象（All=00〜07 全部 / Infra=00〜04（ALB まで）/ App=06〜07（ECS・監視）、既定: All）
 #     初回デプロイは frontend の NEXT_PUBLIC_API_BASE_URL（ALB DNS 名）をビルド時固定するため、
 #     「Infra → ALB DNS 名取得 → イメージビルド/ECR プッシュ → App」の順で実行する。
+#   -DemoDatasetEnabled: デモ音源データセット（Zenodo由来・ライセンス上git/CI経由の再配布不可）を
+#     S3から同期するか（既定: false）。DemoDatasetBucket へ手動アップロード済みの場合のみ true にする
+#     （infra/README.md の「デモ音源データセットのAWS配置」参照）。
 
 param(
     [string]$Environment = "dev",
@@ -30,7 +33,8 @@ param(
     [string]$OrcaRouterModel = "openai/gpt-4o-mini",
     [string]$OrcaRouterEnabled = "true",
     [string]$OrcaRouterApiKey = "",
-    [string]$AllowedOrigins = "http://localhost:3000"
+    [string]$AllowedOrigins = "http://localhost:3000",
+    [string]$DemoDatasetEnabled = "false"
 )
 
 $ErrorActionPreference = "Stop"
@@ -168,6 +172,7 @@ if ($RunApp) {
         OrcaRouterEnabled = $OrcaRouterEnabled
         OrcaRouterApiKey = $OrcaRouterApiKey
         AllowedOrigins = $AllowedOrigins
+        DemoDatasetEnabled = $DemoDatasetEnabled
     }
 
     # 07: Monitoring
