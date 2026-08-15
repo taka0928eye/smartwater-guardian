@@ -1,4 +1,6 @@
 ﻿import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
@@ -6,11 +8,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.routers import alerts, demo, disaster, kpi, sensors, telemetry
+from app.store import get_store, initialize_sensors
 
 # .env ファイルを読み込み、環境変数を設定する（BE-5: Orcarouter LLM API 接続用）
 load_dotenv()
 
-app = FastAPI(title="SmartWater Guardian API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """起動時にhydrants.json 20件を severity_level=0 で初期化する（DEMO-2）。
+
+    「初期表示時は20件・全てLv0」という要求を満たす。``@app.on_event`` は
+    非推奨のため ``lifespan`` を使う。
+    """
+    initialize_sensors(get_store())
+    yield
+
+
+app = FastAPI(title="SmartWater Guardian API", lifespan=lifespan)
 
 
 def _get_allowed_origins() -> list[str]:

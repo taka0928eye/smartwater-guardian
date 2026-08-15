@@ -18,7 +18,6 @@ from collections import deque
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -151,24 +150,31 @@ def reset_store() -> None:
 
 # --- 消火栓マスタローダー ---
 
-_runtime_sensors: list[dict[str, Any]] = []
+_disaster_sensor_ids: set[str] = set()
 
 
-def register_runtime_sensors(sensors: list[dict[str, Any]]) -> None:
-    """防災シミュレーション用のランタイムセンサーを登録する。
+def register_disaster_sensors(sensor_ids: list[str]) -> None:
+    """防災シミュレーションで Level 3 に変化した sensor_id を記録する。
 
-    シミュレーションで新しいセンサーが追加された場合、``get_hydrants()``
-    がそれを含めて返すようにする。テスト隔離のため ``clear_runtime_sensors()``
-    で明示的にクリアできる。
+    ``/disaster/summary`` はこの集合に含まれる sensor_id のみを被災エリア
+    クラスタの対象とする（通常の漏水検知で Level 3 になったセンサーは対象外）。
+    複数回のシミュレーション実行分を**累積**する（直近の選出で上書きしない）。
+    テスト隔離・``/demo/clear``・``/demo/seed-batch`` 実行時は
+    ``clear_disaster_state()`` で明示的にクリアする。
     """
-    global _runtime_sensors
-    _runtime_sensors = list(sensors)
+    global _disaster_sensor_ids
+    _disaster_sensor_ids = _disaster_sensor_ids | set(sensor_ids)
 
 
-def clear_runtime_sensors() -> None:
-    """登録されたランタイムセンサーをクリアする（テスト用）。"""
-    global _runtime_sensors
-    _runtime_sensors = []
+def get_disaster_sensor_ids() -> set[str]:
+    """防災シミュレーションで Level 3 に変化した sensor_id の集合を返す。"""
+    return set(_disaster_sensor_ids)
+
+
+def clear_disaster_state() -> None:
+    """防災シミュレーションで記録した sensor_id をクリアする。"""
+    global _disaster_sensor_ids
+    _disaster_sensor_ids = set()
 
 
 @lru_cache(maxsize=1)
@@ -187,17 +193,8 @@ def _get_hydrants_from_file() -> list[HydrantMaster]:
 
 
 def get_hydrants() -> list[HydrantMaster]:
-    """hydrants.json の消火栓 + ランタイムセンサーを返す。
-
-    防災シミュレーション実行時、``register_runtime_sensors()`` で登録された
-    センサーが KPI 集計に反映される。
-    """
-    base_hydrants = _get_hydrants_from_file()
-    if not _runtime_sensors:
-        return base_hydrants
-
-    runtime_hydrants = [HydrantMaster.model_validate(item) for item in _runtime_sensors]
-    return base_hydrants + runtime_hydrants
+    """hydrants.json の消火栓一覧を返す（実在20件）。"""
+    return _get_hydrants_from_file()
 
 
 def initialize_sensors(store: InMemoryStore) -> None:

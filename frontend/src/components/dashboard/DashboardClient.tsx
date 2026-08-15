@@ -29,7 +29,7 @@ import { useAlertPolling } from "@/hooks/useAlertPolling";
 import { useDisasterSummary } from "@/hooks/useDisasterSummary";
 import { useKpiPolling } from "@/hooks/useKpiPolling";
 import { useSensorPolling } from "@/hooks/useSensorPolling";
-import { simulateDisaster } from "@/lib/api";
+import { clearDemo, seedDemoBatch, simulateDisaster } from "@/lib/api";
 import SensorMap from "@/components/map/SensorMap";
 import type { SensorFeatureCollection } from "@/types/sensor";
 
@@ -48,11 +48,17 @@ export default function DashboardClient({
   sensorFeatures: initialSensorFeatures,
 }: DashboardClientProps) {
   // 5秒間隔のポーリングは useAlertPolling が担う（clearInterval クリーンアップ含む）。
-  const { alerts, error: pollError } = useAlertPolling(ALERT_POLL_INTERVAL_MS);
+  const {
+    alerts,
+    error: pollError,
+    refresh: refreshAlerts,
+  } = useAlertPolling(ALERT_POLL_INTERVAL_MS);
   // KPI も同一間隔でポーリング（成功時のみ更新 / 失敗時は再スケルトン: FR-8）。
-  const { kpiData, isLoading } = useKpiPolling(ALERT_POLL_INTERVAL_MS);
+  const { kpiData, isLoading, refresh: refreshKpi } = useKpiPolling(
+    ALERT_POLL_INTERVAL_MS,
+  );
   // 地図マーカーの色をアラート一覧と同じ間隔で同期させる（初回は SSR 取得値、以後はポーリング値）。
-  const { sensorFeatures } = useSensorPolling(
+  const { sensorFeatures, refresh: refreshSensors } = useSensorPolling(
     initialSensorFeatures,
     ALERT_POLL_INTERVAL_MS,
   );
@@ -67,6 +73,16 @@ export default function DashboardClient({
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulateMessage, setSimulateMessage] = useState<string | null>(null);
   const [simulateError, setSimulateError] = useState<string | null>(null);
+
+  // DEMO-2: 「シード投入」ボタンの処理状態。
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [seedMessage, setSeedMessage] = useState<string | null>(null);
+  const [seedError, setSeedError] = useState<string | null>(null);
+
+  // DEMO-2: 「シードクリア」ボタンの処理状態。
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearMessage, setClearMessage] = useState<string | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
 
   /** 「防災シミュレーション」ボタン押下: Level 3 を一括投入してクラスタを即時反映する。
    *  useCallback で refreshDisaster の変化時のみ参照を更新する。 */
@@ -84,6 +100,43 @@ export default function DashboardClient({
       setIsSimulating(false);
     }
   }, [refreshDisaster]);
+
+  /** 「シード投入」ボタン押下: 20件（Lv0×8/Lv1×8/Lv2×3/Lv3×1）を一括投入し、
+   *  アラート一覧・KPI・地図を即時反映する（DEMO-2）。 */
+  const handleSeedDemo = useCallback(async (): Promise<void> => {
+    setIsSeeding(true);
+    setSeedError(null);
+    try {
+      const response = await seedDemoBatch();
+      setSeedMessage(response.message);
+      await Promise.all([refreshAlerts(), refreshKpi(), refreshSensors()]);
+    } catch {
+      setSeedError("シード投入に失敗しました");
+    } finally {
+      setIsSeeding(false);
+    }
+  }, [refreshAlerts, refreshKpi, refreshSensors]);
+
+  /** 「シードクリア」ボタン押下: 20件Lv0の初期状態に戻し、被災エリア表示も含めて
+   *  即時反映する（DEMO-2）。 */
+  const handleClearDemo = useCallback(async (): Promise<void> => {
+    setIsClearing(true);
+    setClearError(null);
+    try {
+      const response = await clearDemo();
+      setClearMessage(response.message);
+      await Promise.all([
+        refreshAlerts(),
+        refreshKpi(),
+        refreshSensors(),
+        refreshDisaster(),
+      ]);
+    } catch {
+      setClearError("シードクリアに失敗しました");
+    } finally {
+      setIsClearing(false);
+    }
+  }, [refreshAlerts, refreshKpi, refreshSensors, refreshDisaster]);
 
   const selectedAlert =
     alerts.find((alert) => alert.telemetryId === selectedAlertId) ?? null;
@@ -141,17 +194,37 @@ export default function DashboardClient({
             <h2 className="text-sm font-semibold text-slate-500">
               センサー地図
             </h2>
-            <button
-              type="button"
-              data-testid="disaster-simulate-button"
-              onClick={handleSimulateDisaster}
-              disabled={isSimulating}
-              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isSimulating
-                ? "シミュレーション中…"
-                : "防災シミュレーション"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="seed-demo-button"
+                onClick={handleSeedDemo}
+                disabled={isSeeding}
+                className="rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSeeding ? "投入中…" : "シード投入"}
+              </button>
+              <button
+                type="button"
+                data-testid="clear-demo-button"
+                onClick={handleClearDemo}
+                disabled={isClearing}
+                className="rounded-lg bg-slate-400 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isClearing ? "クリア中…" : "シードクリア"}
+              </button>
+              <button
+                type="button"
+                data-testid="disaster-simulate-button"
+                onClick={handleSimulateDisaster}
+                disabled={isSimulating}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSimulating
+                  ? "シミュレーション中…"
+                  : "防災シミュレーション"}
+              </button>
+            </div>
           </div>
           <SensorMap
             data={sensorFeatures}
@@ -181,6 +254,38 @@ export default function DashboardClient({
               className="mt-2 text-xs text-amber-600"
             >
               {disasterError}
+            </p>
+          ) : null}
+          {seedMessage ? (
+            <p
+              data-testid="seed-demo-message"
+              className="mt-2 text-xs text-slate-600"
+            >
+              {seedMessage}
+            </p>
+          ) : null}
+          {seedError ? (
+            <p
+              data-testid="seed-demo-error"
+              className="mt-2 text-xs text-red-600"
+            >
+              {seedError}
+            </p>
+          ) : null}
+          {clearMessage ? (
+            <p
+              data-testid="clear-demo-message"
+              className="mt-2 text-xs text-slate-600"
+            >
+              {clearMessage}
+            </p>
+          ) : null}
+          {clearError ? (
+            <p
+              data-testid="clear-demo-error"
+              className="mt-2 text-xs text-red-600"
+            >
+              {clearError}
             </p>
           ) : null}
         </section>

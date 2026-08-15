@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from app.schemas.kpi import KpiSummary
 from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
 from app.services.kpi import KPI_ASSUMPTION_DOC, calculate_kpi_summary, expected_cost_saved
-from app.store import StoredTelemetry, clear_runtime_sensors, get_hydrants, register_runtime_sensors
+from app.store import StoredTelemetry, get_hydrants
 
 # シードで使うスペクトル点数（test_alerts.py と同じ）
 N_SPECTRUM = 128
@@ -208,63 +208,6 @@ class TestKpiSummarySchema:
         # extra="forbid" + today_detections は契約外（D-3）
         with pytest.raises(ValidationError):
             KpiSummary(**{**self._base_kwargs(), "today_detections": 5})
-
-
-class TestRuntimeSensors:
-    """防災シミュレーション時のランタイムセンサー登録（ユーザー要求）。
-
-    シミュレーションでセンサーが増えた場合、監視センサ数（total_sensors）が
-    動的に増加することを検証する。
-    """
-
-    def test_register_runtime_sensors_increases_total_count(self, store) -> None:
-        # 初期状態: hydrants.json の 20 件
-        summary_before = calculate_kpi_summary()
-        assert summary_before.total_sensors == 20
-
-        # ランタイムセンサーを 6 件登録
-        simulated_sensors = [
-            {
-                "sensor_id": f"SEN-DISASTER-{i+1:03d}",
-                "hydrant_id": f"HYD-DISASTER-{i+1:03d}",
-                "name": f"シミュレーション消火栓 {i+1}",
-                "latitude": 35.6812 + (i * 0.001),
-                "longitude": 139.7671 + (i * 0.001),
-                "pipe_id": f"PIPE-SIM-{i+1}",
-            }
-            for i in range(6)
-        ]
-        register_runtime_sensors(simulated_sensors)
-
-        # 登録後: 20 + 6 = 26 件になるべき
-        summary_after = calculate_kpi_summary()
-        assert summary_after.total_sensors == 26
-
-        # クリア後: 元に戻る
-        clear_runtime_sensors()
-        summary_cleared = calculate_kpi_summary()
-        assert summary_cleared.total_sensors == 20
-
-    def test_runtime_sensors_survive_empty_store(self, store) -> None:
-        # ストアが空でも登録されたセンサーは有効
-        simulated_sensors = [
-            {
-                "sensor_id": "SEN-DISASTER-001",
-                "hydrant_id": "HYD-DISASTER-001",
-                "name": "シミュレーション消火栓",
-                "latitude": 35.6812,
-                "longitude": 139.7671,
-                "pipe_id": "PIPE-SIM-001",
-            }
-        ]
-        register_runtime_sensors(simulated_sensors)
-
-        # ストアが空でも total_sensors は 21（20 + 1）
-        summary = calculate_kpi_summary()
-        assert summary.total_sensors == 21
-        assert summary.level1_count == 0
-        assert summary.level2_count == 0
-        assert summary.level3_count == 0
 
 
 class TestInitialSensorState:

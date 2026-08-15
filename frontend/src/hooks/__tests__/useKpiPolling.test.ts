@@ -224,4 +224,56 @@ describe("useKpiPolling", () => {
     expect(result.current.kpiData).toBeNull();
     expect(result.current.isLoading).toBe(true);
   });
+
+  it("refresh() で即時再取得できる（シード投入・クリア直後の反映）", async () => {
+    mockedFetchKpiSummary
+      .mockResolvedValueOnce(KPI)
+      .mockResolvedValueOnce(KPI_UPDATED);
+
+    const { result } = renderHook(() => useKpiPolling(5000));
+    await act(async () => {});
+
+    expect(result.current.kpiData?.totalSensors).toBe(10);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(mockedFetchKpiSummary).toHaveBeenCalledTimes(2);
+    expect(result.current.kpiData?.totalSensors).toBe(20);
+  });
+
+  it("refresh() 失敗時は古い値を破棄し、再スケルトンへ戻す", async () => {
+    mockedFetchKpiSummary
+      .mockResolvedValueOnce(KPI)
+      .mockRejectedValueOnce(new Error("backend down"));
+
+    const { result } = renderHook(() => useKpiPolling(5000));
+    await act(async () => {});
+
+    expect(result.current.kpiData).toEqual(KPI);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.kpiData).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+  });
+
+  it("アンマウント後の refresh() は setState しない（cancelled ガード）", async () => {
+    mockedFetchKpiSummary.mockResolvedValue(KPI);
+
+    const { result, unmount } = renderHook(() => useKpiPolling(5000));
+    await act(async () => {});
+
+    unmount();
+    mockedFetchKpiSummary.mockClear();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(mockedFetchKpiSummary).not.toHaveBeenCalled();
+  });
 });

@@ -176,4 +176,54 @@ describe("useSensorPolling", () => {
     expect(result.current.sensorFeatures).toEqual(INITIAL);
     expect(result.current.error).toBeNull();
   });
+
+  it("refresh() で即時再取得できる（シード投入・クリア直後の反映）", async () => {
+    mockedFetchSensorsGeoJson
+      .mockResolvedValueOnce(INITIAL)
+      .mockResolvedValueOnce(UPDATED);
+
+    const { result } = renderHook(() => useSensorPolling(INITIAL, 5000));
+    await act(async () => {});
+
+    expect(mockedFetchSensorsGeoJson).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(mockedFetchSensorsGeoJson).toHaveBeenCalledTimes(2);
+    expect(result.current.sensorFeatures).toEqual(UPDATED);
+  });
+
+  it("refresh() 失敗時は直前の sensorFeatures を維持し、error を表示する", async () => {
+    mockedFetchSensorsGeoJson
+      .mockResolvedValueOnce(UPDATED)
+      .mockRejectedValueOnce(new Error("backend down"));
+
+    const { result } = renderHook(() => useSensorPolling(INITIAL, 5000));
+    await act(async () => {});
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.sensorFeatures).toEqual(UPDATED);
+    expect(result.current.error).toBe("センサー地図の取得に失敗しました");
+  });
+
+  it("アンマウント後の refresh() は setState しない（cancelled ガード）", async () => {
+    mockedFetchSensorsGeoJson.mockResolvedValue(INITIAL);
+
+    const { result, unmount } = renderHook(() => useSensorPolling(INITIAL, 5000));
+    await act(async () => {});
+
+    unmount();
+    mockedFetchSensorsGeoJson.mockClear();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(mockedFetchSensorsGeoJson).not.toHaveBeenCalled();
+  });
 });

@@ -249,6 +249,47 @@ class TestClear:
         assert store.latest_sensor_states() == {}
 
 
+class TestDisasterSensors:
+    """防災シミュレーションで選出されたセンサーIDの追跡（累積・クリア）。"""
+
+    def test_register_and_get_disaster_sensor_ids(self):
+        from app.store import (
+            clear_disaster_state,
+            get_disaster_sensor_ids,
+            register_disaster_sensors,
+        )
+
+        clear_disaster_state()
+        register_disaster_sensors(["SNS-001", "SNS-002"])
+        assert get_disaster_sensor_ids() == {"SNS-001", "SNS-002"}
+        clear_disaster_state()
+
+    def test_register_disaster_sensors_accumulates(self):
+        """複数回の登録は累積される（直近シミュレーションで上書きされない）。"""
+        from app.store import (
+            clear_disaster_state,
+            get_disaster_sensor_ids,
+            register_disaster_sensors,
+        )
+
+        clear_disaster_state()
+        register_disaster_sensors(["SNS-001"])
+        register_disaster_sensors(["SNS-002", "SNS-003"])
+        assert get_disaster_sensor_ids() == {"SNS-001", "SNS-002", "SNS-003"}
+        clear_disaster_state()
+
+    def test_clear_disaster_state_empties_ids(self):
+        from app.store import (
+            clear_disaster_state,
+            get_disaster_sensor_ids,
+            register_disaster_sensors,
+        )
+
+        register_disaster_sensors(["SNS-001"])
+        clear_disaster_state()
+        assert get_disaster_sensor_ids() == set()
+
+
 class TestGetHydrants:
     """消火栓マスタローダー（app/data/hydrants.json）。"""
 

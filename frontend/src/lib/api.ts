@@ -20,6 +20,7 @@ import type {
   DisasterSimulateResponse,
   DisasterSummary,
 } from "../types/disaster";
+import type { DemoClearResponse, DemoSeedBatchResponse } from "../types/demo";
 import type { SensorFeatureCollection } from "../types/sensor";
 
 /** NEXT_PUBLIC_API_BASE_URL はクライアントバンドルに載るため、機密情報は置かない（CLAUDE.md §5.1）。 */
@@ -169,4 +170,15 @@ export function simulateDisaster(
   return unwrap<DisasterSimulateResponse>(
     apiClient.post("/api/v1/disaster/simulate", null, { params: { count } }),
   );
+}
+
+/** デモ初期状態を一括投入する（DEMO-2: POST /api/v1/demo/seed-batch）。
+ *  Lv0×8 / Lv1×8 / Lv2×3 / Lv3×1（計20件）に一括で変化させる。 */
+export function seedDemoBatch(): Promise<DemoSeedBatchResponse> {
+  return unwrap<DemoSeedBatchResponse>(apiClient.post("/api/v1/demo/seed-batch"));
+}
+
+/** デモシード状態をクリアし、20件Lv0の初期状態に戻す（DEMO-2: DELETE /api/v1/demo/clear）。 */
+export function clearDemo(): Promise<DemoClearResponse> {
+  return unwrap<DemoClearResponse>(apiClient.delete("/api/v1/demo/clear"));
 }

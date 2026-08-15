@@ -11,9 +11,11 @@
  * 取得失敗時は useAlertPolling と同様に直前の sensorFeatures を据え置く（useKpiPolling の
  * 「失敗時に破棄して再スケルトン」とは異なり、地図はバックエンド停止中も白紙にしない）。
  * useEffect のクリーンアップで必ず clearInterval を呼び、アンマウント後の setState は
- * cancelled フラグで防ぐ。
+ * cancelled / cancelledRef フラグで防ぐ。
+ *
+ * refresh() はデモ操作ボタン押下直後の即時反映用（useDisasterSummary と同じ方式）。
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchSensorsGeoJson } from "@/lib/api";
 import type { SensorFeatureCollection } from "@/types/sensor";
@@ -23,6 +25,8 @@ export interface UseSensorPollingResult {
   sensorFeatures: SensorFeatureCollection;
   /** 直近の取得失敗メッセージ。成功時は null。 */
   error: string | null;
+  /** 即時再取得（デモ操作ボタン押下直後に呼ぶと直ちに反映される）。 */
+  refresh: () => Promise<void>;
 }
 
 /** initialData を初期値に、intervalMs 間隔で fetchSensorsGeoJson をポーリングする。 */
@@ -33,11 +37,14 @@ export function useSensorPolling(
   const [sensorFeatures, setSensorFeatures] =
     useState<SensorFeatureCollection>(initialData);
   const [error, setError] = useState<string | null>(null);
+  // アンマウント後の setState を防ぐためのフラグ（refresh からも参照する）。
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    cancelledRef.current = false;
 
-    const load = async () => {
+    const load = async (): Promise<void> => {
       try {
         const data = await fetchSensorsGeoJson();
         if (cancelled) return;
@@ -57,9 +64,24 @@ export function useSensorPolling(
 
     return () => {
       cancelled = true;
+      cancelledRef.current = true;
       clearInterval(id);
     };
   }, [intervalMs]);
 
-  return { sensorFeatures, error };
+  // デモ操作ボタン押下直後の即時再取得。ポーリング本体と同じ fetch + setState フロー。
+  const refresh = useCallback(async (): Promise<void> => {
+    if (cancelledRef.current) return;
+    try {
+      const data = await fetchSensorsGeoJson();
+      if (cancelledRef.current) return;
+      setSensorFeatures(data);
+      setError(null);
+    } catch {
+      if (cancelledRef.current) return;
+      setError("センサー地図の取得に失敗しました");
+    }
+  }, []);
+
+  return { sensorFeatures, error, refresh };
 }

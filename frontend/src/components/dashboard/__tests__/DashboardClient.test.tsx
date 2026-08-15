@@ -98,15 +98,20 @@ vi.mock("@/lib/api", () => ({
   }),
   // BE-7: 防災シミュレーションボタンで呼ぶ。デフォルトは未解決（テストごとに設定）。
   simulateDisaster: vi.fn(),
+  // DEMO-2: 「シード投入」「シードクリア」ボタンで呼ぶ。デフォルトは未解決（テストごとに設定）。
+  seedDemoBatch: vi.fn(),
+  clearDemo: vi.fn(),
 }));
 
 // --- API モックの参照（vi.mock の後で取得する） ---
 import {
+  clearDemo,
   fetchAlertDetail,
   fetchAlerts,
   fetchDisasterSummary,
   fetchKpiSummary,
   fetchSensorsGeoJson,
+  seedDemoBatch,
   simulateDisaster,
 } from "@/lib/api";
 import DashboardClient from "../DashboardClient";
@@ -117,6 +122,8 @@ const mockedFetchKpiSummary = vi.mocked(fetchKpiSummary);
 const mockedFetchSensorsGeoJson = vi.mocked(fetchSensorsGeoJson);
 const mockedFetchDisasterSummary = vi.mocked(fetchDisasterSummary);
 const mockedSimulateDisaster = vi.mocked(simulateDisaster);
+const mockedSeedDemoBatch = vi.mocked(seedDemoBatch);
+const mockedClearDemo = vi.mocked(clearDemo);
 
 /** DashboardClient に渡す最小の GeoJSON（FE-3 型）。 */
 const FEATURES: SensorFeatureCollection = {
@@ -568,6 +575,196 @@ describe("防災モード（BE-7）", () => {
 
     expect(await screen.findByTestId("disaster-error")).toHaveTextContent(
       "被災エリアの取得に失敗しました",
+    );
+    expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
+  });
+});
+
+describe("デモ操作（DEMO-2: シード投入・シードクリア）", () => {
+  it("シード投入・シードクリアボタンが表示される", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    expect(screen.getByTestId("seed-demo-button")).toHaveTextContent(
+      "シード投入",
+    );
+    expect(screen.getByTestId("clear-demo-button")).toHaveTextContent(
+      "シードクリア",
+    );
+  });
+
+  it("シード投入ボタンで seedDemoBatch が呼ばれ、アラート・KPI・地図が即時反映される", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedSeedDemoBatch.mockResolvedValue({
+      status: "seeded",
+      insertedCount: 20,
+      levelCounts: { "0": 8, "1": 8, "2": 3, "3": 1 },
+      message: "20 件投入しました",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    const alertsCallsBefore = mockedFetchAlerts.mock.calls.length;
+    const kpiCallsBefore = mockedFetchKpiSummary.mock.calls.length;
+    const sensorsCallsBefore = mockedFetchSensorsGeoJson.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId("seed-demo-button"));
+
+    await waitFor(() => expect(mockedSeedDemoBatch).toHaveBeenCalledTimes(1));
+
+    // シード投入後、ポーリング間隔を待たずに即時再取得される
+    await waitFor(() => {
+      expect(mockedFetchAlerts.mock.calls.length).toBeGreaterThan(
+        alertsCallsBefore,
+      );
+      expect(mockedFetchKpiSummary.mock.calls.length).toBeGreaterThan(
+        kpiCallsBefore,
+      );
+      expect(mockedFetchSensorsGeoJson.mock.calls.length).toBeGreaterThan(
+        sensorsCallsBefore,
+      );
+    });
+
+    expect(screen.getByTestId("seed-demo-message")).toHaveTextContent(
+      "20 件投入しました",
+    );
+  });
+
+  it("シード投入中はボタンが disabled になり「投入中…」を表示する", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    let resolveSeed!: (value: {
+      status: string;
+      insertedCount: number;
+      levelCounts: Record<string, number>;
+      message: string;
+    }) => void;
+    mockedSeedDemoBatch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSeed = resolve;
+        }),
+    );
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    const button = screen.getByTestId("seed-demo-button");
+    fireEvent.click(button);
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("投入中…");
+
+    await act(async () => {
+      resolveSeed({
+        status: "seeded",
+        insertedCount: 20,
+        levelCounts: { "0": 8, "1": 8, "2": 3, "3": 1 },
+        message: "20 件投入しました",
+      });
+    });
+  });
+
+  it("シード投入失敗時は控えめなエラー表示に留まり、画面は壊れない", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedSeedDemoBatch.mockRejectedValue(new Error("backend down"));
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("seed-demo-button"));
+
+    expect(await screen.findByTestId("seed-demo-error")).toHaveTextContent(
+      "シード投入に失敗しました",
+    );
+    expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
+  });
+
+  it("シードクリアボタンで clearDemo が呼ばれ、アラート・KPI・地図・被災エリアが即時反映される", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedClearDemo.mockResolvedValue({
+      status: "cleared",
+      clearedCount: 2,
+      message: "20件Lv0（正常）の初期状態にリセットしました",
+    });
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    const alertsCallsBefore = mockedFetchAlerts.mock.calls.length;
+    const kpiCallsBefore = mockedFetchKpiSummary.mock.calls.length;
+    const sensorsCallsBefore = mockedFetchSensorsGeoJson.mock.calls.length;
+    const disasterCallsBefore = mockedFetchDisasterSummary.mock.calls.length;
+
+    fireEvent.click(screen.getByTestId("clear-demo-button"));
+
+    await waitFor(() => expect(mockedClearDemo).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => {
+      expect(mockedFetchAlerts.mock.calls.length).toBeGreaterThan(
+        alertsCallsBefore,
+      );
+      expect(mockedFetchKpiSummary.mock.calls.length).toBeGreaterThan(
+        kpiCallsBefore,
+      );
+      expect(mockedFetchSensorsGeoJson.mock.calls.length).toBeGreaterThan(
+        sensorsCallsBefore,
+      );
+      expect(mockedFetchDisasterSummary.mock.calls.length).toBeGreaterThan(
+        disasterCallsBefore,
+      );
+    });
+
+    expect(screen.getByTestId("clear-demo-message")).toHaveTextContent(
+      "20件Lv0（正常）の初期状態にリセットしました",
+    );
+  });
+
+  it("シードクリア中はボタンが disabled になり「クリア中…」を表示する", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    let resolveClear!: (value: {
+      status: string;
+      clearedCount: number;
+      message: string;
+    }) => void;
+    mockedClearDemo.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveClear = resolve;
+        }),
+    );
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    const button = screen.getByTestId("clear-demo-button");
+    fireEvent.click(button);
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveTextContent("クリア中…");
+
+    await act(async () => {
+      resolveClear({
+        status: "cleared",
+        clearedCount: 2,
+        message: "20件Lv0（正常）の初期状態にリセットしました",
+      });
+    });
+  });
+
+  it("シードクリア失敗時は控えめなエラー表示に留まり、画面は壊れない", async () => {
+    mockedFetchAlerts.mockResolvedValue(ALERTS);
+    mockedClearDemo.mockRejectedValue(new Error("backend down"));
+
+    render(<DashboardClient sensorFeatures={FEATURES} />);
+    await act(async () => {});
+
+    fireEvent.click(screen.getByTestId("clear-demo-button"));
+
+    expect(await screen.findByTestId("clear-demo-error")).toHaveTextContent(
+      "シードクリアに失敗しました",
     );
     expect(screen.getByTestId("sensor-map")).toBeInTheDocument();
   });

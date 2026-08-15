@@ -8,7 +8,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.store import clear_runtime_sensors, get_store, reset_store
+from app.store import clear_disaster_state, get_store, reset_store
 from main import app
 
 
@@ -35,7 +35,7 @@ def _reset_store():
     クリアする。
     """
     reset_store()
-    clear_runtime_sensors()
+    clear_disaster_state()
     yield
     reset_store()
-    clear_runtime_sensors()
+    clear_disaster_state()

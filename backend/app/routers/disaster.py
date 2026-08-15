@@ -1,14 +1,21 @@
-"""防災モード API ルーター (GET /summary, POST /simulate)。"""
+"""防災モード API ルーター (GET /summary, POST /simulate)。
 
-import json
+DEMO-2 再設計: 実在する20消火栓のうち無作為に選んだセンサーを Level 3 に変化
+させる（架空センサーの新規追加はしない）。信号データも合成波形
+（``app/services/disaster_signal.py``）で更新する。「被災エリア」クラスタ
+（GET /summary）は、シミュレーションで選ばれたセンサーのみを対象とする
+（通常の漏水検知でたまたま Level 3 になったセンサーは対象外）。
+"""
+
+from __future__ import annotations
+
+import base64
 import math
-import traceback
+import random
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from uuid import uuid4
 
-from fastapi import APIRouter, Query, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Query
 
 from app.schemas.disaster import (
     DisasterCluster,
@@ -16,12 +23,18 @@ from app.schemas.disaster import (
     DisasterSummaryResponse,
     GeoJSONPolygon,
 )
-from app.schemas.telemetry import AnalysisResult, GeoLocation
-from app.store import StoredTelemetry, get_store, register_runtime_sensors
+from app.schemas.telemetry import GeoLocation
+from app.services.audio import SAMPLE_RATE_HZ, analyze_audio
+from app.services.disaster_signal import encode_signal_to_base64, generate_level3_signal
+from app.store import (
+    StoredTelemetry,
+    get_disaster_sensor_ids,
+    get_hydrants,
+    get_store,
+    register_disaster_sensors,
+)
 
 router = APIRouter(prefix="/api/v1/disaster", tags=["disaster"])
-
-CACHE_FILE = Path("/tmp/disaster_simulated_items.json")
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -59,76 +72,18 @@ def create_circle_polygon(
     return GeoJSONPolygon(type="Polygon", coordinates=[coords])
 
 
-def _extract_lat_lng(item: Any) -> tuple[float, float]:
-    """アイテムから緯度・経度を抽出。"""
-    if isinstance(item, dict):
-        loc = item.get("location", {})
-        if isinstance(loc, dict):
-            return float(loc.get("latitude", 0.0) or loc.get("lat", 0.0)), float(
-                loc.get("longitude", 0.0) or loc.get("lng", 0.0)
-            )
-        return float(item.get("lat", 0.0)), float(item.get("lng", 0.0))
-    loc = getattr(item, "location", None)
-    lat = getattr(loc, "latitude", getattr(item, "lat", 0.0))
-    lng = getattr(loc, "longitude", getattr(item, "lng", 0.0))
-    return float(lat), float(lng)
-
-
-def _get_sensor_id(item: Any, fallback: str) -> str:
-    """sensor_id を取得。"""
-    if isinstance(item, dict):
-        return str(item.get("sensor_id", fallback))
-    return str(getattr(item, "sensor_id", fallback))
-
-
-def _get_hydrant_id(item: Any, fallback: str) -> str:
-    """hydrant_id を取得。"""
-    if isinstance(item, dict):
-        return str(item.get("hydrant_id", fallback))
-    return str(getattr(item, "hydrant_id", fallback))
-
-
-def _get_item_telemetry_id(item: Any) -> str:
-    """telemetry_id を取得。"""
-    if isinstance(item, dict):
-        return str(item.get("telemetry_id", ""))
-    return str(getattr(item, "telemetry_id", ""))
-
-
 @router.get("/summary", response_model=DisasterSummaryResponse)
-async def get_disaster_summary(
+def get_disaster_summary(
     threshold_meters: float = Query(300.0, description="クラスタリング距離閾値(m)"),
 ) -> DisasterSummaryResponse:
-    """Level 3 アラートを一括取得し、距離閾値でクラスタリングして被災エリアを返却する。"""
-    store = get_store()
-    raw_items = store.get_all() if hasattr(store, "get_all") else []
+    """防災シミュレーションで選出されたセンサーの現在状態を距離でクラスタリングして返す。
 
-    has_sim_in_store = any(
-        "TEL-DISASTER-" in _get_item_telemetry_id(x) for x in raw_items
-    )
-
-    # Pytest (test_disaster_summary_empty) 対策:
-    # store 内にシミュレーションデータがない場合は、ファイルがあっても強制的に 0 件を返す
-    if not has_sim_in_store:
-        return DisasterSummaryResponse(
-            total_clusters=0,
-            total_affected_households=0,
-            clusters=[],
-        )
-
-    disaster_alerts: list[Any] = []
-    for x in raw_items:
-        if "TEL-DISASTER-" in _get_item_telemetry_id(x):
-            disaster_alerts.append(x)
-
-    if not disaster_alerts and CACHE_FILE.exists():
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                cached_data = json.load(f)
-                if isinstance(cached_data, list) and cached_data:
-                    disaster_alerts.extend(cached_data)
-        except Exception:
-            pass
+    ``register_disaster_sensors()`` に記録された sensor_id のみを対象とする。
+    通常の漏水検知でたまたま Level 3 になった別センサーはここに含めない。
+    """
+    disaster_ids = get_disaster_sensor_ids()
+    latest = get_store().latest_sensor_states()
+    disaster_alerts = [latest[sensor_id] for sensor_id in disaster_ids if sensor_id in latest]
 
     if not disaster_alerts:
         return DisasterSummaryResponse(
@@ -137,12 +92,18 @@ async def get_disaster_summary(
             clusters=[],
         )
 
-    clusters_raw: list[list[Any]] = []
+    clusters_raw: list[list[StoredTelemetry]] = []
     for alert in disaster_alerts:
-        lat, lng = _extract_lat_lng(alert)
         assigned = False
         for cluster in clusters_raw:
-            if haversine_distance(lat, lng, *_extract_lat_lng(cluster[0])) <= threshold_meters:
+            head = cluster[0]
+            distance = haversine_distance(
+                alert.location.latitude,
+                alert.location.longitude,
+                head.location.latitude,
+                head.location.longitude,
+            )
+            if distance <= threshold_meters:
                 cluster.append(alert)
                 assigned = True
                 break
@@ -152,24 +113,22 @@ async def get_disaster_summary(
     result_clusters = []
     total_households = 0
     for idx, group in enumerate(clusters_raw, start=1):
-        lats = [_extract_lat_lng(i)[0] for i in group]
-        lngs = [_extract_lat_lng(i)[1] for i in group]
+        lats = [item.location.latitude for item in group]
+        lngs = [item.location.longitude for item in group]
         center = (sum(lats) / len(lats), sum(lngs) / len(lngs))
 
-        h = len(group) * 120 + 50
-        total_households += h
-        s_id = _get_sensor_id(group[0], f"SEN-{idx}")
-        h_id = _get_hydrant_id(group[0], f"HYD-{idx}")
+        households = len(group) * 120 + 50
+        total_households += households
 
         result_clusters.append(
             DisasterCluster(
                 cluster_id=f"CLS-{idx:03d}",
                 center_lat=round(center[0], 6),
                 center_lng=round(center[1], 6),
-                affected_sensor_ids=[s_id],
-                affected_pipe_ids=[f"PIPE-{idx}"],
-                estimated_households=h,
-                priority_valve_hydrant_id=h_id,
+                affected_sensor_ids=[item.sensor_id for item in group],
+                affected_pipe_ids=[item.hydrant_id for item in group],
+                estimated_households=households,
+                priority_valve_hydrant_id=group[0].hydrant_id,
                 geometry=create_circle_polygon(center[1], center[0], radius_m=threshold_meters),
             )
         )
@@ -182,75 +141,54 @@ async def get_disaster_summary(
 
 
 @router.post("/simulate", response_model=DisasterSimulateResponse)
-async def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> Any:
-    """デモ用に一括で Level 3 アラートをシミュレーション投入する。
+def simulate_disaster(count: int = Query(6, ge=1, le=20)) -> DisasterSimulateResponse:
+    """実在消火栓のうち count 件を無作為に選び、信号データごと Level 3 へ変化させる。
 
-    シミュレーション時に新しいセンサーを登録し、監視センサ数が動的に増加するようにする。
+    ストア内の全20件を読み直し、選出分は合成波形で新しい解析結果を組み立て、
+    非選出分は現在の状態をそのまま保持したうえで、ストアを一括で置き換える
+    （常に20件を維持し、アラート一覧・KPI 集計で重複を発生させない）。
     """
-    try:
-        store = get_store()
-        now = datetime.now(timezone.utc)
-        base_lat, base_lng = 35.6812, 139.7671
+    store = get_store()
+    hydrants = get_hydrants()
+    target_count = min(count, len(hydrants))
+    selected = random.sample(hydrants, target_count)
+    selected_sensor_ids = {hydrant.sensor_id for hydrant in selected}
 
-        file_items = []
-        runtime_sensors = []
-        for i in range(count):
-            cur_lat = base_lat + (i * 0.001)
-            cur_lng = base_lng + (i * 0.001)
+    current = store.latest_sensor_states()
+    now = datetime.now(timezone.utc)
 
-            item = StoredTelemetry(
-                telemetry_id=f"TEL-DISASTER-{i+1:03d}",
-                sensor_id=f"SEN-DISASTER-{i+1:03d}",
-                hydrant_id=f"HYD-DISASTER-{i+1:03d}",
-                recorded_at=now,
-                received_at=now,
-                location=GeoLocation(
-                    latitude=cur_lat,
-                    longitude=cur_lng,
-                ),
-                analysis=AnalysisResult(
-                    severity_level=3,
-                    leak_confidence=95.0,
-                    dominant_freq_hz=100,
-                    band_energy_ratio=1.0,
-                ),
+    rebuilt: list[StoredTelemetry] = []
+    for hydrant in hydrants:
+        if hydrant.sensor_id in selected_sensor_ids:
+            signal = generate_level3_signal()
+            audio_base64 = encode_signal_to_base64(signal)
+            analysis = analyze_audio(audio_base64, sample_rate_hz=SAMPLE_RATE_HZ, duration_sec=1.0)
+            analysis = analysis.model_copy(update={"severity_level": 3})
+            rebuilt.append(
+                StoredTelemetry(
+                    telemetry_id=f"tlm_disaster_{uuid4().hex[:12]}",
+                    sensor_id=hydrant.sensor_id,
+                    hydrant_id=hydrant.hydrant_id,
+                    recorded_at=now,
+                    received_at=now,
+                    location=GeoLocation(latitude=hydrant.latitude, longitude=hydrant.longitude),
+                    analysis=analysis,
+                    audio_pcm16=base64.b64decode(audio_base64, validate=True),
+                    sample_rate_hz=SAMPLE_RATE_HZ,
+                )
             )
+        else:
+            existing = current.get(hydrant.sensor_id)
+            if existing is not None:
+                rebuilt.append(existing)
 
-            if hasattr(store, "add"):
-                store.add(item)
+    store.clear()
+    for record in rebuilt:
+        store.add(record)
 
-            file_items.append({
-                "telemetry_id": item.telemetry_id,
-                "sensor_id": item.sensor_id,
-                "hydrant_id": item.hydrant_id,
-                "location": {"latitude": cur_lat, "longitude": cur_lng},
-                "analysis": {"severity_level": 3},
-            })
+    register_disaster_sensors(sorted(selected_sensor_ids))
 
-            runtime_sensors.append({
-                "sensor_id": item.sensor_id,
-                "hydrant_id": item.hydrant_id,
-                "name": f"シミュレーション消火栓 {i+1}",
-                "latitude": cur_lat,
-                "longitude": cur_lng,
-                "pipe_id": f"PIPE-SIM-{i+1:03d}",
-            })
-
-        # シミュレーション用センサーを登録し、監視センサ数に反映させる
-        register_runtime_sensors(runtime_sensors)
-
-        try:
-            with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(file_items, f)
-        except Exception:
-            pass
-
-        return DisasterSimulateResponse(
-            inserted_count=count,
-            message=f"震災モードシミュレーション: Level 3 アラートを {count} 件一括追加しました",
-        )
-    except Exception:
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": traceback.format_exc()},
-        )
+    return DisasterSimulateResponse(
+        inserted_count=target_count,
+        message=f"防災シミュレーション: {target_count} 件のセンサーを Level 3 に変化させました",
+    )
