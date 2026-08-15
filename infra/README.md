@@ -117,16 +117,16 @@ AWS 上で「シード投入」ボタンを実際に動かすには、以下の�
    プライベートバケット `smartwater-guardian-demo-dataset-<AccountId>` が作成される
    （`PublicAccessBlockConfiguration` で完全非公開）。バケット名を確認:
    ```bash
-   aws cloudformation describe-stacks \
-     --stack-name smartwater-guardian-dev-security \
-     --query "Stacks[0].Outputs[?OutputKey=='DemoDatasetBucketName'].OutputValue" \
+   aws cloudformation describe-stacks `
+     --stack-name smartwater-guardian-dev-security `
+     --query "Stacks[0].Outputs[?OutputKey=='DemoDatasetBucketName'].OutputValue" `
      --output text --region ap-northeast-1
    ```
 2. ライセンスに従って入手した WAV ファイル（`backend/dataset/*.wav`、
    `*_level{N}.wav` の leak / no-leak 命名規約）を、権限を持つ運用者のローカル
    環境から直接アップロードする（git には一切コミットしない）:
    ```bash
-   aws s3 cp backend/dataset/ s3://smartwater-guardian-demo-dataset-<AccountId>/dataset/ \
+   aws s3 cp backend/dataset/ s3://smartwater-guardian-demo-dataset-<AccountId>/dataset/ `
      --recursive --region ap-northeast-1
    ```
 3. ECS スタック（App フェーズ）を `DemoDatasetEnabled=true` でデプロイ（または再デプロイ）する:
