@@ -255,10 +255,16 @@ def seed_alerts_for_e2e(payload: SeedRequest) -> SeedResponse:
     ``_SEED_HYDRANT_LEVELS`` に従い、実在マスタ（hydrants.json）の消火栓へ
     レベルを決定論的に割り当てて投入する（合計 10 件: L3×3 / L2×3 / L1×3 / L0×1）。
     ``payload.count`` は後方互換用の受領のみで、投入件数には影響しない。
+
+    投入前にストアをクリアする。実運用の起動時に ``initialize_sensors()``
+    （DEMO-2: 全消火栓を Level 0 で初期化）が既に実行済みのため、クリアせずに
+    追加すると初期化済みレコードと重複する（``services/demo_seed.py::run_seed_batch``
+    と同じ方針）。
     """
     hydrants = {h.hydrant_id: h for h in get_hydrants()}
     now = datetime.now(UTC)
     store = get_store()
+    store.clear()
 
     inserted = 0
     for hydrant_id, level in _SEED_HYDRANT_LEVELS.items():

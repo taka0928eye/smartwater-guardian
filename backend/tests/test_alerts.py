@@ -23,7 +23,7 @@ from pydantic import ValidationError
 
 from app.schemas.alert import PipeInfo
 from app.schemas.telemetry import AnalysisResult, GeoLocation, SpectrumPoint
-from app.store import StoredTelemetry
+from app.store import StoredTelemetry, initialize_sensors
 
 # シードで使うスペクトル点数（FE-4 描画用の固定値。telemetry のモック解析と同じ）
 N_SPECTRUM = 128
@@ -459,6 +459,28 @@ class TestSeedAlertsForE2E:
         hydrant_ids = {a["hydrant_id"] for a in alerts}
         assert "HYD-002" in hydrant_ids
         assert len(hydrant_ids) == 10
+
+    def test_seed_clears_startup_initialized_records(self, client, store):
+        """起動時 initialize_sensors()（DEMO-2: 全20件Lv0初期化）由来のレコードと
+        重複しないことを確認する。
+
+        実運用の uvicorn は起動時に一度だけ initialize_sensors() を実行してから
+        E2E の global-setup が /alerts/seed を呼ぶため、ストアには既に20件の
+        Lv0 レコードが存在した状態でシードが行われる。特に HYD-002 は
+        _SEED_HYDRANT_LEVELS でも Level 0 が割り当てられているため、クリアせずに
+        追加すると同一消火栓のLv0行が重複してしまう（「正常も表示」トグルで2行
+        表示される不具合）。
+        """
+        initialize_sensors(store)
+        assert len(store) == 20
+
+        response = client.post("/api/v1/alerts/seed", json={"count": 10})
+        assert response.status_code == 200
+
+        alerts = client.get("/api/v1/alerts").json()
+        assert len(alerts) == 10
+        hyd002_alerts = [a for a in alerts if a["hydrant_id"] == "HYD-002"]
+        assert len(hyd002_alerts) == 1
 
     def test_seed_records_reference_real_sensor_and_pipe(self, client):
         client.post("/api/v1/alerts/seed", json={})
